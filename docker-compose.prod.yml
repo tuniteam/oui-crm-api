@@ -1,0 +1,66 @@
+# ============================================
+# OUI-CRM Backend - Docker Compose
+# ============================================
+# Usage:
+#   Stop:         docker-compose -f docker-compose.prod.yml down
+#   Reset DB:     docker-compose -f docker-compose.prod.yml down -v && docker-compose -f docker-compose.prod.yml up -d
+#   Logs:         docker-compose logs -f api
+# ============================================
+
+services:
+  # ===========================================
+  # PostgreSQL Database
+  # ===========================================
+  db:
+    image: postgres:15-alpine
+    container_name: ouicrm-db-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ouicrm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ouicrm_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ouicrm_db_prod}
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-ouicrm} -d ${POSTGRES_DB:-ouicrm_db_prod}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ouicrm-network
+
+  # ===========================================
+  # OUI-CRM API
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: ouicrm-api-prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file: .env.prod
+    command: sh -c "npx prisma migrate deploy && node dist/main.js"
+    ports:
+      - '${PORT:-3000}:3000'
+    networks:
+      - ouicrm-network
+
+# ===========================================
+# Volumes
+# ===========================================
+volumes:
+  postgres_data_prod:
+    name: ouicrm_postgres_data_prod
+    driver: local
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  ouicrm-network:
+    driver: bridge

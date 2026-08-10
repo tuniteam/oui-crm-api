@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build
+dist/
+prisma/local-seed
+# Environment
+.env
+.env.local
+.env.*.local
+.env.uat
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/settings.json
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Prisma
+prisma/migrations/*_migration.sql
+
+# Test
+coverage/
+
+# Swagger exports (optional)
+swagger-output.json
+
+# Local documentation (dev guides)
+docs/
+
+# Claude Code local files
+.claude/
+CLAUDE.md
+nul
+
+# Local-only ad-hoc scripts (capture, one-off utilities)
+scripts-tmp/
+
+.cursor/

@@ -1,0 +1,117 @@
+# ============================================
+# OUI-CRM Backend - Docker Compose
+# ============================================
+# Usage:
+#   docker-compose up -d
+#   docker-compose logs -f api
+# ============================================
+# Features:
+#   - All devDependencies available
+#   - Debug mode enabled
+# ============================================
+
+services:
+  # ===========================================
+  # PostgreSQL Database
+  # ===========================================
+  db:
+    image: postgres:15-alpine
+    container_name: ouicrm-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ouicrm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ouicrm_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ouicrm_db}
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-ouicrm} -d ${POSTGRES_DB:-ouicrm_db}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ouicrm-network
+
+  # ===========================================
+  # OUI-CRM API
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: ouicrm-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: test
+      PORT: ${PORT:-3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ouicrm}:${POSTGRES_PASSWORD:-ouicrm_password}@db:5432/${POSTGRES_DB:-ouicrm_db}?schema=public
+      INSEE_API_URL: ${INSEE_API_URL:-https://api.insee.fr/api-sirene/3.11}
+      INSEE_API_KEY: ${INSEE_API_KEY:-f11a6518-d69f-4c6e-9a65-18d69f7c6e3f}
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRATION: ${JWT_ACCESS_EXPIRATION:-15m}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+      MOBILE_JWT_ACCESS_EXPIRATION: ${MOBILE_JWT_ACCESS_EXPIRATION:-15m}
+      MOBILE_JWT_REFRESH_EXPIRATION: ${MOBILE_JWT_REFRESH_EXPIRATION:-90d}
+      MOBILE_JWT_ACCESS_SECRET: ${MOBILE_JWT_ACCESS_SECRET:-mobile_jwt_access_secret}
+      MOBILE_JWT_REFRESH_SECRET: ${MOBILE_JWT_REFRESH_SECRET:-mobile_jwt_refresh_secret}
+      PUBLIC_HOLIDAYS_URL: ${PUBLIC_HOLIDAYS_URL:-https://calendrier.api.gouv.fr/jours-feries}
+      SCHOOL_HOLIDAYS_URL: ${SCHOOL_HOLIDAYS_URL:-https://data.education.gouv.fr/api/explore/v2.1/catalog/datasets/fr-en-calendrier-scolaire/records}
+      # Activation email
+      ACTIVATION_TOKEN_SECRET: ${ACTIVATION_TOKEN_SECRET}
+      ACTIVATION_CRYPTR_SECRET: ${ACTIVATION_CRYPTR_SECRET}
+      ACTIVATION_TOKEN_EXPIRATION: ${ACTIVATION_TOKEN_EXPIRATION:-72h}
+
+      EMAIL_SENDING_ENABLED: ${EMAIL_SENDING_ENABLED:-false}
+
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-email.periscolia@gmail.com}
+      SMTP_PASS: ${SMTP_PASS}
+
+      # Reset password
+      PASSWORD_RESET_TOKEN_SECRET: ${PASSWORD_RESET_TOKEN_SECRET}
+      PASSWORD_RESET_CRYPTR_SECRET: ${PASSWORD_RESET_CRYPTR_SECRET}
+      PASSWORD_RESET_TOKEN_EXPIRATION: ${PASSWORD_RESET_TOKEN_EXPIRATION:-30m}
+
+      PLATFORM_NAME: ${PLATFORM_NAME:-Periscolia}
+      PLATFORM_DEFAULT_LOGO_SRC: ${PLATFORM_DEFAULT_LOGO_SRC:-}
+      BASE_URL: ${BASE_URL:-http://localhost:5173}
+      # Storage
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio}
+      MINIO_PORT: ${MINIO_PORT:-9000}
+      MINIO_USE_SSL: ${MINIO_USE_SSL:-false}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minio_access_key}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minio_secret_key}
+      MINIO_BUCKET: ${MINIO_BUCKET:-ouicrm-dev}
+      MINIO_USE_SSE: ${MINIO_USE_SSE:-false}
+      MINIO_PRESIGNED_GET_TTL: ${MINIO_PRESIGNED_GET_TTL:-900}
+      MAX_FILE_SIZE_BYTES: ${MAX_FILE_SIZE_BYTES:-5000000}
+      PRESIGNED_PUBLIC_URL: ${PRESIGNED_PUBLIC_URL:-http://minio:9000}
+    ports:
+      - '${PORT:-3000}:3000'
+      - '9229:9229' # Debug port
+    command: sh -c "npx prisma migrate deploy && npm run db:seed && node dist/main.js"
+    networks:
+      - ouicrm-network
+
+# ===========================================
+# Volumes
+# ===========================================
+
+volumes:
+  postgres_data:
+    name: ouicrm_postgres_data
+    driver: local
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  ouicrm-network:
+    driver: bridge

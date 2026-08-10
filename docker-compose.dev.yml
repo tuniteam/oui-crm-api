@@ -1,0 +1,100 @@
+# ============================================
+# Backend - Docker Compose (Development)
+# ============================================
+# Usage:
+#   docker-compose -f docker-compose.dev.yml up -d
+#   docker-compose -f docker-compose.dev.yml logs -f api
+# ============================================
+# Features:
+#   - Hot-reload with source code mounting
+#   - All devDependencies available
+#   - Debug mode enabled
+# ============================================
+
+services:
+  # ===========================================
+  # PostgreSQL Database
+  # ===========================================
+  db:
+    image: postgres:15-alpine
+    container_name: db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ouicrm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ouicrm_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ouicrm_db}
+    ports:
+      - '${DB_PORT:-5432}:5432'
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-ouicrm} -d ${POSTGRES_DB:-ouicrm_db}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ouicrm-network-dev
+
+  # ===========================================
+  # OUI-CRM API (Development with Hot Reload)
+  # ===========================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: ouicrm-api-dev
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: ${PORT:-3000}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ouicrm}:${POSTGRES_PASSWORD:-ouicrm_password}@db:5432/${POSTGRES_DB:-ouicrm_db}?schema=public
+    ports:
+      - '${PORT:-3000}:3000'
+      - '9229:9229' # Debug port
+    volumes:
+      # Mount source code for hot-reload
+      - .:/app
+      - /app/node_modules # Exclude node_modules from mount
+    command: npm run start:dev
+    networks:
+      - ouicrm-network-dev
+
+  # ===========================================
+  # Prisma Studio (Database GUI)
+  # ===========================================
+  prisma-studio:
+    image: node:22-alpine
+    container_name: ouicrm-prisma-studio-dev
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ouicrm}:${POSTGRES_PASSWORD:-ouicrm_password}@db:5432/${POSTGRES_DB:-ouicrm_db}?schema=public
+    ports:
+      - '5555:5555'
+    volumes:
+      - ./prisma:/app/prisma
+      - ./package.json:/app/package.json
+    working_dir: /app
+    command: sh -c "npm install prisma @prisma/client && npx prisma studio --port 5555 --browser none"
+    networks:
+      - ouicrm-network-dev
+
+# ===========================================
+# Volumes
+# ===========================================
+
+volumes:
+  postgres_data_dev:
+    name: ouicrm_postgres_data_dev
+    driver: local
+# ===========================================
+# Networks
+# ===========================================
+networks:
+  ouicrm-network-dev:
+    driver: bridge
