@@ -210,10 +210,23 @@ const SEED_ERRORS = {
 export async function seedAuth(prisma: PrismaClient): Promise<void> {
   console.log(`Seeding ${permissionsData.length} permissions and ${rolesData.length} system roles...`);
 
-  // Permissions: catalogue replaced wholesale (role_permissions cascade, then rebuilt below).
-  // Overrides referencing a removed permission are dropped by the cascade — intended.
-  await prisma.permission.deleteMany({});
-  await prisma.permission.createMany({ data: permissionsData, skipDuplicates: true });
+  // Permissions: DIFF-synced with the catalogue. Never deleteMany({}): both RolePermission
+  // and UserPermissionOverride cascade on permission deletion, so a wholesale replace would
+  // silently wipe every user override and every project-duplicated role's grants on deploy.
+  const catalogueCodes = permissionsData.map((perm) => perm.code);
+  const existingPermissions = await prisma.permission.findMany();
+  const permissionByCode = new Map(existingPermissions.map((perm) => [perm.code, perm]));
+
+  await prisma.permission.deleteMany({ where: { code: { notIn: catalogueCodes } } });
+  await prisma.permission.createMany({
+    data: permissionsData.filter((perm) => !permissionByCode.has(perm.code)),
+    skipDuplicates: true,
+  });
+  await Promise.all(
+    permissionsData
+      .filter((perm) => permissionByCode.has(perm.code) && permissionByCode.get(perm.code)?.label !== perm.label)
+      .map((perm) => prisma.permission.update({ where: { code: perm.code }, data: { label: perm.label } })),
+  );
 
   // System roles: upsert by code with project_id IS NULL (partial unique index).
   const existingRoles = await prisma.role.findMany({ where: { projectId: null } });

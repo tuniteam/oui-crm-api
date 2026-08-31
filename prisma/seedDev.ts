@@ -156,6 +156,11 @@ async function renameDemoAccount(
     include: { user: { select: { id: true, email: true } } },
   });
   if (!relation || relation.user.email === email) return;
+  const holder = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+  if (holder && holder.id !== relation.user.id) {
+    console.warn(`Demo account ${initials}: target e-mail ${email} already belongs to another user — rename skipped`);
+    return;
+  }
   await prisma.user.update({ where: { id: relation.user.id }, data: { email } });
   console.log(`Demo account ${initials}: ${relation.user.email} -> ${email}`);
 }
