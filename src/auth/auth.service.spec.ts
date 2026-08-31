@@ -8,7 +8,7 @@ import { AuthService } from './auth.service';
 
 /** Pure rules of login (SPEC-09 T3 lockout, T4 status). Token issuance is covered by the curl tests. */
 describe('AuthService.login', () => {
-  const password = 'Periscolia2026!';
+  const password = 'ouicrm2026!';
   let passwordHash: string;
   let prisma: {
     user: { findUnique: jest.Mock; update: jest.Mock };

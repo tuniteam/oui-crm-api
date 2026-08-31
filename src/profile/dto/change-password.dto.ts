@@ -3,7 +3,7 @@ import { IsNotEmpty, IsString } from 'class-validator';
 
 /** Policy checked in the service (precise PASSWORD_TOO_WEAK code, US-00-02 policy). */
 export class ChangePasswordDto {
-  @ApiProperty({ example: 'Periscolia2026!' })
+  @ApiProperty({ example: 'ouicrm2026!' })
   @IsString()
   @IsNotEmpty()
   oldPassword: string;

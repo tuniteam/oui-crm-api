@@ -52,7 +52,8 @@ export async function seedDev(prisma: PrismaClient): Promise<void> {
   await renameDemoAccount(prisma, null, PLATFORM_SUPER_ADMIN.initials, PLATFORM_SUPER_ADMIN.email);
   const superAdmin = await prisma.user.upsert({
     where: { email: PLATFORM_SUPER_ADMIN.email },
-    update: {},
+    // Demo accounts follow SEED_PASSWORD deterministically: re-seeding resets their password
+    update: { password: passwordHash },
     create: {
       email: PLATFORM_SUPER_ADMIN.email,
       password: passwordHash,
@@ -104,7 +105,7 @@ export async function seedDev(prisma: PrismaClient): Promise<void> {
       await renameDemoAccount(prisma, project.id, u.initials, u.email);
       const user = await prisma.user.upsert({
         where: { email: u.email },
-        update: {},
+        update: { password: passwordHash },
         create: {
           email: u.email,
           password: passwordHash,

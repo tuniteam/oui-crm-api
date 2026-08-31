@@ -13,7 +13,7 @@ export class ActivationCompleteDto {
 
   @ApiProperty({
     description: 'Chosen password: at least 10 characters with letters and digits.',
-    example: 'Periscolia2026!',
+    example: 'ouicrm2026!',
   })
   @IsString()
   @IsNotEmpty()

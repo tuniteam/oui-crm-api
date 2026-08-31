@@ -6,7 +6,7 @@ export class EmailChangeRequestDto {
   @IsEmail()
   newEmail: string;
 
-  @ApiProperty({ example: 'Periscolia2026!', description: 'Current password (re-authentication)' })
+  @ApiProperty({ example: 'ouicrm2026!', description: 'Current password (re-authentication)' })
   @IsString()
   @IsNotEmpty()
   currentPassword: string;
