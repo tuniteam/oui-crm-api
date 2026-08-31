@@ -175,14 +175,18 @@ projet) et **un utilisateur non backoffice** (une affectation par projet). La ro
 scopée par projet — `JwtAuthGuard` seul, pas de header — et renvoie **toutes les affectations** ;
 le front en choisit une et envoie ensuite `x-project-id` sur chaque appel.
 
-Copie de `MeResponseDto` / `ProfileService.getMe` de soft-m, `client` → `project`, avec deux
-ajouts propres au CRM (le scope de chaque permission et le périmètre géographique) :
+Copie de `MeResponseDto` / `ProfileService.getMe` de soft-m, `client` → `project`, avec les
+ajouts CRM (scope de chaque permission, périmètre géographique) et la fusion de l'ex-`GET
+/profile` (`phone`, `avatarUrl`) — contrat livré le 31/08/2026, à jour ci-dessous :
 
 ```json
 {
   "contactId": "…",                       // id utilisateur
   "email": "email.ouicrm+wiem@gmail.com",
-  "firstName": "Wiem", "lastName": "Bousaid", "initials": "WB",
+  "firstName": "Wiem", "lastName": "Bousaid",
+  "phone": "0601020304",                  // null si absent
+  "initials": "WB",                       // celles de la 1re relation active, null si aucune
+  "avatarUrl": "https://…presignée…",     // ~15 min, null si pas d'avatar — ne pas la stocker
   "contactType": "PROJECT",              // BACKOFFICE | PROJECT (ex-CLIENT)
   "roleRelationships": [
     {
@@ -195,12 +199,12 @@ ajouts propres au CRM (le scope de chaque permission et le périmètre géograph
         { "code": "quotes:validate", "scope": "PROJECT", "source": "OVERRIDE" }
       ],
       "modules": ["SALES", "BILLING"],
-      "scope": { "name": "Normandie", "departments": ["14","27","50","61","76"], "portfolioOnly": false },
-      "expiresAt": null
+      "scope": { "name": "Normandie", "regions": ["Normandie"], "departments": ["14","27","50","61","76"], "portfolioOnly": false },
+      "expiresAt": null                   // sinon date "YYYY-MM-DD" (dernier jour de validité)
     }
   ],
   "legalReacceptanceRequired": false,
-  "legalDocumentsToAccept": []
+  "legalDocumentsToAccept": []            // sinon [{ "code", "version", "url" }]
 }
 ```
 
