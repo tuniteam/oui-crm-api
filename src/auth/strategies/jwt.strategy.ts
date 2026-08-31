@@ -8,7 +8,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AUTH_ENV } from '../auth.constants';
 import { AuthenticatedRelation, AuthenticatedUser } from '../interfaces/authenticated-user.interface';
 import { JwtPayload } from '../interfaces/jwt-payload.interface';
-import { applyOverrides, isRelationActive } from '../utils/permissions.util';
+import { effectivePermissions, isRelationActive } from '../utils/permissions.util';
 import { assertSessionLive } from '../utils/session.utils';
 
 /** Everything the principal needs, loaded once per request from the session. */
@@ -40,10 +40,6 @@ export function toAuthenticatedRelation(
   urp: UserRoleProjectLoaded,
   overrides: OverrideLoaded[],
 ): AuthenticatedRelation {
-  const projectOverrides = overrides
-    .filter((o) => o.projectId === urp.projectId)
-    .map((o) => ({ code: o.permission.code, granted: o.granted }));
-
   return {
     roleId: urp.roleId,
     roleCode: urp.role.code,
@@ -55,10 +51,7 @@ export function toAuthenticatedRelation(
     scopeId: urp.scopeId,
     initials: urp.initials,
     expiresAt: urp.expiresAt,
-    permissions: applyOverrides(
-      urp.role.permissions.map((rp) => ({ code: rp.permission.code, scope: rp.scope })),
-      projectOverrides,
-    ),
+    permissions: effectivePermissions(urp, overrides),
     features: urp.project?.features.map((f) => f.feature) ?? [],
   };
 }

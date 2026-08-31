@@ -33,6 +33,19 @@ export const DEFAULT_BCRYPT_ROUNDS = 12;
 export const AUTH_RATE_LIMIT_WINDOW_MS = 15 * MS_PER_MINUTE;
 export const DEFAULT_AUTH_RATE_LIMIT_MAX = 50;
 
+/** Audit actions written by the auth module (SPEC-02 §4.3). */
+export const AUTH_AUDIT = {
+  ACTIVATION_COMPLETE: 'auth.activation.complete',
+  PASSWORD_RESET: 'auth.password.reset',
+  EMAIL_CHANGE: 'auth.email.change',
+} as const;
+
+/**
+ * Compared against when the login e-mail is unknown, so known and unknown accounts take the
+ * same bcrypt time (anti-enumeration timing). Hash of a random throwaway string, cost 12.
+ */
+export const DUMMY_PASSWORD_HASH = '$2b$12$5BOvKIkiwu2DBUn0sVELtu4wQQAbBX3YaLjZnBEylGyvdIf5VA5Fa';
+
 /** bcrypt cost for opaque tokens (refresh / activation / reset). Lower than passwords: high entropy input. */
 export const TOKEN_HASH_ROUNDS = 10;
 

@@ -12,6 +12,7 @@ import {
   AUTH_ENV,
   DEFAULT_LOCKOUT_DURATION_MINUTES,
   DEFAULT_MAX_LOGIN_ATTEMPTS,
+  DUMMY_PASSWORD_HASH,
   JWT_ACCESS_SERVICE,
   JWT_REFRESH_SERVICE,
   TOKEN_HASH_ROUNDS,
@@ -37,7 +38,11 @@ export class AuthService {
   async login(dto: LoginDto, ip?: string): Promise<AuthTokensResponseDto> {
     const now = new Date();
     const user = await this.prisma.user.findUnique({ where: { email: normalizeEmail(dto.email) } });
-    if (!user) throw apiError.unauthorized('AUTH_INVALID_CREDENTIALS');
+    if (!user) {
+      // Burn the same bcrypt time as a real comparison: no timing oracle on account existence
+      await bcrypt.compare(dto.password, DUMMY_PASSWORD_HASH);
+      throw apiError.unauthorized('AUTH_INVALID_CREDENTIALS');
+    }
 
     if (user.lockedUntil && user.lockedUntil > now) {
       const lockedUntil = user.lockedUntil.toISOString();
@@ -103,7 +108,10 @@ export class AuthService {
 
   // ----------------------------------------------------------------------------------------
 
-  /** Nth failure locks the account; the counter restarts after the lock (SPEC-09 T3). */
+  /**
+   * Nth failure locks the account; the counter restarts after the lock (SPEC-09 T3).
+   * Atomic increment: parallel wrong-password attempts each consume one counted attempt.
+   */
   private async registerFailedAttempt(user: User, now: Date): Promise<void> {
     const maxAttempts = getNumber(this.config, AUTH_ENV.MAX_LOGIN_ATTEMPTS, DEFAULT_MAX_LOGIN_ATTEMPTS);
     const lockoutMinutes = getNumber(
@@ -111,15 +119,18 @@ export class AuthService {
       AUTH_ENV.LOCKOUT_DURATION_MINUTES,
       DEFAULT_LOCKOUT_DURATION_MINUTES,
     );
-    const attempts = user.failedLoginAttempts + 1;
-    const locked = attempts >= maxAttempts;
 
-    await this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: user.id },
-      data: locked
-        ? { failedLoginAttempts: 0, lockedUntil: new Date(now.getTime() + lockoutMinutes * MS_PER_MINUTE) }
-        : { failedLoginAttempts: attempts },
+      data: { failedLoginAttempts: { increment: 1 } },
+      select: { failedLoginAttempts: true },
     });
+    if (updated.failedLoginAttempts >= maxAttempts) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { failedLoginAttempts: 0, lockedUntil: new Date(now.getTime() + lockoutMinutes * MS_PER_MINUTE) },
+      });
+    }
   }
 
   /**
@@ -133,14 +144,17 @@ export class AuthService {
     const refreshToken = await this.jwtRefreshService.signAsync(payload);
     const { exp: refreshExp } = this.jwtRefreshService.decode(refreshToken) as { exp: number };
 
-    await this.prisma.session.update({
-      where: { id: session.id },
+    // Compare-and-swap on the version: two concurrent rotations of the same token cannot
+    // both succeed — the loser gets REFRESH_TOKEN_INVALID_OR_USED (reuse detection holds).
+    const rotated = await this.prisma.session.updateMany({
+      where: { id: session.id, version: session.version },
       data: {
         refreshToken: await bcrypt.hash(refreshToken, TOKEN_HASH_ROUNDS),
         expiresAt: new Date(refreshExp * MS_PER_SECOND),
         version,
       },
     });
+    if (rotated.count === 0) throw apiError.unauthorized('REFRESH_TOKEN_INVALID_OR_USED');
 
     const accessToken = await this.jwtAccessService.signAsync(payload);
     const { exp: accessExp } = this.jwtAccessService.decode(accessToken) as { exp: number };

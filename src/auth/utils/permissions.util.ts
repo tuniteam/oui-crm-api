@@ -41,6 +41,27 @@ export function applyOverrides(
 }
 
 /**
+ * Effective permissions of a loaded UserRoleProject row: role grants corrected by the user's
+ * overrides for that project. Single source for JwtStrategy (authorization) and /profile/me
+ * (display) — divergence here would be a security bug.
+ */
+export function effectivePermissions(
+  urp: {
+    projectId: string | null;
+    role: { permissions: { scope: ScopeType; permission: { code: string } }[] };
+  },
+  overrides: { projectId: string | null; granted: boolean; permission: { code: string } }[],
+): AuthenticatedPermission[] {
+  const projectOverrides = overrides
+    .filter((o) => o.projectId === urp.projectId)
+    .map((o) => ({ code: o.permission.code, granted: o.granted }));
+  return applyOverrides(
+    urp.role.permissions.map((rp) => ({ code: rp.permission.code, scope: rp.scope })),
+    projectOverrides,
+  );
+}
+
+/**
  * A relation is usable when its status is ACTIVE and it has not expired. `expiresAt` is a
  * DATE (last day of validity, inclusive), compared to the current UTC day.
  */

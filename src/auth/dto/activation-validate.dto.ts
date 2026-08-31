@@ -1,16 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { LegalDocument } from '@/common/legal/legal.constants';
-
-export class LegalDocumentDto {
-  @ApiProperty({ enum: LegalDocument, example: LegalDocument.CGU })
-  code: LegalDocument;
-
-  @ApiProperty({ example: 1 })
-  version: number;
-
-  @ApiProperty({ example: 'https://oui-crm.example/cgu' })
-  url: string;
-}
+import { LegalDocumentDto } from '@/common/legal/legal.dto';
 
 /** What the activation page shows before the consent checkboxes (SPEC-07 US-00-02). */
 export class ActivationValidateResponseDto {

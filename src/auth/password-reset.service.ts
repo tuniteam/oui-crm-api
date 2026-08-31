@@ -3,14 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { User, UserStatus } from '@prisma/client';
 import * as Cryptr from 'cryptr';
+import { AuditLogService } from '@/audit-log/audit-log.service';
+import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { apiError } from '@/common/api-error';
-import { getNumber } from '@/common/utils/config.utils';
 import { normalizeEmail } from '@/common/utils/email.utils';
 import { fullName } from '@/common/utils/user.utils';
 import { MailService } from '@/mail/mail.service';
 import { PrismaService } from '@/prisma/prisma.service';
-import { AUTH_ENV, DEFAULT_BCRYPT_ROUNDS, TOKEN_FLOWS } from './auth.constants';
-import { assertPasswordStrength, hashPassword } from './utils/password.utils';
+import { AUTH_AUDIT, TOKEN_FLOWS } from './auth.constants';
+import { assertAndHashPassword } from './utils/password.utils';
 import {
   buildFrontLink,
   createCryptr,
@@ -34,6 +35,7 @@ export class PasswordResetService {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly audit: AuditLogService,
     @Inject(FLOW.diToken) private readonly jwtService: JwtService,
   ) {
     this.cryptr = createCryptr(config, FLOW);
@@ -60,18 +62,24 @@ export class PasswordResetService {
 
   /** Sets the password and closes every session of the user. */
   async complete(token: string, password: string): Promise<void> {
-    assertPasswordStrength(password);
     const user = await this.resolveUser(token);
-    const hashed = await hashPassword(password, getNumber(this.config, AUTH_ENV.BCRYPT_ROUNDS, DEFAULT_BCRYPT_ROUNDS));
+    const hashed = await assertAndHashPassword(this.config, password);
 
-    await this.prisma.$transaction([
-      this.prisma.user.update({
+    await this.prisma.$transaction(async (tx) => {
+      await tx.user.update({
         where: { id: user.id },
         data: { password: hashed, passwordChangedAt: new Date(), failedLoginAttempts: 0, lockedUntil: null },
-      }),
-      this.prisma.passwordResetToken.deleteMany({ where: { userId: user.id } }),
-      this.prisma.session.deleteMany({ where: { userId: user.id } }),
-    ]);
+      });
+      await tx.passwordResetToken.deleteMany({ where: { userId: user.id } });
+      await tx.session.deleteMany({ where: { userId: user.id } });
+      await this.audit.log(tx, {
+        projectId: null,
+        userId: user.id,
+        action: AUTH_AUDIT.PASSWORD_RESET,
+        objectType: AUDIT_OBJECTS.USER,
+        objectId: user.id,
+      });
+    });
   }
 
   // ----------------------------------------------------------------------------------------

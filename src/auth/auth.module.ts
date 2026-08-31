@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import * as ms from 'ms';
 import { MS_PER_SECOND } from '@/common/utils/date.utils';
+import { AuditLogModule } from '@/audit-log/audit-log.module';
 import { MailModule } from '@/mail/mail.module';
 import { ActivationService } from './activation.service';
 import {
@@ -46,7 +47,7 @@ function jwtProvider(spec: {
 }
 
 @Module({
-  imports: [PassportModule.register({ defaultStrategy: 'jwt' }), ConfigModule, MailModule],
+  imports: [PassportModule.register({ defaultStrategy: 'jwt' }), ConfigModule, MailModule, AuditLogModule],
   controllers: [AuthController],
   providers: [
     AuthService,

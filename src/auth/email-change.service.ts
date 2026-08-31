@@ -1,15 +1,18 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { User, UserStatus } from '@prisma/client';
+import { Prisma, User, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as Cryptr from 'cryptr';
+import { AuditLogService } from '@/audit-log/audit-log.service';
+import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { apiError } from '@/common/api-error';
+import { PRISMA_ERROR } from '@/common/constants/app.constants';
 import { assertEmailAvailable, normalizeEmail } from '@/common/utils/email.utils';
 import { fullName } from '@/common/utils/user.utils';
 import { MailService } from '@/mail/mail.service';
 import { PrismaService } from '@/prisma/prisma.service';
-import { TOKEN_FLOWS } from './auth.constants';
+import { AUTH_AUDIT, TOKEN_FLOWS } from './auth.constants';
 import { EmailChangeConfirmResponseDto } from './dto/email-change-confirm.dto';
 import { EmailChangeRequestDto } from './dto/email-change-request.dto';
 import {
@@ -36,6 +39,7 @@ export class EmailChangeService {
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
     private readonly config: ConfigService,
+    private readonly audit: AuditLogService,
     @Inject(FLOW.diToken) private readonly jwtService: JwtService,
   ) {
     this.cryptr = createCryptr(config, FLOW);
@@ -75,13 +79,28 @@ export class EmailChangeService {
     if (verdict === 'EXPIRED') throw apiError.gone('EMAIL_CHANGE_TOKEN_EXPIRED');
     if (verdict !== 'VALID' || !user || !record) throw apiError.notFound('EMAIL_CHANGE_TOKEN_NOT_FOUND');
 
-    await this.prisma.$transaction(async (tx) => {
-      // The address may have been taken during the 30-minute window
-      await assertEmailAvailable(tx, record.newEmail, user.id);
-      await tx.user.update({ where: { id: user.id }, data: { email: record.newEmail } });
-      await tx.emailChangeToken.deleteMany({ where: { userId: user.id } });
-      await tx.session.deleteMany({ where: { userId: user.id } });
-    });
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        // The address may have been taken during the 30-minute window
+        await assertEmailAvailable(tx, record.newEmail, user.id);
+        await tx.user.update({ where: { id: user.id }, data: { email: record.newEmail } });
+        await tx.emailChangeToken.deleteMany({ where: { userId: user.id } });
+        await tx.session.deleteMany({ where: { userId: user.id } });
+        await this.audit.log(tx, {
+          projectId: null,
+          userId: user.id,
+          action: AUTH_AUDIT.EMAIL_CHANGE,
+          objectType: AUDIT_OBJECTS.USER,
+          objectId: user.id,
+        });
+      });
+    } catch (err) {
+      // Concurrent registration of the same address between the check and the write
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === PRISMA_ERROR.UNIQUE_VIOLATION) {
+        throw apiError.conflict('EMAIL_ALREADY_TAKEN');
+      }
+      throw err;
+    }
 
     // Courtesy notice to the previous address — never blocks the change
     this.mail

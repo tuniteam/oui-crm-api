@@ -12,7 +12,7 @@ describe('AuthService.login', () => {
   let passwordHash: string;
   let prisma: {
     user: { findUnique: jest.Mock; update: jest.Mock };
-    session: { create: jest.Mock; update: jest.Mock; deleteMany: jest.Mock };
+    session: { create: jest.Mock; updateMany: jest.Mock; deleteMany: jest.Mock };
     $transaction: jest.Mock;
   };
   let service: AuthService;
@@ -37,10 +37,10 @@ describe('AuthService.login', () => {
 
   beforeEach(() => {
     prisma = {
-      user: { findUnique: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+      user: { findUnique: jest.fn(), update: jest.fn().mockResolvedValue({ failedLoginAttempts: 1 }) },
       session: {
         create: jest.fn().mockResolvedValue({ id: 's1', userId: 'u1', version: 0 }),
-        update: jest.fn().mockResolvedValue({}),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         deleteMany: jest.fn().mockResolvedValue({}),
       },
       $transaction: jest.fn().mockResolvedValue([]),
@@ -57,25 +57,30 @@ describe('AuthService.login', () => {
     });
   });
 
-  it('counts a wrong password and does not lock before the threshold', async () => {
-    prisma.user.findUnique.mockResolvedValue({ ...baseUser(), failedLoginAttempts: 1 });
+  it('counts a wrong password atomically and does not lock before the threshold', async () => {
+    prisma.user.findUnique.mockResolvedValue(baseUser());
+    prisma.user.update.mockResolvedValueOnce({ failedLoginAttempts: 2 });
     await expect(service.login({ email: 'u1@example.com', password: 'wrong' })).rejects.toMatchObject({
       response: { code: 'AUTH_INVALID_CREDENTIALS' },
     });
+    expect(prisma.user.update).toHaveBeenCalledTimes(1);
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: 'u1' },
-      data: { failedLoginAttempts: 2 },
+      data: { failedLoginAttempts: { increment: 1 } },
+      select: { failedLoginAttempts: true },
     });
   });
 
-  it('locks the account on the Nth failure (T3)', async () => {
-    prisma.user.findUnique.mockResolvedValue({ ...baseUser(), failedLoginAttempts: 2 });
+  it('locks the account when the atomic counter reaches the threshold (T3)', async () => {
+    prisma.user.findUnique.mockResolvedValue(baseUser());
+    prisma.user.update.mockResolvedValueOnce({ failedLoginAttempts: 3 });
     await expect(service.login({ email: 'u1@example.com', password: 'wrong' })).rejects.toBeInstanceOf(
       UnauthorizedException,
     );
-    const data = prisma.user.update.mock.calls[0][0].data;
-    expect(data.failedLoginAttempts).toBe(0);
-    expect(data.lockedUntil.getTime()).toBeGreaterThan(Date.now() + 14 * 60 * 1000);
+    expect(prisma.user.update).toHaveBeenCalledTimes(2);
+    const lockData = prisma.user.update.mock.calls[1][0].data;
+    expect(lockData.failedLoginAttempts).toBe(0);
+    expect(lockData.lockedUntil.getTime()).toBeGreaterThan(Date.now() + 14 * 60 * 1000);
   });
 
   it('423 AUTH_ACCOUNT_LOCKED while the lock is active, even with the right password', async () => {
@@ -105,8 +110,11 @@ describe('AuthService.login', () => {
       data: expect.objectContaining({ failedLoginAttempts: 0, lockedUntil: null, lastLoginIp: '127.0.0.1' }),
     });
     expect(prisma.session.create).toHaveBeenCalled();
-    expect(prisma.session.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 's1' }, data: expect.objectContaining({ version: 1 }) }),
+    expect(prisma.session.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 's1', version: 0 },
+        data: expect.objectContaining({ version: 1 }),
+      }),
     );
   });
 });
