@@ -21,7 +21,7 @@
 | Permission | Indiquée par story ; manquante → `403 ACCESS_DENIED`. Le front masque, le serveur décide |
 | Module | Route marquée **[M:SALES]** etc. → `403 FEATURE_NOT_ENABLED` si le module n'est pas activé sur le projet |
 | Listes | `?page=1&limit=20&sort=<champ>&order=asc|desc` + filtres ; réponse `{ data: T[], meta: { total, page, limit, totalPages } }` |
-| Erreurs | `{ messages: { statusCode: "400", code: "…", text: "…", level: "error", details?: [] } }` ; validation DTO → `400 INVALID_DATA` avec `text` listant les champs |
+| Erreurs | `{ messages: { statusCode: "400", code: "…", text: "…", level: "error", details?: [], meta?: {…} } }` ; validation DTO → `400 INVALID_DATA` avec `text` listant les champs. `text` est humain, **jamais parsé** ; toute valeur exploitable arrive dans `meta`. **Registre des clés `meta`** (toute nouvelle clé est annoncée au handoff pour typage explicite côté front) : `lockedUntil` (ISO 8601 UTC, sur `423 AUTH_ACCOUNT_LOCKED`) |
 | Identifiants | cuid ; invalide → `400 INVALID_CUID` |
 | Dates | Dates métier `YYYY-MM-DD` ; horodatages ISO 8601 UTC |
 | Montants | Nombres décimaux à 2 décimales (`238.8`), jamais formatés côté serveur sauf dans les documents Word |
@@ -51,7 +51,7 @@ Money        = number                               // 2 décimales
   - `POST /auth/login` `{ email, password }` → `200 { accessToken, refreshToken, expiresIn }` · `401 AUTH_INVALID_CREDENTIALS` · `423 AUTH_ACCOUNT_LOCKED` (**`messages.meta.lockedUntil`** = fin du verrouillage en ISO 8601 UTC ; `text` est humain, ne pas le parser) · `403 AUTH_ACCOUNT_NOT_ACTIVE`
   - `POST /auth/refresh` `{ refreshToken }` → `200 { accessToken, refreshToken, expiresIn }` · `401` avec `REFRESH_TOKEN_INVALID_OR_EXPIRED` (illisible), `REFRESH_TOKEN_INVALID_OR_USED` (rotation : ancien token rejoué), `SESSION_NOT_FOUND` (déconnecté), `AUTH_ACCOUNT_NOT_ACTIVE` (compte désactivé entre-temps) — tous → retour au login
   - `POST /auth/logout` (Bearer) → `204`
-- Handoff front : écran V8 = aucun (la V8 a un sélecteur d'utilisateur libre, `renderSessionPicker`). Stocker les deux tokens ; intercepteur : sur `401 TOKEN_EXPIRED` refresh une fois puis rejouer, sur tout autre `401` déconnecter. Après login, appeler US-00-03. Le `423` porte l'heure de fin dans `messages.meta.lockedUntil` (ISO) — compte à rebours sur ce champ, jamais en parsant `text`. Livré le 31/08/2026 — `docs/features/auth.feature`.
+- Handoff front : écran V8 = aucun (la V8 a un sélecteur d'utilisateur libre, `renderSessionPicker`). Stocker les deux tokens ; intercepteur : sur `401 TOKEN_EXPIRED` refresh une fois puis rejouer, sur tout autre `401` déconnecter. **Le refresh doit être single-flight** (rotation à usage unique : deux refresh concurrents ⇒ le second reçoit `REFRESH_TOKEN_INVALID_OR_USED` et déconnecterait) — un seul refresh en vol, les requêtes en 401 attendent son résultat puis rejouent. Stratégie réactive retenue (décision du 31/08/2026) ; `expiresIn` reste disponible pour passer en refresh proactif (planifié à ~80 % de la durée) sans changement d'API si l'équipe le décide plus tard. Après login, appeler US-00-03. Le `423` porte l'heure de fin dans `messages.meta.lockedUntil` (ISO) — compte à rebours sur ce champ, jamais en parsant `text`. Livré le 31/08/2026 — `docs/features/auth.feature`.
 
 ### US-00-02 · Activer mon compte, réinitialiser mon mot de passe, changer d'email
 **En tant que** nouvel utilisateur, **je veux** activer mon compte depuis l'email reçu en choisissant mon mot de passe et en acceptant les CGU/RGPD.
