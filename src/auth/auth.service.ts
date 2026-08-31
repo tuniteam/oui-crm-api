@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Session, User, UserStatus } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { apiError } from '@/common/api-error';
+import { apiError, withMeta } from '@/common/api-error';
 import { getNumber } from '@/common/utils/config.utils';
 import { MS_PER_MINUTE, MS_PER_SECOND } from '@/common/utils/date.utils';
 import { normalizeEmail } from '@/common/utils/email.utils';
@@ -40,7 +40,9 @@ export class AuthService {
     if (!user) throw apiError.unauthorized('AUTH_INVALID_CREDENTIALS');
 
     if (user.lockedUntil && user.lockedUntil > now) {
-      throw apiError.locked('AUTH_ACCOUNT_LOCKED', user.lockedUntil.toISOString());
+      const lockedUntil = user.lockedUntil.toISOString();
+      // messages.meta.lockedUntil is the contract for the front countdown — never parse text
+      throw withMeta(apiError.locked('AUTH_ACCOUNT_LOCKED', lockedUntil), { lockedUntil });
     }
 
     if (!(await bcrypt.compare(dto.password, user.password))) {

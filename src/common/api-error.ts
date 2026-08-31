@@ -57,3 +57,13 @@ export const apiError: {
   locked: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.LOCKED),
   internal: (key, ...args) => new InternalServerErrorException(apiErrorBody(key, ...args)),
 };
+
+/**
+ * Attaches a structured `meta` object to an API error; AllExceptionsFilter forwards it as
+ * `messages.meta`. Use it whenever the front needs a value the human `text` also mentions
+ * (e.g. lockedUntil) — clients must never parse `text`.
+ */
+export function withMeta(exception: HttpException, meta: Record<string, unknown>): HttpException {
+  const response = exception.getResponse() as Record<string, unknown>;
+  return new HttpException({ ...response, meta }, exception.getStatus());
+}

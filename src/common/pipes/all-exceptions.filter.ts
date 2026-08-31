@@ -20,6 +20,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let code: string = errors.code.INTERNAL_ERROR;
     let text: string = errors.message.INTERNAL_ERROR;
     let details: string[] | undefined;
+    let meta: Record<string, unknown> | undefined;
 
     if (exception instanceof HttpException) {
       const exceptionResponse = exception.getResponse();
@@ -32,6 +33,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
           text = resp.message as string;
           if (Array.isArray(resp.details)) {
             details = resp.details as string[];
+          }
+          if (resp.meta && typeof resp.meta === 'object') {
+            meta = resp.meta as Record<string, unknown>;
           }
         }
         else if (status === HttpStatus.UNAUTHORIZED) {
@@ -61,6 +65,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     };
     if (details) {
       body.details = details;
+    }
+    if (meta) {
+      body.meta = meta;
     }
 
     response.status(status).json({ messages: body });

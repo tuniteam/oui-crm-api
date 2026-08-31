@@ -48,10 +48,10 @@ Money        = number                               // 2 décimales
 - Règles : sessions à `version` (SPEC-03 §2.1) ; 5 échecs → verrouillage 15 min ; compte `PENDING` ou `INACTIVE` → refus.
 - Permissions : aucune (routes publiques).
 - API :
-  - `POST /auth/login` `{ email, password }` → `200 { accessToken, refreshToken, expiresIn }` · `401 AUTH_INVALID_CREDENTIALS` · `423 AUTH_ACCOUNT_LOCKED` (`text` contient l'heure de fin) · `403 AUTH_ACCOUNT_NOT_ACTIVE`
+  - `POST /auth/login` `{ email, password }` → `200 { accessToken, refreshToken, expiresIn }` · `401 AUTH_INVALID_CREDENTIALS` · `423 AUTH_ACCOUNT_LOCKED` (**`messages.meta.lockedUntil`** = fin du verrouillage en ISO 8601 UTC ; `text` est humain, ne pas le parser) · `403 AUTH_ACCOUNT_NOT_ACTIVE`
   - `POST /auth/refresh` `{ refreshToken }` → `200 { accessToken, refreshToken, expiresIn }` · `401` avec `REFRESH_TOKEN_INVALID_OR_EXPIRED` (illisible), `REFRESH_TOKEN_INVALID_OR_USED` (rotation : ancien token rejoué), `SESSION_NOT_FOUND` (déconnecté), `AUTH_ACCOUNT_NOT_ACTIVE` (compte désactivé entre-temps) — tous → retour au login
   - `POST /auth/logout` (Bearer) → `204`
-- Handoff front : écran V8 = aucun (la V8 a un sélecteur d'utilisateur libre, `renderSessionPicker`). Stocker les deux tokens ; intercepteur : sur `401 TOKEN_EXPIRED` refresh une fois puis rejouer, sur tout autre `401` déconnecter. Après login, appeler US-00-03. Le `423` porte l'heure de fin dans `text` (ISO). Livré le 31/08/2026 — `docs/features/auth.feature`.
+- Handoff front : écran V8 = aucun (la V8 a un sélecteur d'utilisateur libre, `renderSessionPicker`). Stocker les deux tokens ; intercepteur : sur `401 TOKEN_EXPIRED` refresh une fois puis rejouer, sur tout autre `401` déconnecter. Après login, appeler US-00-03. Le `423` porte l'heure de fin dans `messages.meta.lockedUntil` (ISO) — compte à rebours sur ce champ, jamais en parsant `text`. Livré le 31/08/2026 — `docs/features/auth.feature`.
 
 ### US-00-02 · Activer mon compte, réinitialiser mon mot de passe, changer d'email
 **En tant que** nouvel utilisateur, **je veux** activer mon compte depuis l'email reçu en choisissant mon mot de passe et en acceptant les CGU/RGPD.
