@@ -32,6 +32,9 @@ export class MeRoleRelationshipDto {
   @ApiProperty({ example: 'SALES_REP' })
   roleCode: string;
 
+  @ApiProperty({ example: 'Sales representative', description: 'Display label of the role' })
+  roleLabel: string;
+
   @ApiPropertyOptional({ example: 'cmthas5lv009z5qp4tyv8k87s', nullable: true, description: 'null = backoffice relation' })
   projectId: string | null;
 
@@ -76,6 +79,13 @@ export class MeResponseDto {
 
   @ApiPropertyOptional({ example: '0601020304', nullable: true })
   phone: string | null;
+
+  @ApiPropertyOptional({
+    example: '2026-08-31T10:00:00.000Z',
+    nullable: true,
+    description: 'Last password change (profile security section); null when never changed',
+  })
+  passwordChangedAt: Date | null;
 
   @ApiPropertyOptional({ example: 'WB', nullable: true, description: 'Initials of the first relation' })
   initials: string | null;

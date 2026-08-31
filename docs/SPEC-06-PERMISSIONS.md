@@ -185,12 +185,13 @@ ajouts CRM (scope de chaque permission, périmètre géographique) et la fusion 
   "email": "email.ouicrm+wiem@gmail.com",
   "firstName": "Wiem", "lastName": "Bousaid",
   "phone": "0601020304",                  // null si absent
+  "passwordChangedAt": "2026-08-31T10:00:00.000Z", // null si jamais changé (section Sécurité)
   "initials": "WB",                       // celles de la 1re relation active, null si aucune
   "avatarUrl": "https://…presignée…",     // ~15 min, null si pas d'avatar — ne pas la stocker
   "contactType": "PROJECT",              // BACKOFFICE | PROJECT (ex-CLIENT)
   "roleRelationships": [
     {
-      "roleCode": "SALES_REP",
+      "roleCode": "SALES_REP", "roleLabel": "Sales representative",
       "projectId": "…", "projectName": "Périscolia", "projectSlug": "periscolia",
       "displayOrder": 1,
       "outOfScopeAccess": "RESTRICTED",

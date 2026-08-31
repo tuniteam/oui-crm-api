@@ -25,6 +25,7 @@ type RelationLoaded = UserWithAccess['userRoleProjects'][number];
 function mapRelation(urp: RelationLoaded, overrides: UserWithAccess['overrides']): MeRoleRelationshipDto {
   return {
     roleCode: urp.role.code,
+    roleLabel: urp.role.label,
     projectId: urp.projectId,
     projectName: urp.project?.name ?? null,
     projectSlug: urp.project?.slug ?? null,
@@ -66,6 +67,7 @@ export function mapToMeResponse(user: UserWithAccess, avatarUrl: string | null):
     firstName: user.firstName,
     lastName: user.lastName,
     phone: user.phone,
+    passwordChangedAt: user.passwordChangedAt,
     initials: activeRelations[0]?.initials ?? null,
     avatarUrl,
     contactType: isBackoffice ? ContactType.BACKOFFICE : ContactType.PROJECT,

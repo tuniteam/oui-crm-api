@@ -104,6 +104,7 @@ describe('mapToMeResponse (SPEC-06 §6)', () => {
     const rel = me.roleRelationships[0];
     expect(rel).toMatchObject({
       roleCode: 'SALES_REP',
+      roleLabel: 'Sales representative',
       projectSlug: 'periscolia',
       outOfScopeAccess: 'RESTRICTED',
       modules: ['SALES'],
