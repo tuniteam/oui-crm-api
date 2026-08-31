@@ -221,10 +221,6 @@ export const ApiMessages = {
 
     legal: {
       tag: 'Legal',
-      versions: {
-        summary: 'Current legal document versions',
-        description: 'Returns the current CGU and RGPD versions and URLs',
-      },
       accept: {
         summary: 'Accept legal documents',
         description: 'Stamps the current versions of the documents the user must re-accept',
@@ -234,11 +230,10 @@ export const ApiMessages = {
     profile: {
       tag: 'Profile',
       me: {
-        summary: 'Current user and project accesses',
+        summary: 'Current user, profile and project accesses',
         description:
-          'Returns the authenticated user, its contact type (BACKOFFICE or PROJECT) and one relation per project with role, effective permissions, features and geographic scope.',
+          'Single profile read: identity, phone, avatar URL, contact type (BACKOFFICE or PROJECT), one relation per project with role, effective permissions (already corrected by overrides), features and geographic scope, plus the legal re-acceptance state.',
       },
-      get: { summary: 'Get profile', description: 'Returns the profile of the authenticated user' },
       update: { summary: 'Update profile', description: 'Updates first name, last name and phone' },
       changePassword: {
         summary: 'Change password',

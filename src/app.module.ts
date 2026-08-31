@@ -14,6 +14,8 @@ import { JobsModule } from './jobs/jobs.module';
 import { AuthModule } from './auth/auth.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { ProjectsModule } from './projects/projects.module';
+import { ProfileModule } from './profile/profile.module';
+import { LegalModule } from './legal/legal.module';
 
 @Module({
   imports: [
@@ -25,6 +27,8 @@ import { ProjectsModule } from './projects/projects.module';
     AuthModule,
     AuditLogModule,
     ProjectsModule,
+    ProfileModule,
+    LegalModule,
     HealthModule,
     StorageModule,
     FilesModule,

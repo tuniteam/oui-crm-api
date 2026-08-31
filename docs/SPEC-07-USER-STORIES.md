@@ -69,8 +69,13 @@ Money        = number                               // 2 décimales
 ### US-00-03 · Voir mes projets et mes accès, choisir mon projet
 **En tant qu'** utilisateur connecté, **je veux** voir les projets auxquels j'ai accès et ce que j'y peux faire **afin de** choisir mon espace de travail.
 - Règles : SPEC-06 §6 — backoffice (`contactType = BACKOFFICE`, relation sans projet, scope `ALL`) vs non backoffice (une relation par projet) ; relations suspendues/expirées absentes.
-- API : `GET /profile/me` (Bearer, **sans** `x-project-id`) → `MeResponseDto` (SPEC-06 §6) ; `PATCH /profile` `{ firstName, lastName, phone }` ; `POST /profile/password` `{ currentPassword, newPassword }` ; `POST /profile/avatar` (multipart) ; `POST /legal/accept` `{ cgu: true, rgpd: true }` si `legalReacceptanceRequired`.
-- Handoff front : écran V8 = bandeau utilisateur + `renderSessionPicker` (à remplacer par un choix de projet). Une seule relation → sélection automatique. Mémoriser le projet courant et injecter `x-project-id` sur tous les appels **[P]**. Construire les gardes de navigation à partir de `roleRelationships[i].permissions` (`code` + `scope`) et `modules`. Le backoffice voit un sélecteur de projet libre (`GET /projects`).
+- API (Bearer, **sans** `x-project-id` ; chemins soft-m conservés, décision du 31/08/2026 — revue KISS : `GET /profile` fusionné dans `/me`, pas de `GET /legal/versions`, les documents arrivent par `activation/validate` et `/profile/me`) :
+  - `GET /profile/me` → `MeResponseDto` (SPEC-06 §6) **+ `phone` + `avatarUrl`** (presignée, null si absent) — l'unique lecture de profil
+  - `PATCH /profile` `{ firstName?, lastName?, phone? }` → `{ id, email, firstName, lastName, phone }` · `400 EMPTY_UPDATE_PAYLOAD`
+  - `PATCH /profile/change-password` `{ oldPassword, newPassword }` → `{ success: true }` ; **toutes les autres sessions fermées**, la courante conservée · `400 OLD_PASSWORD_MISMATCH` · `400 PASSWORD_TOO_WEAK` · `400 PASSWORD_MUST_BE_DIFFERENT_FROM_OLD`
+  - `PATCH /profile/avatar` (multipart `file`, JPEG/PNG ≤ 2 Mo, magic bytes) → `{ avatarUrl }` — remplace l'existant · `400 STORAGE_*` ; `DELETE /profile/avatar` → `204` · `404 USER_AVATAR_NOT_SET`
+  - `POST /legal/accept` `{ cgu?: true, rgpd?: true }` → `{ accepted, legalReacceptanceRequired }` (versions estampillées serveur) · `400 INVALID_DATA` si rien à accepter
+- Handoff front : écran V8 = bandeau utilisateur + `renderSessionPicker` (à remplacer par un choix de projet). Une seule relation → sélection automatique. Mémoriser le projet courant et injecter `x-project-id` sur tous les appels **[P]**. Construire les gardes de navigation à partir de `roleRelationships[i].permissions` (`code` + `scope` + `source`) et `modules` — jamais pour décider. Si `legalReacceptanceRequired`, bloquer l'app (hors backoffice) et afficher `legalDocumentsToAccept` → `POST /legal/accept`. Le backoffice voit un sélecteur de projet libre (`GET /projects`). Livré le 31/08/2026 — `docs/features/profile.feature`.
 
 ### US-00-04 · Administrer les projets (backoffice)
 **En tant qu'** opérateur de la plateforme, **je veux** créer un projet et activer ses modules.
