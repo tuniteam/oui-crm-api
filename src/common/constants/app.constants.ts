@@ -27,3 +27,12 @@ export const PRISMA_ERROR = {
   RECORD_NOT_FOUND: 'P2025',
   UNIQUE_VIOLATION: 'P2002',
 } as const;
+
+/** Application-level environment keys read outside a module's own *_ENV map. */
+export const APP_ENV = {
+  NODE_ENV: 'NODE_ENV',
+  PORT: 'PORT',
+  BASE_URL: 'BASE_URL',
+  CORS_ORIGINS: 'CORS_ORIGINS',
+  PLATFORM_NAME: 'PLATFORM_NAME',
+} as const;

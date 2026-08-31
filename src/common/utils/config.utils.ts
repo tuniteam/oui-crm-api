@@ -2,8 +2,9 @@ import { ConfigService } from '@nestjs/config';
 
 /** Numeric environment value with a fallback; an unparsable value falls back too. */
 export function getNumber(config: ConfigService, key: string, fallback: number): number {
-  const raw = config.get<string>(key);
-  const value = raw === undefined || raw === '' ? NaN : Number(raw);
+  const raw = config.get<string>(key)?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
   return Number.isFinite(value) ? value : fallback;
 }
 

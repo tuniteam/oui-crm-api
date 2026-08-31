@@ -51,7 +51,7 @@ export function computeOutdatedLegalDocuments(user: UserLegalState): LegalDocume
  *  - POST /legal/accept (documents the user was asked to re-accept)
  *
  * The version is ALWAYS taken from the server constants — never from the caller
- * (RG5: no payload/URL-driven version). Front and back stay aligned via GET /legal/versions.
+ * (RG5: no payload/URL-driven version). Front and back stay aligned via /profile/me and activation/validate.
  */
 export async function stampConsents(
   tx: Prisma.TransactionClient,

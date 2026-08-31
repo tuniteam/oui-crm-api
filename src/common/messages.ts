@@ -21,13 +21,10 @@ const errorDefinitions = {
   AUTH_INVALID_CREDENTIALS: 'Invalid email or password',
   AUTH_ACCOUNT_LOCKED: (until: string) => `Account locked until ${until}`,
   AUTH_ACCOUNT_NOT_ACTIVE: 'Account is not active',
-  AUTH_USER_NOT_FOUND: 'User not found',
   TOKEN_EXPIRED: 'Access token expired',
-  REFRESH_TOKEN_REQUIRED: 'Refresh token is required',
   REFRESH_TOKEN_INVALID_OR_EXPIRED: 'Refresh token is invalid or expired',
   REFRESH_TOKEN_INVALID_OR_USED: 'Refresh token is invalid or has already been used',
   SESSION_NOT_FOUND: 'Session not found',
-  SESSION_REVOKED_OR_EXPIRED: 'Session revoked or expired',
   JWT_ACCESS_SECRET_MISSING: 'JWT_ACCESS_SECRET is not configured',
 
   // Guards (project & permissions)
@@ -38,12 +35,10 @@ const errorDefinitions = {
   BACKOFFICE_FILTER_REQUIRED: 'Backoffice users must specify the isBackoffice filter',
 
   // Activation / password reset / e-mail change
-  ACTIVATION_TOKEN_REQUIRED: 'Activation token is required',
   ACTIVATION_TOKEN_INVALID: 'Activation token is invalid',
   ACTIVATION_TOKEN_EXPIRED: 'Activation token has expired; a new one has been sent',
   ACTIVATION_TOKEN_SECRET_MISSING: 'ACTIVATION_CRYPTR_SECRET is not configured',
   LEGAL_CONSENT_REQUIRED: 'CGU and RGPD consent is required',
-  PASSWORD_RESET_TOKEN_REQUIRED: 'Password reset token is required',
   PASSWORD_RESET_TOKEN_INVALID: 'Password reset token is invalid',
   PASSWORD_RESET_TOKEN_EXPIRED: 'Password reset token has expired',
   PASSWORD_RESET_TOKEN_SECRET_MISSING: 'PASSWORD_RESET_CRYPTR_SECRET is not configured',
@@ -53,17 +48,13 @@ const errorDefinitions = {
   OLD_PASSWORD_MISMATCH: 'Current password is incorrect',
   EMAIL_UNCHANGED: 'New e-mail is identical to the current one',
   EMAIL_ALREADY_TAKEN: 'This e-mail is already in use',
-  EMAIL_CHANGE_TOKEN_REQUIRED: 'E-mail change token is required',
   EMAIL_CHANGE_TOKEN_NOT_FOUND: 'E-mail change token not found',
   EMAIL_CHANGE_TOKEN_EXPIRED: 'E-mail change token has expired',
   EMAIL_CHANGE_TOKEN_SECRET_MISSING: 'EMAIL_CHANGE_CRYPTR_SECRET is not configured',
-  USER_ACTIVE_EMAIL_SELF_SERVICE: 'Active users must change their e-mail themselves',
-  USER_INACTIVE_EMAIL_CHANGE: 'Cannot change the e-mail of an inactive user',
   EMAIL_SEND_FAILED: 'E-mail could not be sent',
 
   // Users & roles
   USER_NOT_FOUND: 'User not found',
-  EMAIL_ALREADY_EXISTS: 'A user with this e-mail already exists',
   EMAIL_EXISTS_FOR_PROJECT: 'This user is already assigned to the project',
   INVALID_ROLE: 'Role not found or not allowed',
   ROLE_NOT_FOUND: (id: string) => `Role ${id} not found`,
@@ -122,11 +113,6 @@ const errorDefinitions = {
   FILE_PROJECT_OWNER_MISMATCH: 'Owner project does not match the current project',
   FILENAME_INVALID_CHARS: 'File name contains invalid characters',
 
-  // WebSocket (L5)
-  WS_MISSING_TOKEN: 'Missing authentication token',
-  WS_INVALID_SESSION: 'Invalid or expired session',
-  WS_TOKEN_EXPIRED: 'Token expired',
-  WS_UNAUTHORIZED: 'Unauthorized',
 } as const;
 
 type ErrorKey = keyof typeof errorDefinitions;

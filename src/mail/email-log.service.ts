@@ -59,21 +59,19 @@ export class EmailLogService {
       select: { id: true, targetId: true, recipient: true, status: true },
     });
 
-    // Pair each created row with its entry by (targetId, recipient) rather than by
-    // index: it does not rely on createManyAndReturn preserving the input order.
-    const byKey = new Map(entries.map((e) => [`${e.targetId}|${e.recipient}`, e]));
-
-    // Fire-and-forget, throttled — never blocks the HTTP response (CLAUDE.md #7).
+    // Pair each created row with its entry by index — createManyAndReturn preserves the
+    // input order on PostgreSQL, and a (targetId, recipient) key would collide when a batch
+    // legitimately carries two different e-mails for the same target and recipient.
+    // Fire-and-forget, throttled — never blocks the HTTP response.
     const limit = pLimit(MAIL_SMTP_CONCURRENCY);
-    for (const log of created) {
-      const entry = byKey.get(`${log.targetId}|${log.recipient}`);
-      if (!entry) continue;
+    created.forEach((log, index) => {
+      const entry = entries[index];
       void limit(() =>
         this.run(log.id, entry, send).catch((err) => {
           this.logger.error(`[EmailLog] job ${log.id} crashed: ${err?.message ?? err}`);
         }),
       );
-    }
+    });
 
     return created;
   }
