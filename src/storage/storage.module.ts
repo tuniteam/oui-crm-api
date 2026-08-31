@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import * as Minio from 'minio';
+import { STORAGE_ENV } from './storage.constants';
 import { MINIO_CLIENT, StorageService } from './storage.service';
 
 @Module({
@@ -10,11 +11,11 @@ import { MINIO_CLIENT, StorageService } from './storage.service';
       provide: MINIO_CLIENT,
       useFactory: (configService: ConfigService): Minio.Client => {
         return new Minio.Client({
-          endPoint: configService.getOrThrow<string>('MINIO_ENDPOINT'),
-          port: parseInt(configService.getOrThrow<string>('MINIO_PORT'), 10),
-          useSSL: configService.get<string>('MINIO_USE_SSL') === 'true',
-          accessKey: configService.getOrThrow<string>('MINIO_ACCESS_KEY'),
-          secretKey: configService.getOrThrow<string>('MINIO_SECRET_KEY'),
+          endPoint: configService.getOrThrow<string>(STORAGE_ENV.MINIO_ENDPOINT),
+          port: parseInt(configService.getOrThrow<string>(STORAGE_ENV.MINIO_PORT), 10),
+          useSSL: configService.get<string>(STORAGE_ENV.MINIO_USE_SSL) === 'true',
+          accessKey: configService.getOrThrow<string>(STORAGE_ENV.MINIO_ACCESS_KEY),
+          secretKey: configService.getOrThrow<string>(STORAGE_ENV.MINIO_SECRET_KEY),
         });
       },
       inject: [ConfigService],

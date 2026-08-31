@@ -35,7 +35,8 @@ import {
 import { UpdateProjectFeaturesDto } from './dto/update-project-features.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { ProjectConfigExportService } from './project-config-export.service';
-import { AUDIT_OBJECT_PROJECT, PROJECT_AUDIT, XLSX_MIME_TYPE } from './projects.constants';
+import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
+import { PROJECT_AUDIT, XLSX_MIME_TYPE } from './projects.constants';
 import { ProjectsService } from './projects.service';
 
 const swagger = ApiMessages.swagger;
@@ -137,7 +138,7 @@ export class ProjectsController {
       projectId: id,
       userId: user.id,
       action: PROJECT_AUDIT.CONFIG_EXPORT,
-      objectType: AUDIT_OBJECT_PROJECT,
+      objectType: AUDIT_OBJECTS.PROJECT,
       objectId: id,
       metadata: { filename: file.filename },
     });

@@ -1,16 +1,17 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptionalNotNull } from '@/common/decorators/optional-not-null.decorator';
 
 export class UpdateProfileDto {
   @ApiPropertyOptional({ example: 'Wiem' })
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
   firstName?: string;
 
   @ApiPropertyOptional({ example: 'Bousaid' })
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
@@ -38,4 +39,11 @@ export class ProfileCoreResponseDto {
 
   @ApiPropertyOptional({ example: '0601020304', nullable: true })
   phone: string | null;
+}
+
+/** Multipart file as delivered by the FileInterceptor. */
+export interface UploadedFileLike {
+  buffer: Buffer;
+  originalname: string;
+  mimetype?: string;
 }

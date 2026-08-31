@@ -115,7 +115,7 @@ model Project {
   slug        String        @unique @db.VarChar(50)
   name        String        @db.VarChar(100)
   productName String        @map("product_name") @db.VarChar(100)
-  description String?
+  description String?       @db.VarChar(1000)
   status      ProjectStatus @default(DRAFT)
   activatedAt DateTime?     @map("activated_at")
 
@@ -171,7 +171,6 @@ model User {
   failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
   lockedUntil         DateTime? @map("locked_until")
   passwordChangedAt   DateTime? @map("password_changed_at")
-  avatarFileId        String?   @map("avatar_file_id")
 
   cguVersion     Int?      @map("cgu_version")
   cguAcceptedAt  DateTime? @map("cgu_accepted_at")
@@ -355,7 +354,7 @@ model Scope {
   id            String      @id @default(cuid())
   projectId     String      @map("project_id")
   name          String      @db.VarChar(100)
-  description   String      @default("")
+  description   String      @default("") @db.VarChar(500)
   regions       String[]    @default([]) @db.VarChar(100)
   departments   String[]    @default([]) @db.VarChar(3)
   portfolioOnly Boolean     @default(false) @map("portfolio_only")

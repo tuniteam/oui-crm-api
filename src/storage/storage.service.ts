@@ -15,6 +15,7 @@ import {
 import {
   assertStorageAccessScope,
   buildObjectPath,
+  FILE_NAME_PATTERN,
   isMinioNotFoundError,
   normalizeFileExtension,
   validateFileBuffer,
@@ -106,8 +107,8 @@ export class StorageService implements OnModuleInit {
     assertStorageAccessScope(projectId, userId, objectKey);
 
     // Validate download filename if provided (defense against HTTP header injection).
-    // Unicode letters/digits + safe punctuation — supports French accents and apostrophes.
-    if (downloadFileName && !/^[\p{L}\p{N}._\-\s()']+$/u.test(downloadFileName)) {
+    // Uploads sanitize names with the same pattern (sanitizeFileName), so stored names pass.
+    if (downloadFileName && !FILE_NAME_PATTERN.test(downloadFileName)) {
       throw apiError.badRequest('FILENAME_INVALID_CHARS');
     }
 

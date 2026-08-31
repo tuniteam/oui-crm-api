@@ -1,18 +1,19 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptionalNotNull } from '@/common/decorators/optional-not-null.decorator';
 import { PROJECT_DESCRIPTION_MAX_LENGTH, PROJECT_NAME_MAX_LENGTH } from '../projects.constants';
 
 /** The slug is immutable (URLs, export file names). */
 export class UpdateProjectDto {
   @ApiPropertyOptional({ example: 'Périscolia' })
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @IsNotEmpty()
   @MaxLength(PROJECT_NAME_MAX_LENGTH)
   name?: string;
 
   @ApiPropertyOptional({ example: 'Périscolia — gestion périscolaire' })
-  @IsOptional()
+  @IsOptionalNotNull()
   @IsString()
   @IsNotEmpty()
   @MaxLength(PROJECT_NAME_MAX_LENGTH)

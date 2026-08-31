@@ -2,10 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { File, FileCategory, FileOwnerType, Prisma } from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { PRISMA_ERROR } from '@/common/constants/app.constants';
-import { formatMegabytes } from '@/common/utils/math.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/storage/storage.service';
-import { assertFileSize, detectAndValidateMimeType, isMinioNotFoundError } from '@/storage/storage.utils';
+import { assertFileSize, detectAndValidateMimeType, isMinioNotFoundError, sanitizeFileName } from '@/storage/storage.utils';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { userHasPermission } from '@/auth/utils/permissions.util';
 import {
@@ -65,9 +64,6 @@ export class FileService {
 
     // Category limits, checked once, before any MinIO write; putObject trusts the result.
     const maxSize = MAX_SIZE_BY_CATEGORY[input.category];
-    if (input.buffer.byteLength > maxSize) {
-      throw apiError.badRequest('STORAGE_FILE_TOO_LARGE', formatMegabytes(maxSize));
-    }
     assertFileSize(input.buffer, maxSize);
     const detectedMime = await detectAndValidateMimeType(input.buffer, input.declaredMimeType);
     if (!ALLOWED_MIME_BY_CATEGORY[input.category].includes(detectedMime)) {
@@ -86,20 +82,23 @@ export class FileService {
             category: input.category,
           };
 
+    // Sanitized once here: what is stored is always servable as a download (same pattern)
+    const safeName = sanitizeFileName(input.fileName);
     const ref = await this.storageService.putObject({
       context,
       uploadedBy: input.uploadedBy,
       buffer: input.buffer,
-      originalFileName: input.fileName,
+      originalFileName: safeName,
       validatedMimeType: detectedMime,
     });
 
-    const finalFileName = ensureFileNameHasExtension(input.fileName, input.category, ref.mimeType);
+    const finalFileName = ensureFileNameHasExtension(safeName, input.category, ref.mimeType);
 
-    // Single-per-owner categories: snapshot the previous file BEFORE inserting so the
-    // replacement is atomic and a concurrently uploaded file is never deleted by mistake.
+    // Single-per-owner categories: snapshot the previous file(s) BEFORE inserting so the
+    // replacement is atomic; a partial unique index (files_single_per_owner_key) rejects the
+    // loser of a concurrent first upload instead of leaving duplicates.
     const previous = SINGLE_PER_OWNER.has(input.category)
-      ? await this.prisma.file.findFirst({
+      ? await this.prisma.file.findMany({
           where: {
             projectId: input.projectId,
             ownerType: input.ownerType,
@@ -108,7 +107,7 @@ export class FileService {
           },
           select: { id: true, filePath: true, projectId: true },
         })
-      : null;
+      : [];
 
     let file: File;
     try {
@@ -128,11 +127,12 @@ export class FileService {
           }),
         }),
       ];
-      if (previous) {
-        ops.push(this.prisma.file.delete({ where: { id: previous.id } }));
+      if (previous.length) {
+        // deleteMany: tolerant to a concurrent replacement having already removed the row
+        ops.unshift(this.prisma.file.deleteMany({ where: { id: { in: previous.map((f) => f.id) } } }));
       }
       const results = await this.prisma.$transaction(ops);
-      file = results[0] as File;
+      file = results[results.length - 1] as File;
     } catch (error) {
       // Compensate: remove the MinIO object if the DB transaction failed
       this.logger.error(`File DB insert failed, compensating MinIO delete: ${(error as Error).message}`);
@@ -142,10 +142,10 @@ export class FileService {
       throw apiError.internal('STORAGE_UPLOAD_FAILED');
     }
 
-    // Best-effort cleanup of the replaced object (DB row already deleted in the transaction)
-    if (previous) {
+    // Best-effort cleanup of the replaced objects (DB rows already deleted in the transaction)
+    for (const old of previous) {
       await this.storageService
-        .deleteObject(previous.projectId, input.uploadedBy, previous.filePath)
+        .deleteObject(old.projectId, input.uploadedBy, old.filePath)
         .catch(() => undefined);
     }
 

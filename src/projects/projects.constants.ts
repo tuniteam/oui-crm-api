@@ -12,8 +12,6 @@ export const PROJECT_AUDIT = {
   CONFIG_EXPORT: 'project.config.export',
 } as const;
 
-export const AUDIT_OBJECT_PROJECT = 'Project';
-
 /** Allowed status transitions (POST /projects/:id/status) and the audit action of each one. */
 export const PROJECT_TRANSITIONS: Record<ProjectStatus, Partial<Record<ProjectStatus, string>>> = {
   [ProjectStatus.DRAFT]: { [ProjectStatus.ACTIVE]: PROJECT_AUDIT.ACTIVATE },

@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { FeatureCode, OutOfScopeAccess, ScopeType } from '@prisma/client';
 import { ContactType } from '@/common/enums/contact.enum';
-import { LegalDocument } from '@/common/legal/legal.constants';
+import { LegalDocumentDto } from '@/common/legal/legal.dto';
 
 export class MePermissionDto {
   @ApiProperty({ example: 'quotes:create' })
@@ -60,17 +60,6 @@ export class MeRoleRelationshipDto {
   expiresAt: Date | null;
 }
 
-export class LegalDocumentToAcceptDto {
-  @ApiProperty({ enum: LegalDocument, example: LegalDocument.CGU })
-  code: LegalDocument;
-
-  @ApiProperty({ example: 1 })
-  version: number;
-
-  @ApiProperty({ example: 'https://oui-crm.example/cgu' })
-  url: string;
-}
-
 /** SPEC-06 §6 — single profile read after login (US-00-03). */
 export class MeResponseDto {
   @ApiProperty({ example: 'cmthas5q500d85qp4nsdjto02', description: 'User identifier' })
@@ -103,6 +92,6 @@ export class MeResponseDto {
   @ApiProperty({ example: false, description: 'Always false for backoffice users' })
   legalReacceptanceRequired: boolean;
 
-  @ApiProperty({ type: [LegalDocumentToAcceptDto] })
-  legalDocumentsToAccept: LegalDocumentToAcceptDto[];
+  @ApiProperty({ type: [LegalDocumentDto] })
+  legalDocumentsToAccept: LegalDocumentDto[];
 }

@@ -21,8 +21,9 @@ import { ApiMessages } from '@/common/messages';
 import { AvatarResponseDto } from './dto/avatar-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { MeResponseDto } from './dto/me-response.dto';
-import { ProfileCoreResponseDto, UpdateProfileDto } from './dto/update-profile.dto';
+import { ProfileCoreResponseDto, UpdateProfileDto, UploadedFileLike } from './dto/update-profile.dto';
 import { SuccessResponseDto } from '@/auth/dto/success-response.dto';
+import { MAX_SIZE_BY_CATEGORY } from '@/files/files.constants';
 import { ProfileService } from './profile.service';
 
 const swagger = ApiMessages.swagger;
@@ -72,10 +73,11 @@ export class ProfileController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation(swagger.profile.uploadAvatar)
   @ApiPatchResponse(AvatarResponseDto)
-  @UseInterceptors(FileInterceptor('file'))
+  // Cap the multipart body before it is buffered — FileService re-checks per category
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_SIZE_BY_CATEGORY.AVATAR } }))
   updateAvatar(
     @CurrentUser() user: AuthenticatedUser,
-    @UploadedFile() file: { buffer: Buffer; originalname: string; mimetype?: string } | undefined,
+    @UploadedFile() file: UploadedFileLike | undefined,
   ): Promise<AvatarResponseDto> {
     return this.profileService.updateAvatar(user.id, file);
   }

@@ -121,6 +121,25 @@ export async function validateFileBuffer(
   return detectAndValidateMimeType(buffer, declaredMimeType);
 }
 
+/** Characters allowed in stored/downloaded file names (Content-Disposition safety). */
+export const FILE_NAME_PATTERN = /^[\p{L}\p{N}._\-\s()']+$/u;
+const FILE_NAME_FORBIDDEN = /[^\p{L}\p{N}._\-\s()']/gu;
+const FILE_NAME_MAX_LENGTH = 200;
+
+/**
+ * Makes any client-supplied file name storable AND downloadable: forbidden characters are
+ * replaced, length capped (extension preserved). getObject validates with the same pattern,
+ * so a stored name can always be served as a download.
+ */
+export function sanitizeFileName(fileName: string): string {
+  const cleaned = fileName.replace(FILE_NAME_FORBIDDEN, '_').trim();
+  if (!cleaned || cleaned === '.') return 'file';
+  if (cleaned.length <= FILE_NAME_MAX_LENGTH) return cleaned;
+  const dot = cleaned.lastIndexOf('.');
+  const ext = dot > 0 ? cleaned.slice(dot) : '';
+  return cleaned.slice(0, FILE_NAME_MAX_LENGTH - ext.length) + ext;
+}
+
 export function normalizeFileExtension(fileName: string): string {
   const extension = fileName.split('.').pop()?.toLowerCase() ?? '';
   return extension && extension !== fileName.toLowerCase() ? extension : 'bin';

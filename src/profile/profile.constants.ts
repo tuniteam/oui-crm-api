@@ -2,5 +2,3 @@
 export const PROFILE_AUDIT = {
   PASSWORD_CHANGE: 'profile.password.change',
 } as const;
-
-export const AUDIT_OBJECT_USER = 'User';

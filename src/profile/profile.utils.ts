@@ -1,13 +1,9 @@
 import { Prisma } from '@prisma/client';
-import { applyOverrides, isRelationActive } from '@/auth/utils/permissions.util';
+import { effectivePermissions, isRelationActive } from '@/auth/utils/permissions.util';
 import { ContactType } from '@/common/enums/contact.enum';
-import { LEGAL_DOCUMENTS } from '@/common/legal/legal.constants';
-import { computeOutdatedLegalDocuments } from '@/common/legal/legal.utils';
-import {
-  LegalDocumentToAcceptDto,
-  MeResponseDto,
-  MeRoleRelationshipDto,
-} from './dto/me-response.dto';
+import { LegalDocumentDto } from '@/common/legal/legal.dto';
+import { computeOutdatedLegalDocuments, listLegalDocuments } from '@/common/legal/legal.utils';
+import { MeResponseDto, MeRoleRelationshipDto } from './dto/me-response.dto';
 
 /** Everything GET /profile/me needs, in one query (same access rules as JwtStrategy). */
 export const userWithAccess = Prisma.validator<Prisma.UserDefaultArgs>()({
@@ -27,10 +23,6 @@ export type UserWithAccess = Prisma.UserGetPayload<typeof userWithAccess>;
 type RelationLoaded = UserWithAccess['userRoleProjects'][number];
 
 function mapRelation(urp: RelationLoaded, overrides: UserWithAccess['overrides']): MeRoleRelationshipDto {
-  const projectOverrides = overrides
-    .filter((o) => o.projectId === urp.projectId)
-    .map((o) => ({ code: o.permission.code, granted: o.granted }));
-
   return {
     roleCode: urp.role.code,
     projectId: urp.projectId,
@@ -38,10 +30,7 @@ function mapRelation(urp: RelationLoaded, overrides: UserWithAccess['overrides']
     projectSlug: urp.project?.slug ?? null,
     displayOrder: urp.displayOrder,
     outOfScopeAccess: urp.role.outOfScopeAccess,
-    permissions: applyOverrides(
-      urp.role.permissions.map((rp) => ({ code: rp.permission.code, scope: rp.scope })),
-      projectOverrides,
-    ),
+    permissions: effectivePermissions(urp, overrides),
     modules: urp.project?.features.map((f) => f.feature) ?? [],
     scope: urp.scope
       ? {
@@ -61,17 +50,15 @@ function mapRelation(urp: RelationLoaded, overrides: UserWithAccess['overrides']
  */
 export function mapToMeResponse(user: UserWithAccess, avatarUrl: string | null): MeResponseDto {
   const now = new Date();
-  const relations = user.userRoleProjects
-    .filter((urp) => isRelationActive(urp, now))
-    .map((urp) => mapRelation(urp, user.overrides));
+  // Only ACTIVE, non-expired relations count — including for the backoffice legal exemption
+  const activeRelations = user.userRoleProjects.filter((urp) => isRelationActive(urp, now));
+  const relations = activeRelations.map((urp) => mapRelation(urp, user.overrides));
 
-  const isBackoffice = user.userRoleProjects.some((urp) => urp.role.isBackoffice);
+  const isBackoffice = activeRelations.some((urp) => urp.role.isBackoffice);
   const outdated = isBackoffice ? [] : computeOutdatedLegalDocuments(user);
-  const legalDocumentsToAccept: LegalDocumentToAcceptDto[] = outdated.map((code) => ({
-    code,
-    version: LEGAL_DOCUMENTS[code].version,
-    url: LEGAL_DOCUMENTS[code].url,
-  }));
+  const legalDocumentsToAccept: LegalDocumentDto[] = listLegalDocuments().filter((d) =>
+    outdated.includes(d.code),
+  );
 
   return {
     contactId: user.id,
@@ -79,7 +66,7 @@ export function mapToMeResponse(user: UserWithAccess, avatarUrl: string | null):
     firstName: user.firstName,
     lastName: user.lastName,
     phone: user.phone,
-    initials: user.userRoleProjects.find((urp) => isRelationActive(urp, now))?.initials ?? null,
+    initials: activeRelations[0]?.initials ?? null,
     avatarUrl,
     contactType: isBackoffice ? ContactType.BACKOFFICE : ContactType.PROJECT,
     roleRelationships: relations,

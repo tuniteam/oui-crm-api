@@ -1,13 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { AuditLogService } from '@/audit-log/audit-log.service';
+import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { apiError } from '@/common/api-error';
 import { LegalDocument } from '@/common/legal/legal.constants';
 import { computeOutdatedLegalDocuments, stampConsents } from '@/common/legal/legal.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { LegalAcceptDto, LegalAcceptResponseDto } from './dto/legal-accept.dto';
-
-const LEGAL_AUDIT_ACCEPT = 'legal.accept';
-const AUDIT_OBJECT_USER = 'User';
+import { LEGAL_AUDIT } from './legal.constants';
 
 /**
  * US-00-03 — re-acceptance of updated legal documents. The current versions come from the
@@ -31,17 +30,18 @@ export class LegalService {
       await this.audit.log(tx, {
         projectId: null,
         userId,
-        action: LEGAL_AUDIT_ACCEPT,
-        objectType: AUDIT_OBJECT_USER,
+        action: LEGAL_AUDIT.ACCEPT,
+        objectType: AUDIT_OBJECTS.USER,
         objectId: userId,
         metadata: { accepted },
       });
     });
 
-    const user = await this.prisma.user.findUniqueOrThrow({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { cguVersion: true, cguAcceptedAt: true, rgpdVersion: true, rgpdAcceptedAt: true },
     });
+    if (!user) throw apiError.notFound('USER_NOT_FOUND');
     return { accepted, legalReacceptanceRequired: computeOutdatedLegalDocuments(user).length > 0 };
   }
 }
