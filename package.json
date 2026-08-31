@@ -20,17 +20,15 @@
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
     "db:seed": "npx tsx prisma/seed.ts",
-    "seed:dev": "npx tsx prisma/local-seed/runDevSeed.ts",
-    "fetch:holidays": "npx tsx prisma/fetchHolidays.ts",
-    "fetch:school-holidays": "npx tsx prisma/fetchSchoolHolidays.ts",
+    "typecheck:seed": "tsc -p tsconfig.seed.json",
+    "dev:local": "scripts\\dev-start.bat",
     "docker:rebuild:prod": "docker-compose down && docker-compose build --no-cache api && docker-compose up -d",
     "docker:rebuild:fast:prod": "docker-compose build api && docker-compose up -d",
     "docker:rebuild:dev": "docker-compose -f docker-compose.dev.yml down && docker-compose -f docker-compose.dev.yml build --no-cache api && docker-compose -f docker-compose.dev.yml up -d",
     "docker:rebuild:fast:dev": "docker-compose -f docker-compose.dev.yml build api && docker-compose -f docker-compose.dev.yml up -d",
     "docker:logs": "docker-compose logs -f api",
-    "swagger:check": "curl http://localhost:3000/api/docs-json",
-    "dev:workflow": "scripts\\dev-workflow.bat",
-    "verify": "npm run build && npm test && npm run docker:rebuild:fast"
+    "swagger:check": "node -e \"require('dotenv/config');const p=process.env.PORT||3001;require('http').get('http://localhost:'+p+'/api/docs-json',r=>{let d='';r.on('data',c=>d+=c).on('end',()=>{const j=JSON.parse(d);console.log('swagger OK,',Object.keys(j.paths).length,'paths');});}).on('error',e=>{console.error(e.message);process.exit(1);});\"",
+    "verify": "npm run build && npm test && npm run typecheck:seed"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",
@@ -47,7 +45,6 @@
     "@paralleldrive/cuid2": "^3.0.4",
     "@prisma/client": "^6.19.2",
     "@react-pdf/renderer": "^4.3.2",
-
     "axios": "^1.13.2",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
@@ -55,6 +52,7 @@
     "cryptr": "^6.4.0",
     "cuid": "^3.0.0",
     "date-fns": "^4.1.0",
+    "exceljs": "^4.4.0",
     "express-rate-limit": "^8.2.1",
     "file-type": "^21.3.4",
     "helmet": "^8.1.0",
@@ -127,6 +125,9 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node",
-    "coverageProvider": "v8"
+    "coverageProvider": "v8",
+    "moduleNameMapper": {
+      "^@/(.*)$": "<rootDir>/$1"
+    }
   }
 }

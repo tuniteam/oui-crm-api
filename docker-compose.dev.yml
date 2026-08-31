@@ -36,6 +36,60 @@ services:
       - ouicrm-network-dev
 
   # ===========================================
+  # MinIO (object storage: templates, documents, imports)
+  # Console: http://localhost:9001
+  # ===========================================
+  minio:
+    image: minio/minio:latest
+    container_name: ouicrm-minio-dev
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-ouicrm}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-ouicrm_minio_password}
+    ports:
+      - '${MINIO_PORT:-9000}:9000'
+      - '9001:9001'
+    volumes:
+      - minio_data_dev:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ouicrm-network-dev
+
+  # Creates the bucket once MinIO is ready, then exits
+  minio-init:
+    image: minio/mc:latest
+    container_name: ouicrm-minio-init-dev
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 ${MINIO_ACCESS_KEY:-ouicrm} ${MINIO_SECRET_KEY:-ouicrm_minio_password} &&
+      mc mb --ignore-existing local/${MINIO_BUCKET:-ouicrm} &&
+      echo 'bucket ready'"
+    networks:
+      - ouicrm-network-dev
+
+  # ===========================================
+  # Mailpit (SMTP sink for development)
+  # Web UI: http://localhost:8025 — SMTP: localhost:1025
+  # ===========================================
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: ouicrm-mailpit-dev
+    restart: unless-stopped
+    ports:
+      - '1025:1025'
+      - '8025:8025'
+    networks:
+      - ouicrm-network-dev
+
+  # ===========================================
   # OUI-CRM API (Development with Hot Reload)
   # ===========================================
   api:
@@ -91,6 +145,9 @@ services:
 volumes:
   postgres_data_dev:
     name: ouicrm_postgres_data_dev
+    driver: local
+  minio_data_dev:
+    name: ouicrm_minio_data_dev
     driver: local
 # ===========================================
 # Networks

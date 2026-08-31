@@ -1,74 +1,99 @@
 // ============================================
 // OUI-CRM - Main Entry Point
-// Point d'entrée de l'application NestJS
 // ============================================
 
-import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
-import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { AppModule } from './app.module';
-import { AllExceptionsFilter } from './common/pipes/all-exceptions.filter';
 import { ConfigService } from '@nestjs/config';
+import { NestFactory } from '@nestjs/core';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import { AppModule } from './app.module';
+import {
+  AUTH_RATE_LIMIT_WINDOW_MS,
+  AUTH_ENV,
+  DEFAULT_AUTH_RATE_LIMIT_MAX,
+  SWAGGER_BEARER_AUTH_SCHEME,
+} from './auth/auth.constants';
+import {
+  API_PREFIX,
+  DEFAULT_NODE_ENV,
+  DEFAULT_PORT,
+  NodeEnv,
+  SWAGGER_BEARER_AUTH,
+} from './common/constants/app.constants';
+import { ApiMessages } from './common/messages';
+import { AllExceptionsFilter } from './common/pipes/all-exceptions.filter';
+import { getNumber } from './common/utils/config.utils';
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { version: APP_VERSION } = require('../package.json') as { version: string };
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
-  const ENV = configService.get<string>('NODE_ENV', 'development'); // 'development' ou 'uat' ou 'production'
-  const BASE_URL: string =
-    ENV === 'uat' || ENV === 'production'
-      ? (process.env.BASE_URL ?? 'http://localhost:3000')
-      : 'http://localhost:3000';
-  // ============================================
-  // Global Prefix
-  // ============================================
-  app.setGlobalPrefix('api/v1');
+  const swagger = ApiMessages.swagger;
+
+  const ENV = configService.get<string>('NODE_ENV', DEFAULT_NODE_ENV) as NodeEnv;
+  const PORT = getNumber(configService, 'PORT', DEFAULT_PORT);
+  // Swagger "servers" entry: BASE_URL from .env, else the local port
+  const BASE_URL = configService.get<string>('BASE_URL') || `http://localhost:${PORT}`;
 
   // ============================================
-  // Validation Pipe
+  // HTTP hardening
   // ============================================
+  app.use(helmet());
+  app.use(
+    `/${API_PREFIX}/auth`,
+    rateLimit({
+      windowMs: AUTH_RATE_LIMIT_WINDOW_MS,
+      max: getNumber(configService, AUTH_ENV.AUTH_RATE_LIMIT_MAX, DEFAULT_AUTH_RATE_LIMIT_MAX),
+      standardHeaders: true,
+      legacyHeaders: false,
+    }),
+  );
+
+  app.setGlobalPrefix(API_PREFIX);
+
   app.useGlobalPipes(
     new ValidationPipe({
-      whitelist: true, // Supprime les propriétés non décorées
-      forbidNonWhitelisted: true, // Erreur si propriétés inconnues
-      transform: true, // Transforme les types automatiquement
+      whitelist: true, // strip undecorated properties
+      forbidNonWhitelisted: true, // error on unknown properties
+      transform: true,
     }),
   );
   app.useGlobalFilters(new AllExceptionsFilter());
+
   // ============================================
-  // CORS
+  // CORS — origins from CORS_ORIGINS (comma-separated); '*' only when unset in development
   // ============================================
+  const corsOrigins = (configService.get<string>('CORS_ORIGINS') ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: '*',
+    origin: corsOrigins.length ? corsOrigins : ENV === NodeEnv.DEVELOPMENT ? '*' : false,
     credentials: true,
+    exposedHeaders: ['Content-Disposition'],
   });
 
   // ============================================
-  // Swagger Configuration
+  // Swagger
   // ============================================
   const config = new DocumentBuilder()
-    .setTitle('OUI-CRM API')
-    .setVersion('1.0.0')
+    .setTitle(swagger.title)
+    .setDescription(swagger.description)
+    .setVersion(APP_VERSION)
     .addServer(
       BASE_URL,
-      ENV === 'uat' ? 'UAT Server' : ENV === 'production' ? 'Production Server' : 'Development',
+      ENV === NodeEnv.UAT ? 'UAT Server' : ENV === NodeEnv.PRODUCTION ? 'Production Server' : 'Development',
     )
-    .addBearerAuth(
-      {
-        type: 'http',
-        scheme: 'bearer',
-        bearerFormat: 'JWT',
-      },
-      'access-token',
-    )
-
+    .addBearerAuth(SWAGGER_BEARER_AUTH_SCHEME, SWAGGER_BEARER_AUTH)
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-
   SwaggerModule.setup('api/docs', app, document, {
-    customSiteTitle: 'OUI-CRM API Documentation',
-    customfavIcon: 'https://nestjs.com/img/logo_text.svg',
-    customCss: '.swagger-ui .topbar { display: none }',
+    customSiteTitle: swagger.title,
     swaggerOptions: {
       persistAuthorization: true,
       docExpansion: 'list',
@@ -78,18 +103,17 @@ async function bootstrap() {
   });
 
   // ============================================
-  // Start Server
+  // Start
   // ============================================
-  const port = process.env.PORT || 3000;
-  await app.listen(port, '0.0.0.0');
+  await app.listen(PORT, '0.0.0.0');
 
   console.log('');
   console.log('🚀 ====================================');
   console.log('   OUI-CRM API Server');
   console.log('====================================');
-  console.log(`📡 Server:  http://localhost:${port}`);
-  console.log(`📚 Swagger: http://localhost:${port}/api/docs`);
-  console.log(`🔗 API:     http://localhost:${port}/api/v1`);
+  console.log(`📡 Server:  http://localhost:${PORT}`);
+  console.log(`📚 Swagger: http://localhost:${PORT}/api/docs`);
+  console.log(`🔗 API:     http://localhost:${PORT}/${API_PREFIX}`);
   console.log('====================================');
   console.log('');
 }

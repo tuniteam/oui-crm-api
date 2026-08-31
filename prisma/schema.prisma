@@ -1,12 +1,531 @@
 // ============================================
 // OUI-CRM - Prisma Schema
+// Lot L0 (socle) — SPEC-02 §2, SPEC-06, SPEC-08 phase B.
+// Les tables métier (organizations, quotes, contracts…) arrivent
+// par migration au lot concerné.
+//
+// Conventions (SPEC-03 §2.3) : cuid(), colonnes @map(snake_case),
+// tables @@map(plural_snake), VarChar bornés, horodatages UTC.
+// projectId est NOT NULL sur toute table métier. Il est nullable
+// uniquement sur File, EmailLog et AuditLog (données de compte ou
+// de plateforme) et sur UserRoleProject (rôle backoffice).
 // ============================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pg_trgm]
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum FeatureCode {
+  SALES
+  BILLING
+  SUPPORT
+  STATS
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+}
+
+enum RelationshipStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum ScopeType {
+  ALL
+  PROJECT
+  OWN
+}
+
+enum OutOfScopeAccess {
+  NONE
+  RESTRICTED
+  FULL
+}
+
+enum ScopeNature {
+  ALL
+  PROSPECTS
+  CUSTOMERS
+}
+
+enum FileOwnerType {
+  USER
+  PROJECT
+  ORGANIZATION
+  QUOTE
+  CONTRACT
+  IMPORT_BATCH
+}
+
+enum FileCategory {
+  AVATAR
+  HTML_TEMPLATE
+  SIGNATURE_IMAGE
+  QUOTE_PDF
+  CONTRACT_PDF
+  SIGNED_RETURN
+  IMPORT_SOURCE
+  EXPORT_REPORT
+}
+
+enum EmailLogStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum EmailLogType {
+  ACTIVATION
+  PASSWORD_RESET
+  EMAIL_CHANGE
+  NOTIFICATION
+}
+
+enum DocumentType {
+  QUOTE
+  INVOICE
+}
+
+// ============================================
+// PROJECT — produit ou service à promouvoir (le « client » de soft-m)
+// ============================================
+
+model Project {
+  id          String        @id @default(cuid())
+  slug        String        @unique @db.VarChar(50)
+  name        String        @db.VarChar(100)
+  productName String        @map("product_name") @db.VarChar(100)
+  description String?
+  status      ProjectStatus @default(DRAFT)
+  activatedAt DateTime?     @map("activated_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  features         ProjectFeature[]
+  userRoleProjects UserRoleProject[]
+  overrides        UserPermissionOverride[]
+  roles            Role[]
+  scopes           Scope[]
+  settings         Settings?
+  referenceItems   ReferenceItem[]
+  pricingGrids     PricingGrid[]
+  auditLogs        AuditLog[]
+  files            File[]
+  emailLogs        EmailLog[]
+  numberSequences  DocumentNumberSequence[]
+
+  @@index([status])
+  @@map("projects")
+}
+
+model ProjectFeature {
+  id        String      @id @default(cuid())
+  projectId String      @map("project_id")
+  feature   FeatureCode
+  enabled   Boolean     @default(true)
+  createdAt DateTime    @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, feature])
+  @@map("project_features")
+}
+
+// ============================================
+// USERS & SESSIONS
+// ============================================
+
+model User {
+  id        String  @id @default(cuid())
+  email     String  @unique @db.VarChar(255)
+  password  String  @db.VarChar(255)
+  firstName String  @map("first_name") @db.VarChar(100)
+  lastName  String  @map("last_name") @db.VarChar(100)
+  phone     String? @db.VarChar(20)
+
+  status UserStatus @default(PENDING)
+
+  lastLoginAt         DateTime? @map("last_login_at")
+  lastLoginIp         String?   @map("last_login_ip") @db.VarChar(45)
+  failedLoginAttempts Int       @default(0) @map("failed_login_attempts")
+  lockedUntil         DateTime? @map("locked_until")
+  passwordChangedAt   DateTime? @map("password_changed_at")
+  avatarFileId        String?   @map("avatar_file_id")
+
+  cguVersion     Int?      @map("cgu_version")
+  cguAcceptedAt  DateTime? @map("cgu_accepted_at")
+  rgpdVersion    Int?      @map("rgpd_version")
+  rgpdAcceptedAt DateTime? @map("rgpd_accepted_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sessions            Session[]
+  activationTokens    ActivationToken[]
+  passwordResetTokens PasswordResetToken[]
+  emailChangeTokens   EmailChangeToken[]
+  userRoleProjects    UserRoleProject[]
+  overrides           UserPermissionOverride[]
+  auditLogs           AuditLog[]
+  uploadedFiles       File[]
+  pricingGridsCreated PricingGrid[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  refreshToken String   @map("refresh_token") @db.VarChar(255) // hash bcrypt
+  expiresAt    DateTime @map("expires_at")
+  version      Int      @default(0)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model ActivationToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique @map("token_hash") @db.VarChar(255)
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("activation_tokens")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique @map("token_hash") @db.VarChar(255)
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model EmailChangeToken {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique @map("token_hash") @db.VarChar(255)
+  userId    String   @map("user_id")
+  newEmail  String   @map("new_email") @db.VarChar(255)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_change_tokens")
+}
+
+// ============================================
+// ROLES, PERMISSIONS, ASSIGNMENTS (SPEC-06)
+// ============================================
+
+model Role {
+  id               String           @id @default(cuid())
+  projectId        String?          @map("project_id") // null = rôle système global
+  code             String           @db.VarChar(50)
+  label            String           @db.VarChar(100)
+  isBackoffice     Boolean          @default(false) @map("is_backoffice")
+  isSystem         Boolean          @default(false) @map("is_system")
+  outOfScopeAccess OutOfScopeAccess @default(RESTRICTED) @map("out_of_scope_access")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project          Project?          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  permissions      RolePermission[]
+  userRoleProjects UserRoleProject[]
+
+  @@unique([projectId, code])
+  @@map("roles")
+}
+
+model Permission {
+  id    String @id @default(cuid())
+  code  String @unique @db.VarChar(100) // module:action
+  label String @db.VarChar(255)
+
+  roles     RolePermission[]
+  overrides UserPermissionOverride[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String    @id @default(cuid())
+  roleId       String    @map("role_id")
+  permissionId String    @map("permission_id")
+  scope        ScopeType @default(PROJECT)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// Une affectation = un rôle + un périmètre + des initiales, par projet.
+/// projectId null = affectation backoffice (rôle isBackoffice).
+model UserRoleProject {
+  id           String             @id @default(cuid())
+  userId       String             @map("user_id")
+  projectId    String?            @map("project_id")
+  roleId       String             @map("role_id")
+  scopeId      String?            @map("scope_id")
+  initials     String             @db.VarChar(3)
+  status       RelationshipStatus @default(ACTIVE)
+  displayOrder Int                @default(1) @map("display_order")
+  expiresAt    DateTime?          @map("expires_at") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  role    Role     @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  scope   Scope?   @relation(fields: [scopeId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, projectId])
+  @@unique([projectId, initials])
+  @@unique([userId, displayOrder])
+  @@index([projectId])
+  @@index([status])
+  @@map("user_role_projects")
+}
+
+/// Surcharge individuelle : granted = true ajoute, false retire. Retrait > ajout > rôle.
+model UserPermissionOverride {
+  id           String  @id @default(cuid())
+  userId       String  @map("user_id")
+  projectId    String  @map("project_id")
+  permissionId String  @map("permission_id")
+  granted      Boolean
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project    Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId, permissionId])
+  @@map("user_permission_overrides")
+}
+
+/// Périmètre géographique (SPEC-02 §4.2).
+model Scope {
+  id            String      @id @default(cuid())
+  projectId     String      @map("project_id")
+  name          String      @db.VarChar(100)
+  description   String      @default("")
+  regions       String[]    @default([]) @db.VarChar(100)
+  departments   String[]    @default([]) @db.VarChar(3)
+  portfolioOnly Boolean     @default(false) @map("portfolio_only")
+  nature        ScopeNature @default(ALL)
+  campaignIds   String[]    @default([]) @map("campaign_ids") @db.VarChar(30)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userRoleProjects UserRoleProject[]
+
+  @@index([projectId])
+  @@map("scopes")
+}
+
+// ============================================
+// PROJECT CONFIGURATION (SPEC-10)
+// ============================================
+
+model Settings {
+  id                      String  @id @default(cuid())
+  projectId               String  @unique @map("project_id")
+  vatRate                 Decimal @default(20) @map("vat_rate") @db.Decimal(5, 2)
+  revenueTarget           Decimal @default(0) @map("revenue_target") @db.Decimal(12, 2)
+  meetingTarget           Int     @default(0) @map("meeting_target")
+  quoteValidityDays       Int     @default(30) @map("quote_validity_days")
+  noticeMonths            Int     @default(2) @map("notice_months")
+  defaultCommitmentMonths Int     @default(36) @map("default_commitment_months")
+  discountCap             Int     @default(30) @map("discount_cap")
+  retentionMonths         Int     @default(36) @map("retention_months")
+  /// { QUALIFICATION, DEMONSTRATION, QUOTE_SENT, NEGOTIATING, VERBAL_AGREEMENT, WON, LOST }
+  stageProbabilities      Json    @default("{}") @map("stage_probabilities")
+  /// { name, siren, siret, rcs, address, phone, email, signatory }
+  company                 Json    @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("settings")
+}
+
+/// Listes administrables : STRUCTURE_TYPE, TAG, LEAD_SOURCE, SERVICE, ACTIVITY_TYPE,
+/// ACTIVITY_RESULT, TICKET_CATEGORY, TRAINING_TYPE, VENDOR, SOLUTION, LOSS_REASON.
+model ReferenceItem {
+  id        String  @id @default(cuid())
+  projectId String  @map("project_id")
+  category  String  @db.VarChar(40)
+  key       String  @db.VarChar(60)
+  label     String  @db.VarChar(150)
+  order     Int     @default(0)
+  active    Boolean @default(true)
+  metadata  Json    @default("{}")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, category, key])
+  @@index([projectId, category])
+  @@map("reference_items")
+}
+
+/// Grille tarifaire versionnée — table seule au L0, moteur et routes au L2 (SPEC-04).
+model PricingGrid {
+  id            String   @id @default(cuid())
+  projectId     String   @map("project_id")
+  version       Int
+  effectiveDate DateTime @map("effective_date") @db.Date
+  active        Boolean  @default(false)
+  /// { brackets, plans, subscription, options, setupFees, extras }
+  content       Json
+  createdById   String?  @map("created_by_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@unique([projectId, version])
+  @@index([projectId, active])
+  @@map("pricing_grids")
+}
+
+/// Séquence de numérotation : un seul update { increment: n } puis calcul en mémoire.
+/// periodKey = YYYY-DDD (devis, quotidien) ou YYYY (factures, annuel).
+model DocumentNumberSequence {
+  id         String       @id @default(cuid())
+  projectId  String       @map("project_id")
+  type       DocumentType
+  periodKey  String       @map("period_key") @db.VarChar(10)
+  lastNumber Int          @default(0) @map("last_number")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, type, periodKey])
+  @@map("document_number_sequences")
+}
+
+// ============================================
+// AUDIT, FILES, EMAILS — projectId nullable = niveau plateforme / compte
+// ============================================
+
+/// Append-only : aucune route ne modifie ni ne supprime.
+model AuditLog {
+  id         String   @id @default(cuid())
+  projectId  String?  @map("project_id")
+  userId     String?  @map("user_id")
+  action     String   @db.VarChar(45)
+  objectType String?  @map("object_type") @db.VarChar(30)
+  objectId   String?  @map("object_id")
+  ip         String?  @db.VarChar(45)
+  userAgent  String?  @map("user_agent") @db.VarChar(255)
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, createdAt(sort: Desc)])
+  @@index([userId])
+  @@index([action])
+  @@index([objectType, objectId])
+  @@map("audit_logs")
+}
+
+model File {
+  id         String        @id @default(cuid())
+  projectId  String?       @map("project_id") // null = fichier de compte (avatar)
+  ownerType  FileOwnerType @map("owner_type")
+  ownerId    String        @map("owner_id")
+  category   FileCategory
+  fileName   String        @map("file_name") @db.VarChar(255)
+  filePath   String        @unique @map("file_path") @db.VarChar(512)
+  fileSize   Int           @map("file_size")
+  mimeType   String        @map("mime_type") @db.VarChar(100)
+  uploadedBy String        @map("uploaded_by")
+  note       String?
+  uploadedAt DateTime      @default(now()) @map("uploaded_at")
+
+  project  Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploader User     @relation(fields: [uploadedBy], references: [id])
+
+  @@index([projectId, ownerType, ownerId])
+  @@index([category])
+  @@map("files")
+}
+
+model EmailLog {
+  id           String         @id @default(cuid())
+  projectId    String?        @map("project_id") // null = email de compte (activation, reset)
+  type         EmailLogType
+  targetType   String         @map("target_type") @db.VarChar(30)
+  targetId     String         @map("target_id")
+  recipient    String         @db.VarChar(255)
+  status       EmailLogStatus @default(PENDING)
+  attempts     Int            @default(0)
+  errorMessage String?        @map("error_message")
+  sentAt       DateTime?      @map("sent_at")
+  createdBy    String?        @map("created_by")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([targetType, targetId])
+  @@index([projectId, status])
+  @@map("email_logs")
 }

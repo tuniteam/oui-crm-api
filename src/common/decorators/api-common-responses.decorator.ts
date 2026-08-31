@@ -1,174 +1,61 @@
 // ============================================
-// OUI-CRM - Common API Response Decorators
-// Décorateurs réutilisables pour Swagger
+// OUI-CRM - Common Swagger response decorators
 // ============================================
 
 import { applyDecorators, Type } from '@nestjs/common';
-import { ApiResponse, ApiParam } from '@nestjs/swagger';
+import { ApiParam, ApiResponse } from '@nestjs/swagger';
+import { ApiMessages } from '../messages';
 
-/**
- * Décorateur pour les réponses standards GET (200 + 404)
- */
-export function ApiGetResponse<T>(type: Type<T>, description = 'Success') {
+const responses = ApiMessages.swagger.responses;
+
+const notFound = () => ApiResponse({ status: 404, description: responses.notFound });
+const invalidData = () => ApiResponse({ status: 400, description: responses.invalidData });
+const conflict = () => ApiResponse({ status: 409, description: responses.conflict });
+const ok = <T>(type: Type<T> | undefined, description: string) =>
+  ApiResponse({ status: 200, description, ...(type && { type }) });
+
+/** GET by id: 200 + 404 */
+export function ApiGetResponse<T>(type: Type<T>, description = responses.success) {
+  return applyDecorators(ok(type, description), notFound());
+}
+
+/** POST: 201 + 400 + 409 */
+export function ApiPostResponse<T>(type: Type<T>, description = responses.created) {
   return applyDecorators(
-    ApiResponse({
-      status: 200,
-      description,
-      type,
-    }),
-    ApiResponse({
-      status: 404,
-      description: 'Resource not found',
-    }),
+    ApiResponse({ status: 201, description, type }),
+    invalidData(),
+    conflict(),
   );
 }
 
-/**
- * Décorateur pour les réponses standards POST (201 + 400 + 409)
- */
-export function ApiPostResponse<T>(type: Type<T>, description = 'Created successfully') {
-  return applyDecorators(
-    ApiResponse({
-      status: 201,
-      description,
-      type,
-    }),
-    ApiResponse({
-      status: 400,
-      description: 'Invalid request data',
-    }),
-    ApiResponse({
-      status: 409,
-      description: 'Resource already exists',
-    }),
-  );
+/** PATCH: 200 + 400 + 404 */
+export function ApiPatchResponse<T>(type?: Type<T>, description = responses.success) {
+  return applyDecorators(ok(type, description), invalidData(), notFound());
 }
 
-/**
- * Décorateur pour les réponses standards PUT (200 + 400 + 404)
- */
-export function ApiPutResponse<T>(type: Type<T>, description = 'Success') {
-  return applyDecorators(
-    ApiResponse({
-      status: 200,
-      description,
-      type,
-    }),
-    ApiResponse({
-      status: 400,
-      description: 'Invalid request data',
-    }),
-    ApiResponse({
-      status: 404,
-      description: 'Resource not found',
-    }),
-  );
+/** DELETE: 204 + 404 */
+export function ApiDeleteResponse(description = responses.deleted) {
+  return applyDecorators(ApiResponse({ status: 204, description }), notFound());
 }
 
-/**
- * Décorateur pour les réponses standards PATCH (200 + 400 + 404)
- */
-export function ApiPatchResponse<T>(type?: Type<T>, description = 'Success') {
-  const decorators: Array<ClassDecorator | MethodDecorator | PropertyDecorator> = [
-    ApiResponse({
-      status: 200,
-      description,
-      ...(type && { type }),
-    }),
-    ApiResponse({
-      status: 400,
-      description: 'Invalid request data',
-    }),
-    ApiResponse({
-      status: 404,
-      description: 'Resource not found',
-    }),
-  ];
-
-  return applyDecorators(...decorators);
+/** Paginated list: 200 */
+export function ApiListResponse<T>(type: Type<T>, description = responses.success) {
+  return ok(type, description);
 }
 
-/**
- * Décorateur pour les réponses standards DELETE (204 + 404)
- */
-export function ApiDeleteResponse(description = 'Deleted') {
-  return applyDecorators(
-    ApiResponse({
-      status: 204,
-      description,
-    }),
-    ApiResponse({
-      status: 404,
-      description: 'Resource not found',
-    }),
-  );
-}
-
-/**
- * Décorateur pour les réponses de liste paginée (200)
- */
-export function ApiListResponse<T>(type: Type<T>, description = 'Success') {
-  return applyDecorators(
-    ApiResponse({
-      status: 200,
-      description,
-      type,
-    }),
-  );
-}
-
-/**
- * Décorateur combiné pour paramètre CUID standard
- */
 export function ApiCuidParam(name: string, description: string) {
-  return ApiParam({
-    name,
-    description,
-    type: 'string',
-    example: 'cjld2cjxh0000qzrmn831i7rn',
-  });
+  return ApiParam({ name, description, type: 'string', example: 'cjld2cjxh0000qzrmn831i7rn' });
 }
 
-/**
- * Décorateur combiné pour endpoint GET standard avec CUID
- */
+/** GET by id with its CUID parameter documented */
 export function ApiGetById<T>(
   paramName: string,
   paramDescription: string,
   responseType: Type<T>,
-  responseDescription = 'Success',
+  responseDescription = responses.success,
 ) {
   return applyDecorators(
     ApiCuidParam(paramName, paramDescription),
     ApiGetResponse(responseType, responseDescription),
-  );
-}
-
-/**
- * Décorateur combiné pour endpoint PUT standard avec CUID
- */
-export function ApiPutById<T>(
-  paramName: string,
-  paramDescription: string,
-  responseType: Type<T>,
-  responseDescription = 'Success',
-) {
-  return applyDecorators(
-    ApiCuidParam(paramName, paramDescription),
-    ApiPutResponse(responseType, responseDescription),
-  );
-}
-
-/**
- * Décorateur combiné pour endpoint DELETE standard avec CUID
- */
-export function ApiDeleteById(
-  paramName: string,
-  paramDescription: string,
-  responseDescription = 'Deleted',
-) {
-  return applyDecorators(
-    ApiCuidParam(paramName, paramDescription),
-    ApiDeleteResponse(responseDescription),
   );
 }

@@ -35,11 +35,13 @@ coverage/
 # Swagger exports (optional)
 swagger-output.json
 
-# Local documentation (dev guides)
-docs/
+# Local documentation (dev guides) — sauf les spécifications, versionnées avec le code
+docs/*
+!docs/SPEC-*.md
 
 # Claude Code local files
-.claude/
+.claude/*
+!.claude/skills/
 CLAUDE.md
 nul
 

@@ -1,20 +1,17 @@
 // ============================================
 // OUI-CRM - ParseCuidPipe
-// Validates CUID format for route parameters
+// Validates that a route parameter is a CUID; 400 INVALID_CUID otherwise.
 // ============================================
 
-import { PipeTransform, Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, PipeTransform } from '@nestjs/common';
 import { isCuid } from '@paralleldrive/cuid2';
-import { ApiMessages } from '../messages';
+import { apiError } from '@/common/api-error';
 
 @Injectable()
 export class ParseCuidPipe implements PipeTransform<string, string> {
   transform(value: string): string {
-    if (!isCuid(value)) {
-      throw new BadRequestException({
-        code: ApiMessages.errors.code.INVALID_CUID,
-        message: ApiMessages.errors.message.INVALID_CUID(value),
-      });
+    if (typeof value !== 'string' || !isCuid(value)) {
+      throw apiError.badRequest('INVALID_CUID', value);
     }
     return value;
   }

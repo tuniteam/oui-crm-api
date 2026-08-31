@@ -1,18 +1,21 @@
 import { PrismaClient } from '@prisma/client';
+import { DEFAULT_NODE_ENV, NodeEnv } from '../src/common/constants/app.constants';
+import { seedAuth } from './seedAuth';
+import { seedDev } from './seedDev';
 
-export async function runSeed(prisma: PrismaClient) {
-  console.log('Running seed...');
-  const env = process.env.NODE_ENV;
-
+/**
+ * seedAuth runs on every environment (permissions, system roles, matrix).
+ * seedDev (Périscolia project, demo users, configuration) runs in development and test only.
+ */
+export async function runSeed(prisma: PrismaClient): Promise<void> {
+  const env = (process.env.NODE_ENV as NodeEnv) ?? DEFAULT_NODE_ENV;
   console.log(`Seed started for environment: ${env}`);
 
-  if (env === 'test') {
-    console.log('Running test seed...');
-   // await seedAuth(prisma);
-  //  await seedUsers(prisma);
-  } else {
-   // await seedAuth(prisma);
+  await seedAuth(prisma);
+
+  if (env === NodeEnv.DEVELOPMENT || env === NodeEnv.TEST) {
+    await seedDev(prisma);
   }
 
-  console.log('seed finished');
+  console.log('Seed finished');
 }
