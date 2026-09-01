@@ -27,6 +27,7 @@ export const PERMISSION_CATALOGUE = {
   settings: ['read', 'update'],
   references: ['read', 'update'],
   users: ['read', 'create', 'update', 'delete'],
+  userBackoffice: ['read', 'create', 'update', 'delete'],
   roles: ['read', 'update'],
   scopes: ['read', 'update'],
   auditLog: ['read', 'export'],

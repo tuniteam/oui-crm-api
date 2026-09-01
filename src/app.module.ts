@@ -16,6 +16,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { ProfileModule } from './profile/profile.module';
 import { LegalModule } from './legal/legal.module';
 import { UsersModule } from './users/users.module';
+import { UsersBackofficeModule } from './users-backoffice/users-backoffice.module';
 import { RolesModule } from './roles/roles.module';
 import { ScopesModule } from './scopes/scopes.module';
 import { SettingsModule } from './settings/settings.module';
@@ -34,6 +35,7 @@ import { ReferenceItemsModule } from './reference-items/reference-items.module';
     ProfileModule,
     LegalModule,
     UsersModule,
+    UsersBackofficeModule,
     RolesModule,
     ScopesModule,
     SettingsModule,

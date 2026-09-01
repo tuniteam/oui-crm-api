@@ -280,6 +280,20 @@ export const ApiMessages = {
       delete: { summary: 'Remove user from project', description: 'Suspends the assignment and revokes sessions' },
     },
 
+    usersBackoffice: {
+      tag: 'Backoffice users',
+      roles: { summary: 'List backoffice roles', description: 'System roles assignable to a backoffice account' },
+      list: { summary: 'List backoffice users', description: 'Paginated platform accounts (no project)' },
+      findOne: { summary: 'Get backoffice user by ID', description: 'Returns a backoffice account' },
+      create: {
+        summary: 'Create backoffice user',
+        description: 'Creates a dedicated backoffice account (PENDING) and sends an activation e-mail, or reactivates a suspended one',
+      },
+      update: { summary: 'Update backoffice user', description: 'Updates identity fields or the backoffice role' },
+      resendActivation: { summary: 'Resend activation e-mail', description: 'Sends a new activation e-mail to a PENDING backoffice user' },
+      delete: { summary: 'Remove backoffice user', description: 'Suspends the backoffice access and revokes sessions' },
+    },
+
     roles: {
       tag: 'Roles',
       list: { summary: 'List roles', description: 'System roles and roles of the current project, with permissions' },

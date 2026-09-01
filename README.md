@@ -58,6 +58,7 @@ bash docs/tests/test-scopes.sh      # BDD curl US-00-07
 bash docs/tests/test-settings.sh    # BDD curl US-00-08
 bash docs/tests/test-reference-items.sh  # BDD curl US-00-09
 bash docs/tests/test-audit-log.sh   # BDD curl US-00-10
+bash docs/tests/test-users-backoffice.sh  # BDD curl US-00-11
 npm run swagger:check               # contrat exposé
 ```
 
@@ -91,6 +92,6 @@ Livré : socle commun + schéma + seeds · **US-00-01/02** auth (sessions, activ
 changement d'e-mail) · **US-00-03** profil + légal · **US-00-04** administration des projets ·
 **US-00-05/06/07** utilisateurs, rôles, périmètres (+ `ScopeService`) · **US-00-08/09** réglages,
 gabarits HTML + cachet, référentiels · **US-00-10** journal d'activité (lecture paginée, filtres,
-libellés résolus ; export CSV au L5).
+libellés résolus ; export CSV au L5) · **US-00-11** comptes backoffice (`/backoffice/users`, pattern soft-m).
 Reste : phase I — job `accounts.expire`, Postman `error-tests`, rapport L0.
 Détail : `docs/SPEC-08-PLAN-L0.md` ; contrat front par route : `docs/SPEC-11-HANDOFF-FRONT.md`.
