@@ -38,9 +38,8 @@ swagger-output.json
 # Documentation locale (specs, features, tests curl, maquettes) — jamais commitée (décision du 01/09/2026)
 docs/
 
-# Claude Code local files
-.claude/*
-!.claude/skills/
+# Claude Code local files (skills compris) — jamais commités (décision du 01/09/2026)
+.claude/
 CLAUDE.md
 nul
 
