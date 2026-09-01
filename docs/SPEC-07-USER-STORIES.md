@@ -119,7 +119,8 @@ Money        = number                               // 2 décimales
 **En tant qu'** administrateur de projet, **je veux** définir des périmètres (régions, départements, portefeuille, nature) et les affecter aux utilisateurs.
 - Permissions : `scopes:read|update`, `[P]`.
 - API : `GET /scopes` → `{ data: [{ id, name, description, regions: [], departments: [], portfolioOnly, nature, campaignIds: [], usersCount, resolvedDepartments: [] }] }` · `POST /scopes` · `PATCH /scopes/:id` · `DELETE /scopes/:id` · `409 SCOPE_IN_USE` · `GET /geo/regions` → `[{ name, departments: [] }]` (statique).
-- Handoff front : écran V8 = Paramètres › Périmètres (`openPerimetreModal`, `regionsHTML`, `countPerimetre`). `resolvedDepartments` évite au front de recalculer régions → départements.
+- Précisions livrées : `GET /geo/regions` → `{ data: [{ name, departments }] }` (14 régions V8, sert de liste de choix ; un nom inconnu en création/modification → `400 INVALID_DATA`, un code département hors `01–95 / 2A / 2B / 971–976` → `400 INVALID_DATA`) ; `name` unique par projet (`409 SCOPE_NAME_EXISTS`) ; `PATCH` remplace les listes `regions`/`departments` en bloc ; `usersCount` = affectations actives ; `DELETE` refuse tant qu'une affectation référence le périmètre (`409 SCOPE_IN_USE`) ; `campaignIds` non exposé au L0 (arrive avec les campagnes, L1). `ScopeService.whereVisible/access` livré en fonctions pures testées, branché sur les organismes au L1. Audit `scope.*`.
+- Handoff front : écran V8 = Paramètres › Périmètres (`openPerimetreModal`, `regionsHTML`, `countPerimetre`). `resolvedDepartments` évite au front de recalculer régions → départements. Livré le 01/09/2026 — `docs/features/scopes.feature`.
 
 ### US-00-08 · Régler mon projet
 **En tant qu'** administrateur de projet, **je veux** renseigner l'identité de la société, le signataire, la TVA, le plafond de remise, les objectifs, la validité des devis, le préavis, l'engagement par défaut, la durée de conservation.

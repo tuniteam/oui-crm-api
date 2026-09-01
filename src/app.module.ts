@@ -17,6 +17,7 @@ import { ProfileModule } from './profile/profile.module';
 import { LegalModule } from './legal/legal.module';
 import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
+import { ScopesModule } from './scopes/scopes.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { RolesModule } from './roles/roles.module';
     LegalModule,
     UsersModule,
     RolesModule,
+    ScopesModule,
     HealthModule,
     StorageModule,
     FilesModule,

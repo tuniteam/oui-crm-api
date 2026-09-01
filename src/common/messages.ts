@@ -83,6 +83,7 @@ const errorDefinitions = {
   // Scopes, settings, references
   SCOPE_NOT_FOUND: (id: string) => `Scope ${id} not found`,
   SCOPE_IN_USE: 'Scope is assigned to users and cannot be deleted',
+  SCOPE_NAME_EXISTS: 'A scope with this name already exists in the project',
   SETTINGS_NOT_FOUND: 'Project settings not found',
   STAGE_PROBABILITY_FIXED: 'WON and LOST probabilities cannot be changed',
   REFERENCE_ITEM_NOT_FOUND: (id: string) => `Reference item ${id} not found`,
