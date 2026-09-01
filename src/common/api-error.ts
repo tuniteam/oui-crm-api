@@ -67,3 +67,12 @@ export function withMeta(exception: HttpException, meta: Record<string, unknown>
   const response = exception.getResponse() as Record<string, unknown>;
   return new HttpException({ ...response, meta }, exception.getStatus());
 }
+
+/**
+ * Attaches a `details` list to an API error; AllExceptionsFilter forwards it as
+ * `messages.details` (one human-readable line per issue, e.g. template validation).
+ */
+export function withDetails(exception: HttpException, details: string[]): HttpException {
+  const response = exception.getResponse() as Record<string, unknown>;
+  return new HttpException({ ...response, details }, exception.getStatus());
+}

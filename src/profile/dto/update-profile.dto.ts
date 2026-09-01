@@ -41,9 +41,3 @@ export class ProfileCoreResponseDto {
   phone: string | null;
 }
 
-/** Multipart file as delivered by the FileInterceptor. */
-export interface UploadedFileLike {
-  buffer: Buffer;
-  originalname: string;
-  mimetype?: string;
-}

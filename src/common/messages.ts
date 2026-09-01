@@ -90,8 +90,9 @@ const errorDefinitions = {
   REFERENCE_KEY_EXISTS: 'A reference item with this key already exists in this category',
   INVALID_REFERENCE_VALUE: (category: string, key: string) =>
     `Unknown value "${key}" for reference ${category}`,
-  TEMPLATE_INVALID: 'Template is invalid',
+  TEMPLATE_INVALID: (issues: string) => `Template is invalid: ${issues}`,
   TEMPLATE_NOT_CONFIGURED: 'No active template for this document type',
+  SIGNATURE_IMAGE_NOT_SET: 'No signature image configured for this project',
 
   // Storage & files
   STORAGE_FILE_TOO_LARGE: (max: string) => `File exceeds the maximum size (${max})`,
@@ -150,6 +151,7 @@ export const ApiMessages = {
       projectId: 'Project unique identifier (CUID)',
       fileId: 'File unique identifier (CUID)',
       referenceItemId: 'Reference item unique identifier (CUID)',
+      templateType: 'Document template type (QUOTE | CONTRACT)',
     },
 
     health: {
@@ -298,7 +300,8 @@ export const ApiMessages = {
         summary: 'Upload document template',
         description: 'Uploads a new HTML template version for a document type; validates required tags',
       },
-      uploadSignature: { summary: 'Upload signature image', description: 'Uploads the stamp + signature image (PNG/JPEG, 2 MB max)' },
+      uploadSignature: { summary: 'Upload signature image', description: 'Uploads the stamp + signature image (PNG/JPEG, 2 MB max); replaces the previous one' },
+      deleteSignature: { summary: 'Delete signature image', description: 'Removes the stamp + signature image of the project' },
     },
 
     referenceItems: {

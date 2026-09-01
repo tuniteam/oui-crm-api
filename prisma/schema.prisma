@@ -88,6 +88,12 @@ enum FileCategory {
   EXPORT_REPORT
 }
 
+/// Document type of an HTML_TEMPLATE file — the active template of a type is the latest uploaded (SPEC-02 §5.3).
+enum DocumentTemplateType {
+  QUOTE
+  CONTRACT
+}
+
 enum EmailLogStatus {
   PENDING
   SENT
@@ -491,6 +497,8 @@ model File {
   ownerType  FileOwnerType @map("owner_type")
   ownerId    String        @map("owner_id")
   category   FileCategory
+  /// Set on HTML_TEMPLATE files only
+  templateType DocumentTemplateType? @map("template_type")
   fileName   String        @map("file_name") @db.VarChar(255)
   filePath   String        @unique @map("file_path") @db.VarChar(512)
   fileSize   Int           @map("file_size")
@@ -504,6 +512,7 @@ model File {
 
   @@index([projectId, ownerType, ownerId])
   @@index([category])
+  @@index([projectId, templateType])
   @@map("files")
 }
 

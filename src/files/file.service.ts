@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { File, FileCategory, FileOwnerType, Prisma } from '@prisma/client';
+import { DocumentTemplateType, File, FileCategory, FileOwnerType, Prisma } from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { PRISMA_ERROR } from '@/common/constants/app.constants';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -35,6 +35,8 @@ export interface UploadFileInput {
   declaredMimeType?: string;
   uploadedBy: string;
   note?: string;
+  /** HTML_TEMPLATE only: document type the template is for. */
+  templateType?: DocumentTemplateType | null;
 }
 
 /**
@@ -124,6 +126,7 @@ export class FileService {
             mimeType: ref.mimeType,
             uploadedBy: input.uploadedBy,
             note: input.note,
+            templateType: input.templateType,
           }),
         }),
       ];

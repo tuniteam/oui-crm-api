@@ -13,7 +13,8 @@ import { StorageService } from '@/storage/storage.service';
 import { AvatarResponseDto } from './dto/avatar-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { MeResponseDto } from './dto/me-response.dto';
-import { ProfileCoreResponseDto, UpdateProfileDto, UploadedFileLike } from './dto/update-profile.dto';
+import { ProfileCoreResponseDto, UpdateProfileDto } from './dto/update-profile.dto';
+import { UploadedFileLike } from '@/files/uploaded-file.interface';
 import { PROFILE_AUDIT } from './profile.constants';
 import { mapToMeResponse, userWithAccess } from './profile.utils';
 

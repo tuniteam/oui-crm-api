@@ -1,4 +1,4 @@
-import { File, FileCategory, FileOwnerType, Prisma } from '@prisma/client';
+import { DocumentTemplateType, File, FileCategory, FileOwnerType, Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { apiError } from '@/common/api-error';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
@@ -94,8 +94,9 @@ export function buildFileCreateData(params: {
   mimeType: string;
   uploadedBy: string;
   note?: string | null;
+  templateType?: DocumentTemplateType | null;
 }): Prisma.FileUncheckedCreateInput {
-  return { ...params, note: params.note ?? null };
+  return { ...params, note: params.note ?? null, templateType: params.templateType ?? null };
 }
 
 type OwnerExistenceChecker = (
