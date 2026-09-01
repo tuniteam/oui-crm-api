@@ -98,13 +98,14 @@ Money        = number                               // 2 décimales
 - Permissions : `users:read|create|update|delete`, `[P]`.
 - API :
   - `GET /users?search&roleCode&status` → `{ data: [{ id, email, firstName, lastName, initials, status, roleCode, roleLabel, scope: { id, name }, expiresAt, isExternal, overridesCount: { added, removed }, lastLoginAt }] }`
-  - `POST /users` `{ email, firstName, lastName, initials, roleCode, scopeId, isExternal, expiresAt? }` → `201 { id, status: "PENDING" }` · `409 USER_EMAIL_EXISTS_IN_PROJECT` · `400 INVALID_ROLE` · `400 EXPIRATION_REQUIRED_FOR_EXTERNAL`
+  - `POST /users` `{ email, firstName, lastName, initials, roleCode, scopeId, isExternal, expiresAt? }` → `201 { id, status }` (`PENDING` créé, `ACTIVE` rattaché/réactivé) · `409 EMAIL_EXISTS_FOR_PROJECT` · `409 INITIALS_ALREADY_USED` · `400 INVALID_ROLE` · `400 EXPIRATION_REQUIRED_FOR_EXTERNAL`
   - `GET /users/:id` → détail + `permissions: [{ code, scope, source }]`
   - `PATCH /users/:id` `{ roleCode?, scopeId?, expiresAt?, firstName?, lastName?, initials? }`
   - `PATCH /users/:id/overrides` `{ added: ["quotes:validate"], removed: ["organizations:export"] }` → permissions effectives
   - `POST /users/:id/resend-activation` → `200`
-  - `DELETE /users/:id` → `204` (affectation `SUSPENDED`, sessions révoquées) · `409 USER_IS_LAST_ADMIN`
-- Handoff front : écran V8 = Paramètres › Utilisateurs (`SETPANE.users`, `openUserModal`, `surchargesHTML`). Afficher l'écart de surcharges (« +2, −1 »). Les rôles disponibles viennent de US-00-06, les périmètres de US-00-07.
+  - `DELETE /users/:id` → `204` — affectation `SUSPENDED` (réversible : re-`POST /users` avec le même e-mail **réactive** avec le rôle/périmètre soumis) ; sessions révoquées **seulement si** l'utilisateur n'a plus aucune affectation active · `400 CANNOT_DELETE_SELF` · `409 USER_IS_LAST_ADMIN` (dernier rôle portant `users:update`)
+  - Précisions livrées : `status` de la liste = statut du compte **ou** `SUSPENDED` (affectation) — filtre identique ; `isExternal` est **dérivé** (`expiresAt` renseigné, le flag n'existe qu'à la création pour exiger la date) ; `409 EMAIL_EXISTS_FOR_PROJECT` (code livré) ; overrides = **remplacement de l'ensemble** (idempotent), réponse = permissions effectives ; audit `user.*` sur chaque opération.
+- Handoff front : écran V8 = Paramètres › Utilisateurs (`SETPANE.users`, `openUserModal`, `surchargesHTML`). Afficher l'écart de surcharges (« +2, −1 »). Les rôles disponibles viennent de US-00-06, les périmètres de US-00-07. Livré le 01/09/2026 — `docs/features/users.feature`.
 
 ### US-00-06 · Consulter et adapter les rôles
 **En tant qu'** administrateur de projet, **je veux** voir la matrice des rôles et dupliquer un rôle système pour l'adapter.

@@ -15,6 +15,7 @@ import { AuditLogModule } from './audit-log/audit-log.module';
 import { ProjectsModule } from './projects/projects.module';
 import { ProfileModule } from './profile/profile.module';
 import { LegalModule } from './legal/legal.module';
+import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { LegalModule } from './legal/legal.module';
     ProjectsModule,
     ProfileModule,
     LegalModule,
+    UsersModule,
     HealthModule,
     StorageModule,
     FilesModule,

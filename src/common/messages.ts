@@ -259,7 +259,7 @@ export const ApiMessages = {
       create: {
         summary: 'Create user',
         description:
-          'Creates a user (PENDING) and sends an activation e-mail, or assigns an existing user to the project',
+          'Creates a user (PENDING) and sends an activation e-mail, assigns an existing user to the project, or reactivates a suspended assignment',
       },
       update: { summary: 'Update user', description: 'Updates role, scope, expiration or identity fields' },
       overrides: {
