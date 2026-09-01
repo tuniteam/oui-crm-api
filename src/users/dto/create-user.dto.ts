@@ -1,3 +1,5 @@
+import { USER_NAME_MAX_LENGTH } from '@/common/constants/app.constants';
+import { ROLE_CODE_MAX_LENGTH } from '@/roles/roles.constants';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserStatus } from '@prisma/client';
 import { IsBoolean, IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
@@ -13,13 +15,13 @@ export class CreateUserDto {
   @ApiProperty({ example: 'Nadia' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLength(USER_NAME_MAX_LENGTH)
   firstName: string;
 
   @ApiProperty({ example: 'Karam' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLength(USER_NAME_MAX_LENGTH)
   lastName: string;
 
   @ApiProperty({ example: 'NK', description: 'Unique within the project (quote numbering)' })
@@ -30,7 +32,7 @@ export class CreateUserDto {
   @ApiProperty({ example: 'SALES_REP', description: 'System (non-backoffice) role code or a role of this project' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLength(ROLE_CODE_MAX_LENGTH)
   roleCode: string;
 
   @ApiPropertyOptional({ example: 'cmth…', description: 'Geographic scope of this project', nullable: true })

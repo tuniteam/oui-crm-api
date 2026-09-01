@@ -3,6 +3,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { apiError } from '@/common/api-error';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { isBackofficeUser } from '@/auth/utils/permissions.util';
+import { UploadedFileLike } from './uploaded-file.interface';
 import { ProjectStatus } from '@prisma/client';
 import {
   DEFAULT_EXTENSION_BY_CATEGORY,
@@ -162,4 +163,9 @@ export function ensureFileNameHasExtension(
   if (fileName.includes('.')) return fileName;
   const ext = MIME_TO_EXT[detectedMime] ?? DEFAULT_EXTENSION_BY_CATEGORY[category];
   return `${fileName}.${ext}`;
+}
+
+/** Multipart upload endpoints: reject an absent part or an empty buffer before touching MinIO. */
+export function assertFilePresent(file: UploadedFileLike | undefined): asserts file is UploadedFileLike {
+  if (!file || file.buffer.byteLength === 0) throw apiError.badRequest('STORAGE_FILE_REQUIRED');
 }

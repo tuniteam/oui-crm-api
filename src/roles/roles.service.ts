@@ -4,7 +4,7 @@ import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { apiError } from '@/common/api-error';
-import { isForeignKeyViolation } from '@/common/utils/prisma.utils';
+import { isForeignKeyViolation, isUniqueViolation } from '@/common/utils/prisma.utils';
 import { PRISMA_ERROR } from '@/common/constants/app.constants';
 import { PrismaService } from '@/prisma/prisma.service';
 import { DuplicateRoleDto, DuplicateRoleResponseDto } from './dto/duplicate-role.dto';
@@ -155,7 +155,7 @@ export class RolesService {
   }
 
   private rethrowUniqueAsCode(err: unknown): void {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === PRISMA_ERROR.UNIQUE_VIOLATION) {
+    if (isUniqueViolation(err)) {
       throw apiError.conflict('ROLE_CODE_EXISTS');
     }
   }

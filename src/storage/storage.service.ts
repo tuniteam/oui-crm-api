@@ -125,7 +125,7 @@ export class StorageService implements OnModuleInit {
       );
       // Replace internal MinIO host with the public host
       const urlObj = new URL(url);
-      const publicBase = new URL(this.configService.getOrThrow<string>('PRESIGNED_PUBLIC_URL'));
+      const publicBase = new URL(this.configService.getOrThrow<string>(STORAGE_ENV.PRESIGNED_PUBLIC_URL));
       urlObj.protocol = publicBase.protocol;
       urlObj.host = publicBase.host;
       const expiresAt = new Date(Date.now() + this.presignedGetExpirySeconds * MS_PER_SECOND).toISOString();

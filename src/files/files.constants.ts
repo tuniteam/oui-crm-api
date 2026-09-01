@@ -124,3 +124,6 @@ export const WRITE_PERMISSION_BY_CATEGORY: Partial<Record<FileCategory, string>>
 export const FILES_AUDIT = {
   DELETE: 'file.delete',
 } as const;
+
+/** Multipart part name expected by every upload endpoint. */
+export const UPLOAD_FIELD = 'file';

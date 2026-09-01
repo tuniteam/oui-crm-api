@@ -15,8 +15,8 @@ import {
   DEFAULT_AUTH_RATE_LIMIT_MAX,
   SWAGGER_BEARER_AUTH_SCHEME,
 } from './auth/auth.constants';
-import {
-  API_PREFIX,
+import { API_PREFIX,
+  APP_ENV,
   DEFAULT_NODE_ENV,
   DEFAULT_PORT,
   NodeEnv,
@@ -34,10 +34,10 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const swagger = ApiMessages.swagger;
 
-  const ENV = configService.get<string>('NODE_ENV', DEFAULT_NODE_ENV) as NodeEnv;
+  const ENV = configService.get<string>(APP_ENV.NODE_ENV, DEFAULT_NODE_ENV) as NodeEnv;
   const PORT = getNumber(configService, 'PORT', DEFAULT_PORT);
   // Swagger "servers" entry: BASE_URL from .env, else the local port
-  const BASE_URL = configService.get<string>('BASE_URL') || `http://localhost:${PORT}`;
+  const BASE_URL = configService.get<string>(APP_ENV.BASE_URL) || `http://localhost:${PORT}`;
 
   // ============================================
   // HTTP hardening
@@ -67,7 +67,7 @@ async function bootstrap() {
   // ============================================
   // CORS — origins from CORS_ORIGINS (comma-separated); '*' only when unset in development
   // ============================================
-  const corsOrigins = (configService.get<string>('CORS_ORIGINS') ?? '')
+  const corsOrigins = (configService.get<string>(APP_ENV.CORS_ORIGINS) ?? '')
     .split(',')
     .map((o) => o.trim())
     .filter(Boolean);

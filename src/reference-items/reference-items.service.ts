@@ -1,3 +1,4 @@
+import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
@@ -60,7 +61,7 @@ export class ReferenceItemsService {
       return { id: created.id, key: created.key };
     } catch (error) {
       // (projectId, category, key) unique index — the only race a concurrent create can lose
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === PRISMA_ERROR.UNIQUE_VIOLATION) {
+      if (isUniqueViolation(error)) {
         throw apiError.conflict('REFERENCE_KEY_EXISTS');
       }
       throw error;

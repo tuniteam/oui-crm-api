@@ -29,7 +29,7 @@ import { apiError } from '@/common/api-error';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
 import { ApiDeleteResponse, ApiGetResponse, ApiPatchResponse, ApiPostResponse, ApiAuthResponses, ApiResourceNotFound } from '@/common/decorators';
 import { ApiMessages } from '@/common/messages';
-import { MAX_SIZE_BY_CATEGORY } from '@/files/files.constants';
+import { MAX_SIZE_BY_CATEGORY, UPLOAD_FIELD } from '@/files/files.constants';
 import { UploadedFileLike } from '@/files/uploaded-file.interface';
 import { DocumentsResponseDto, SignatureUploadResponseDto, TemplateUploadResponseDto } from './dto/response-documents.dto';
 import { SettingsResponseDto } from './dto/response-settings.dto';
@@ -87,7 +87,7 @@ export class SettingsController {
   @ApiPostResponse(TemplateUploadResponseDto)
   @ApiResourceNotFound()
   // Cap the multipart body before it is buffered — FileService re-checks per category
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_SIZE_BY_CATEGORY.HTML_TEMPLATE } }))
+  @UseInterceptors(FileInterceptor(UPLOAD_FIELD, { limits: { fileSize: MAX_SIZE_BY_CATEGORY.HTML_TEMPLATE } }))
   uploadTemplate(
     @CurrentProjectId() projectId: string,
     @Param('type', templateTypePipe) type: DocumentTemplateType,
@@ -103,7 +103,7 @@ export class SettingsController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation(swagger.settings.uploadSignature)
   @ApiPostResponse(SignatureUploadResponseDto)
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_SIZE_BY_CATEGORY.SIGNATURE_IMAGE } }))
+  @UseInterceptors(FileInterceptor(UPLOAD_FIELD, { limits: { fileSize: MAX_SIZE_BY_CATEGORY.SIGNATURE_IMAGE } }))
   uploadSignatureImage(
     @CurrentProjectId() projectId: string,
     @UploadedFile() file: UploadedFileLike | undefined,

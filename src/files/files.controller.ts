@@ -3,7 +3,10 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guards';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
-import { ApiDeleteResponse, ApiGetResponse, ApiMessages, ParseCuidPipe } from '@/common';
+import {
+  ApiCuidParam,
+  ApiDeleteResponse, ApiGetResponse, ApiMessages, ParseCuidPipe,
+} from '@/common';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
 import { ApiAuthResponses } from '@/common/decorators';
 import { FileService } from './file.service';
@@ -25,6 +28,7 @@ export class FilesController {
   constructor(private readonly fileService: FileService) {}
 
   @Get(':fileId/download')
+  @ApiCuidParam('fileId', swagger.params.fileId)
   @ApiOperation(swagger.files.download)
   @ApiGetResponse(FileDownloadResponseDto)
   download(
@@ -35,6 +39,7 @@ export class FilesController {
   }
 
   @Delete(':fileId')
+  @ApiCuidParam('fileId', swagger.params.fileId)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation(swagger.files.delete)
   @ApiDeleteResponse()

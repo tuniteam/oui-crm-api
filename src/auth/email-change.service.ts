@@ -1,3 +1,4 @@
+import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -96,7 +97,7 @@ export class EmailChangeService {
       });
     } catch (err) {
       // Concurrent registration of the same address between the check and the write
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === PRISMA_ERROR.UNIQUE_VIOLATION) {
+      if (isUniqueViolation(err)) {
         throw apiError.conflict('EMAIL_ALREADY_TAKEN');
       }
       throw err;

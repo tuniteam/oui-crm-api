@@ -9,10 +9,10 @@ export const roleWithGrants = Prisma.validator<Prisma.RoleDefaultArgs>()({
 });
 export type RoleWithGrants = Prisma.RoleGetPayload<typeof roleWithGrants>;
 
-/** Roles visible from a project: non-backoffice system roles + the project's own roles. */
-export function buildRolesWhere(projectId: string): Prisma.RoleWhereInput {
-  return { OR: [{ projectId: null, isSystem: true, isBackoffice: false }, { projectId }] };
-}
+import { roleVisibleFromProjectWhere } from '@/auth/utils/roles.util';
+
+/** Roles visible from a project (shared home: auth/utils/roles.util). */
+export const buildRolesWhere = roleVisibleFromProjectWhere;
 
 /** A role editable by the project: its own (non-system). System roles → 403, others → 404. */
 export async function getProjectRoleOrThrow(

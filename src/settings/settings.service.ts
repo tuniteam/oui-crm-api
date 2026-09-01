@@ -6,6 +6,7 @@ import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interfac
 import { apiError, withDetails } from '@/common/api-error';
 import { MIME } from '@/common/constants/mime.constants';
 import { FileService } from '@/files/file.service';
+import { assertFilePresent } from '@/files/files.utils';
 import { UploadedFileLike } from '@/files/uploaded-file.interface';
 import { PrismaService } from '@/prisma/prisma.service';
 import { DocumentsResponseDto, SignatureUploadResponseDto, TemplateUploadResponseDto } from './dto/response-documents.dto';
@@ -62,19 +63,20 @@ export class SettingsService {
   // ---- documents ------------------------------------------------------------------------
 
   async documents(projectId: string, actor: AuthenticatedUser): Promise<DocumentsResponseDto> {
-    const [templates, signature, relation] = await Promise.all([
+    const [templates, signature] = await Promise.all([
       this.prisma.file.findMany({
         where: { projectId, ownerType: FileOwnerType.PROJECT, category: FileCategory.HTML_TEMPLATE },
         orderBy: { uploadedAt: 'desc' },
         select: { id: true, fileName: true, uploadedAt: true, templateType: true },
       }),
       this.findSignatureImage(projectId),
-      this.prisma.userRoleProject.findFirst({ where: { userId: actor.id, projectId }, select: { initials: true } }),
     ]);
+    // Initials come from the authenticated principal — no extra query
+    const initials = actor.relations.find((r) => r.projectId === projectId)?.initials;
     return {
       templates: activeTemplates(templates),
       signatureImage: signature ? { fileId: signature.id, fileName: signature.fileName, uploadedAt: signature.uploadedAt } : null,
-      numbering: numberingExamples(new Date(), relation?.initials ?? NUMBERING.FALLBACK_INITIALS),
+      numbering: numberingExamples(new Date(), initials ?? NUMBERING.FALLBACK_INITIALS),
     };
   }
 
@@ -161,8 +163,4 @@ export class SettingsService {
       where: { projectId, ownerType: FileOwnerType.PROJECT, category: FileCategory.SIGNATURE_IMAGE },
     });
   }
-}
-
-function assertFilePresent(file: UploadedFileLike | undefined): asserts file is UploadedFileLike {
-  if (!file || file.buffer.byteLength === 0) throw apiError.badRequest('STORAGE_FILE_REQUIRED');
 }

@@ -1,3 +1,5 @@
+import { USER_NAME_MAX_LENGTH } from '@/common/constants/app.constants';
+import { ROLE_CODE_MAX_LENGTH } from '@/roles/roles.constants';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserStatus } from '@prisma/client';
 import { IsEmail, IsNotEmpty, IsString, MaxLength } from 'class-validator';
@@ -10,19 +12,19 @@ export class CreateBackofficeUserDto {
   @ApiProperty({ example: 'Nadia' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLength(USER_NAME_MAX_LENGTH)
   firstName: string;
 
   @ApiProperty({ example: 'Karam' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLength(USER_NAME_MAX_LENGTH)
   lastName: string;
 
   @ApiProperty({ example: 'SUPER_ADMIN', description: 'A backoffice system role (GET /backoffice/roles)' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLength(ROLE_CODE_MAX_LENGTH)
   roleCode: string;
 }
 

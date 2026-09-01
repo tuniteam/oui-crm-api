@@ -14,6 +14,7 @@ import { BackofficeUserListQueryDto } from './dto/query-user-backoffice-list.dto
 import { BackofficeRolesResponseDto, BackofficeUserListResponseDto, BackofficeUserResponseDto } from './dto/response-user-backoffice.dto';
 import { UpdateBackofficeUserDto } from './dto/update-user-backoffice.dto';
 import { BACKOFFICE_INITIALS, USERS_BACKOFFICE_AUDIT } from './users-backoffice.constants';
+import { BACKOFFICE_ROLE_WHERE } from '@/auth/utils/roles.util';
 import {
   BACKOFFICE_RELATION_WHERE,
   backofficeRelation,
@@ -34,7 +35,7 @@ export class UsersBackofficeService {
 
   async roles(): Promise<BackofficeRolesResponseDto> {
     const roles = await this.prisma.role.findMany({
-      where: { projectId: null, isSystem: true, isBackoffice: true },
+      where: BACKOFFICE_ROLE_WHERE,
       orderBy: { code: 'asc' },
       select: { code: true, label: true },
     });

@@ -1,3 +1,5 @@
+import { USER_NAME_MAX_LENGTH } from '@/common/constants/app.constants';
+import { ROLE_CODE_MAX_LENGTH } from '@/roles/roles.constants';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { DAY_PATTERN } from '@/common/utils/date.utils';
@@ -10,14 +12,14 @@ export class UpdateUserDto {
   @IsOptionalNotNull()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLength(USER_NAME_MAX_LENGTH)
   firstName?: string;
 
   @ApiPropertyOptional({ example: 'Karam' })
   @IsOptionalNotNull()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLength(USER_NAME_MAX_LENGTH)
   lastName?: string;
 
   @ApiPropertyOptional({ example: 'NK' })
@@ -30,7 +32,7 @@ export class UpdateUserDto {
   @IsOptionalNotNull()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(50)
+  @MaxLength(ROLE_CODE_MAX_LENGTH)
   roleCode?: string;
 
   @ApiPropertyOptional({ example: 'cmth…', nullable: true, description: 'null removes the scope' })

@@ -71,7 +71,7 @@ export class UsersService {
 
     const existing = await this.prisma.user.findUnique({
       where: { email },
-      include: { userRoleProjects: { select: { id: true, projectId: true, displayOrder: true, status: true, initials: true } } },
+      include: { userRoleProjects: { select: { id: true, projectId: true, displayOrder: true, status: true } } },
     });
     // Backoffice accounts are dedicated (US-00-11): they are never assigned to a project
     if (existing?.userRoleProjects.some((r) => r.projectId === null)) throw apiError.conflict('EMAIL_ALREADY_TAKEN');
@@ -157,7 +157,7 @@ export class UsersService {
           data: {
             roleId: role?.id,
             initials: dto.initials,
-            scopeId: dto.scopeId === undefined ? undefined : dto.scopeId,
+            scopeId: dto.scopeId,
             expiresAt: dto.expiresAt === undefined ? undefined : dto.expiresAt ? parseDayOrThrow(dto.expiresAt) : null,
           },
         });
