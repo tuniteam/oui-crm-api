@@ -16,6 +16,11 @@ export function formatDateField(date: Date): string {
 }
 
 /** Today as a UTC midnight Date (for @db.Date columns). */
+/** Last millisecond of the UTC day of `date` (inclusive upper bound of a calendar-day filter). */
+export function endOfDayUtc(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1) - 1);
+}
+
 export function todayUtc(now: Date = new Date()): Date {
   return toDate(formatDateField(now));
 }

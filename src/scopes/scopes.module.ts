@@ -1,12 +1,11 @@
 import { Module } from '@nestjs/common';
-import { AuditLogModule } from '@/audit-log/audit-log.module';
 import { AuthModule } from '@/auth/auth.module';
 import { ScopeService } from './scope.service';
 import { ScopesController } from './scopes.controller';
 import { ScopesService } from './scopes.service';
 
 @Module({
-  imports: [AuthModule, AuditLogModule],
+  imports: [AuthModule],
   controllers: [ScopesController],
   providers: [ScopesService, ScopeService],
   exports: [ScopeService],

@@ -119,6 +119,13 @@ const errorDefinitions = {
 
 type ErrorKey = keyof typeof errorDefinitions;
 
+/** User-facing labels that are not error messages (domain wording, French). */
+export const labels = {
+  auditObjects: {
+    settings: 'Réglages',
+  },
+} as const;
+
 export const ApiMessages = {
   errors: {
     code: Object.fromEntries(Object.keys(errorDefinitions).map((k) => [k, k])) as Record<
@@ -313,8 +320,10 @@ export const ApiMessages = {
 
     auditLog: {
       tag: 'Audit log',
-      list: { summary: 'List audit log entries', description: 'Paginated, filterable by period, user, action and object' },
-      export: { summary: 'Export audit log', description: 'CSV export of the filtered audit log' },
+      list: {
+        summary: 'List audit log entries',
+        description: 'Newest first; filterable by calendar-day period, user, action code, object type and object id',
+      },
     },
 
     files: {

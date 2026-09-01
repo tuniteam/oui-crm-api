@@ -12,3 +12,10 @@ export const AUDIT_OBJECTS = {
   REFERENCE_ITEM: 'ReferenceItem',
   FILE: 'File',
 } as const;
+
+export type AuditObjectType = (typeof AUDIT_OBJECTS)[keyof typeof AUDIT_OBJECTS];
+export const AUDIT_OBJECT_TYPES: readonly AuditObjectType[] = Object.values(AUDIT_OBJECTS);
+
+export const AUDIT_ACTION_MAX_LENGTH = 45;
+/** Query date filters are calendar days: `YYYY-MM-DD`, inclusive bounds. */
+export const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;

@@ -476,8 +476,6 @@ model AuditLog {
   action     String   @db.VarChar(45)
   objectType String?  @map("object_type") @db.VarChar(30)
   objectId   String?  @map("object_id")
-  ip         String?  @db.VarChar(45)
-  userAgent  String?  @map("user_agent") @db.VarChar(255)
   metadata   Json?
   createdAt  DateTime @default(now()) @map("created_at")
 
