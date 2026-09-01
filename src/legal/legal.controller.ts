@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guards';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
 import { ApiMessages } from '@/common/messages';
+import { ApiAuthResponses, ApiInvalidData } from '@/common/decorators';
 import { LegalAcceptDto, LegalAcceptResponseDto } from './dto/legal-accept.dto';
 import { LegalService } from './legal.service';
 
@@ -22,6 +23,8 @@ export class LegalController {
   @Post('accept')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth(SWAGGER_BEARER_AUTH)
+  @ApiAuthResponses()
+  @ApiInvalidData()
   @HttpCode(HttpStatus.OK)
   @ApiOperation(swagger.legal.accept)
   @ApiBody({ type: LegalAcceptDto })

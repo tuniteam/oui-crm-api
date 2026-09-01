@@ -11,8 +11,30 @@ const responses = ApiMessages.swagger.responses;
 const notFound = () => ApiResponse({ status: 404, description: responses.notFound });
 const invalidData = () => ApiResponse({ status: 400, description: responses.invalidData });
 const conflict = () => ApiResponse({ status: 409, description: responses.conflict });
+const unauthorized = () => ApiResponse({ status: 401, description: responses.unauthorized });
+const forbidden = () => ApiResponse({ status: 403, description: responses.forbidden });
 const ok = <T>(type: Type<T> | undefined, description: string) =>
   ApiResponse({ status: 200, description, ...(type && { type }) });
+
+/** Guarded route: 401 + 403. Applied once on the controller class, never per route. */
+export function ApiAuthResponses() {
+  return applyDecorators(unauthorized(), forbidden());
+}
+
+/** Action on an existing resource (status change, duplicate, resend, upload): 400 + 404 + 409 */
+export function ApiActionResponses() {
+  return applyDecorators(invalidData(), notFound(), conflict());
+}
+
+/** 404 alone, for routes the CRUD helpers do not cover (downloads, exports) */
+export function ApiResourceNotFound() {
+  return notFound();
+}
+
+/** 400 alone, for routes declaring their success response by hand */
+export function ApiInvalidData() {
+  return invalidData();
+}
 
 /** GET by id: 200 + 404 */
 export function ApiGetResponse<T>(type: Type<T>, description = responses.success) {

@@ -2,6 +2,7 @@ import { Body, Controller, HttpCode, HttpStatus, Ip, Post, UseGuards } from '@ne
 import { ApiBearerAuth, ApiBody, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
 import { ApiMessages } from '@/common/messages';
+import { ApiAuthResponses, ApiInvalidData } from '@/common/decorators';
 import { ActivationService } from './activation.service';
 import { AuthService } from './auth.service';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -45,6 +46,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation(swagger.auth.login)
   @ApiBody({ type: LoginDto })
+  @ApiInvalidData()
   @ApiOkResponse({ type: AuthTokensResponseDto })
   login(@Body() dto: LoginDto, @Ip() ip: string): Promise<AuthTokensResponseDto> {
     return this.authService.login(dto, ip);
@@ -55,12 +57,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation(swagger.auth.refresh)
   @ApiBody({ type: RefreshTokenDto })
+  @ApiInvalidData()
   @ApiOkResponse({ type: AuthTokensResponseDto })
   refresh(@Body() dto: RefreshTokenDto): Promise<AuthTokensResponseDto> {
     return this.authService.refreshToken(dto.refreshToken);
   }
 
   @Post('logout')
+  @ApiAuthResponses()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth(SWAGGER_BEARER_AUTH)
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -76,6 +80,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation(swagger.auth.activationValidate)
   @ApiBody({ type: TokenDto })
+  @ApiInvalidData()
   @ApiOkResponse({ type: ActivationValidateResponseDto })
   validateActivation(@Body() dto: TokenDto): Promise<ActivationValidateResponseDto> {
     return this.activationService.validate(dto.token);
@@ -86,6 +91,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation(swagger.auth.activationComplete)
   @ApiBody({ type: ActivationCompleteDto })
+  @ApiInvalidData()
   @ApiOkResponse({ type: AuthTokensResponseDto })
   completeActivation(@Body() dto: ActivationCompleteDto): Promise<AuthTokensResponseDto> {
     return this.activationService.complete(dto);
@@ -98,6 +104,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation(swagger.auth.passwordResetRequest)
   @ApiBody({ type: PasswordResetRequestDto })
+  @ApiInvalidData()
   @ApiOkResponse({ type: SuccessResponseDto })
   async requestPasswordReset(@Body() dto: PasswordResetRequestDto): Promise<SuccessResponseDto> {
     // Always 200: the outcome must not reveal whether the e-mail exists
@@ -110,6 +117,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation(swagger.auth.passwordResetValidate)
   @ApiBody({ type: TokenDto })
+  @ApiInvalidData()
   @ApiOkResponse({ type: TokenValidResponseDto })
   async validatePasswordReset(@Body() dto: TokenDto): Promise<TokenValidResponseDto> {
     await this.passwordResetService.validate(dto.token);
@@ -121,6 +129,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation(swagger.auth.passwordResetComplete)
   @ApiBody({ type: PasswordResetCompleteDto })
+  @ApiInvalidData()
   @ApiOkResponse({ type: SuccessResponseDto })
   async completePasswordReset(@Body() dto: PasswordResetCompleteDto): Promise<SuccessResponseDto> {
     await this.passwordResetService.complete(dto.token, dto.password);
@@ -130,11 +139,13 @@ export class AuthController {
   // ---------------------------------------------------------------- US-00-02 e-mail change
 
   @Post('email-change/request')
+  @ApiAuthResponses()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth(SWAGGER_BEARER_AUTH)
   @HttpCode(HttpStatus.OK)
   @ApiOperation(swagger.auth.emailChangeRequest)
   @ApiBody({ type: EmailChangeRequestDto })
+  @ApiInvalidData()
   @ApiOkResponse({ type: SuccessResponseDto })
   async requestEmailChange(
     @CurrentUser() user: AuthenticatedUser,
@@ -149,6 +160,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation(swagger.auth.emailChangeConfirm)
   @ApiBody({ type: TokenDto })
+  @ApiInvalidData()
   @ApiOkResponse({ type: EmailChangeConfirmResponseDto })
   confirmEmailChange(@Body() dto: TokenDto): Promise<EmailChangeConfirmResponseDto> {
     return this.emailChangeService.confirm(dto.token);

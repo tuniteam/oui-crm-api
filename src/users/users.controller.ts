@@ -21,7 +21,7 @@ import { PermissionsGuard } from '@/auth/guards/permissions.guard';
 import { ProjectGuard } from '@/auth/guards/project.guard';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { PROJECT_ID_HEADER } from '@/auth/auth.constants';
-import { ApiCuidParam, ApiGetById, ApiListResponse, ApiPatchResponse, ApiPostResponse, ApiDeleteResponse } from '@/common/decorators';
+import { ApiCuidParam, ApiGetById, ApiListResponse, ApiPatchResponse, ApiPostResponse, ApiDeleteResponse, ApiAuthResponses, ApiActionResponses } from '@/common/decorators';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
 import { ApiMessages } from '@/common/messages';
 import { ParseCuidPipe } from '@/common/pipes';
@@ -37,6 +37,7 @@ const swagger = ApiMessages.swagger;
 /** US-00-05 — project-scoped user administration. */
 @ApiTags(swagger.users.tag)
 @ApiBearerAuth(SWAGGER_BEARER_AUTH)
+@ApiAuthResponses()
 @UseGuards(JwtAuthGuard, ProjectGuard, PermissionsGuard)
 @ProjectScoped()
 @ApiHeader({ name: PROJECT_ID_HEADER, description: swagger.projectIdHeaderDesc, required: true })
@@ -111,6 +112,7 @@ export class UsersController {
   @ApiOperation(swagger.users.resendActivation)
   @ApiCuidParam('id', swagger.params.userId)
   @ApiOkResponse({ description: swagger.responses.success })
+  @ApiActionResponses()
   resendActivation(
     @CurrentProjectId() projectId: string,
     @Param('id', ParseCuidPipe) id: string,

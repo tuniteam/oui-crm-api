@@ -27,7 +27,7 @@ import { ProjectGuard } from '@/auth/guards/project.guard';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { apiError } from '@/common/api-error';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
-import { ApiDeleteResponse, ApiGetResponse, ApiPatchResponse, ApiPostResponse } from '@/common/decorators';
+import { ApiDeleteResponse, ApiGetResponse, ApiPatchResponse, ApiPostResponse, ApiAuthResponses, ApiResourceNotFound } from '@/common/decorators';
 import { ApiMessages } from '@/common/messages';
 import { MAX_SIZE_BY_CATEGORY } from '@/files/files.constants';
 import { UploadedFileLike } from '@/files/uploaded-file.interface';
@@ -42,6 +42,7 @@ const templateTypePipe = new ParseEnumPipe(DocumentTemplateType, { exceptionFact
 /** US-00-08 — settings, document templates and signature image of the current project. */
 @ApiTags(swagger.settings.tag)
 @ApiBearerAuth(SWAGGER_BEARER_AUTH)
+@ApiAuthResponses()
 @UseGuards(JwtAuthGuard, ProjectGuard, PermissionsGuard)
 @ProjectScoped()
 @ApiHeader({ name: PROJECT_ID_HEADER, description: swagger.projectIdHeaderDesc, required: true })
@@ -84,6 +85,7 @@ export class SettingsController {
   @ApiOperation(swagger.settings.uploadTemplate)
   @ApiParam({ name: 'type', enum: DocumentTemplateType, description: swagger.params.templateType })
   @ApiPostResponse(TemplateUploadResponseDto)
+  @ApiResourceNotFound()
   // Cap the multipart body before it is buffered — FileService re-checks per category
   @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_SIZE_BY_CATEGORY.HTML_TEMPLATE } }))
   uploadTemplate(

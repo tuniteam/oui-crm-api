@@ -19,7 +19,7 @@ import { Permissions } from '@/auth/decorators/permissions.decorator';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guards';
 import { PermissionsGuard } from '@/auth/guards/permissions.guard';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
-import { ApiCuidParam, ApiGetById, ApiListResponse, ApiPatchResponse, ApiPostResponse } from '@/common/decorators';
+import { ApiCuidParam, ApiGetById, ApiListResponse, ApiPatchResponse, ApiPostResponse, ApiAuthResponses, ApiActionResponses, ApiResourceNotFound, ApiInvalidData } from '@/common/decorators';
 import { sendFileAttachment } from '@/common/helper/file-response.helper';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
 import { ApiMessages } from '@/common/messages';
@@ -47,6 +47,7 @@ const swagger = ApiMessages.swagger;
  */
 @ApiTags(swagger.projects.tag)
 @ApiBearerAuth(SWAGGER_BEARER_AUTH)
+@ApiAuthResponses()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('projects')
 export class ProjectsController {
@@ -113,6 +114,7 @@ export class ProjectsController {
   @ApiOperation(swagger.projects.changeStatus)
   @ApiCuidParam('id', swagger.params.projectId)
   @ApiBody({ type: ChangeProjectStatusDto })
+  @ApiActionResponses()
   changeStatus(
     @Param('id', ParseCuidPipe) id: string,
     @Body() dto: ChangeProjectStatusDto,
@@ -127,6 +129,8 @@ export class ProjectsController {
   @ApiCuidParam('id', swagger.params.projectId)
   @ApiProduces(XLSX_MIME_TYPE)
   @ApiOkResponse({ description: swagger.responses.attachment })
+  @ApiResourceNotFound()
+  @ApiInvalidData()
   async configExport(
     @Param('id', ParseCuidPipe) id: string,
     @CurrentUser() user: AuthenticatedUser,
