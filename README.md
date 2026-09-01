@@ -52,6 +52,9 @@ npm test                            # tests unitaires (règles pures : permissio
 bash docs/tests/test-auth.sh        # BDD curl US-00-01/02 (rapport docs/tests/test-report-auth.txt)
 bash docs/tests/test-profile.sh     # BDD curl US-00-03
 bash docs/tests/test-projects.sh    # BDD curl US-00-04
+bash docs/tests/test-users.sh       # BDD curl US-00-05
+bash docs/tests/test-roles.sh       # BDD curl US-00-06
+bash docs/tests/test-scopes.sh      # BDD curl US-00-07
 npm run swagger:check               # contrat exposé
 ```
 
@@ -82,6 +85,7 @@ recette front/QA. Helpers partagés : `docs/tests/lib.sh` (lit `.env`).
 ## État (lot L0 — socle)
 
 Livré : socle commun + schéma + seeds · **US-00-01/02** auth (sessions, activation, reset,
-changement d'e-mail) · **US-00-03** profil + légal · **US-00-04** administration des projets.
-Reste : utilisateurs/rôles/périmètres (phase F), réglages/gabarits/référentiels (G),
-journal (H), jobs + qualité (I). Détail : `docs/SPEC-08-PLAN-L0.md`.
+changement d'e-mail) · **US-00-03** profil + légal · **US-00-04** administration des projets ·
+**US-00-05/06/07** utilisateurs, rôles, périmètres (+ `ScopeService`).
+Reste : réglages/gabarits/référentiels (G), journal (H), jobs + qualité (I).
+Détail : `docs/SPEC-08-PLAN-L0.md` ; contrat front par route : `docs/SPEC-11-HANDOFF-FRONT.md`.
