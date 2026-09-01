@@ -2,7 +2,8 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 import { IsCuid } from '@/common/decorators';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
-import { AUDIT_ACTION_MAX_LENGTH, AUDIT_OBJECT_TYPES, AuditObjectType, DAY_PATTERN } from '../audit-log.constants';
+import { DAY_PATTERN } from '@/common/utils/date.utils';
+import { AUDIT_ACTION_MAX_LENGTH, AUDIT_OBJECT_TYPES, AuditObjectType } from '../audit-log.constants';
 
 /** Every filter is optional and cumulative; the list is always newest first. */
 export class AuditLogQueryDto extends PaginationQueryDto {

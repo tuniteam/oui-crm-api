@@ -5,6 +5,7 @@ import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interfac
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { apiError } from '@/common/api-error';
+import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { normalizeEmail } from '@/common/utils/email.utils';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -89,23 +90,30 @@ export class UsersBackofficeService {
       return { id: existing.id, status: existing.status };
     }
 
-    const user = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.user.create({
-        data: { email, password: '', firstName: dto.firstName, lastName: dto.lastName, status: UserStatus.PENDING },
+    let user;
+    try {
+      user = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.user.create({
+          data: { email, password: '', firstName: dto.firstName, lastName: dto.lastName, status: UserStatus.PENDING },
+        });
+        await tx.userRoleProject.create({
+          data: { userId: created.id, projectId: null, roleId: role.id, initials: BACKOFFICE_INITIALS, status: RelationshipStatus.ACTIVE },
+        });
+        await this.audit.log(tx, {
+          projectId: null,
+          userId: actor.id,
+          action: USERS_BACKOFFICE_AUDIT.CREATE,
+          objectType: AUDIT_OBJECTS.USER,
+          objectId: created.id,
+          metadata: { email, roleCode: role.code },
+        });
+        return created;
       });
-      await tx.userRoleProject.create({
-        data: { userId: created.id, projectId: null, roleId: role.id, initials: BACKOFFICE_INITIALS, status: RelationshipStatus.ACTIVE },
-      });
-      await this.audit.log(tx, {
-        projectId: null,
-        userId: actor.id,
-        action: USERS_BACKOFFICE_AUDIT.CREATE,
-        objectType: AUDIT_OBJECTS.USER,
-        objectId: created.id,
-        metadata: { email, roleCode: role.code },
-      });
-      return created;
-    });
+    } catch (err) {
+      // Concurrent create racing the precheck: the users.email unique index wins
+      if (isUniqueViolation(err)) throw apiError.conflict('EMAIL_ALREADY_TAKEN');
+      throw err;
+    }
     // Activation e-mail outside the transaction (SMTP must not hold it)
     await this.activationService.sendActivationToken(user.id);
     return { id: user.id, status: UserStatus.PENDING };

@@ -61,6 +61,7 @@ const errorDefinitions = {
   ROLE_IS_SYSTEM: 'System roles cannot be modified',
   ROLE_CODE_EXISTS: 'A role with this code already exists in the project',
   ROLE_IN_USE: 'Role is assigned to users and cannot be deleted',
+  CANNOT_UPDATE_OWN_ACCESS: 'You cannot change your own scope, expiration or permissions',
   CANNOT_UPDATE_OWN_ROLE: 'You cannot change your own role',
   CANNOT_DELETE_SELF: 'You cannot delete your own account',
   USER_IS_LAST_ADMIN: 'Cannot remove the last project administrator',

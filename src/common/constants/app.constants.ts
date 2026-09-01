@@ -26,6 +26,7 @@ export const DEFAULT_NODE_ENV = NodeEnv.DEVELOPMENT;
 export const PRISMA_ERROR = {
   RECORD_NOT_FOUND: 'P2025',
   UNIQUE_VIOLATION: 'P2002',
+  FOREIGN_KEY_VIOLATION: 'P2003',
 } as const;
 
 /** Application-level environment keys read outside a module's own *_ENV map. */

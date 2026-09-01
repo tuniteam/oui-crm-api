@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserStatus } from '@prisma/client';
-import { IsBoolean, IsDateString, IsEmail, IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { DAY_PATTERN } from '@/common/utils/date.utils';
+import { INITIALS_PATTERN } from '../users.constants';
 import { IsCuid } from '@/common/decorators/is-cuid.decorator';
 
 export class CreateUserDto {
@@ -22,8 +24,7 @@ export class CreateUserDto {
 
   @ApiProperty({ example: 'NK', description: 'Unique within the project (quote numbering)' })
   @IsString()
-  @IsNotEmpty()
-  @MaxLength(3)
+  @Matches(INITIALS_PATTERN)
   initials: string;
 
   @ApiProperty({ example: 'SALES_REP', description: 'System (non-backoffice) role code or a role of this project' })
@@ -43,7 +44,7 @@ export class CreateUserDto {
 
   @ApiPropertyOptional({ example: '2027-08-31', description: 'Last day of validity (YYYY-MM-DD)' })
   @IsOptional()
-  @IsDateString()
+  @Matches(DAY_PATTERN)
   expiresAt?: string;
 }
 

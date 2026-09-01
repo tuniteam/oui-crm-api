@@ -1,6 +1,6 @@
 import { AuditLog, Prisma } from '@prisma/client';
 import { apiError } from '@/common/api-error';
-import { endOfDayUtc, toDate } from '@/common/utils/date.utils';
+import { endOfDayUtc, parseDayOrThrow } from '@/common/utils/date.utils';
 import { AuditLogQueryDto } from './dto/query-audit-log.dto';
 import { AuditLogItemDto, AuditUserRefDto } from './dto/response-audit-log.dto';
 
@@ -8,8 +8,8 @@ import { AuditLogItemDto, AuditUserRefDto } from './dto/response-audit-log.dto';
 export function buildAuditWhere(projectId: string, query: AuditLogQueryDto): Prisma.AuditLogWhereInput {
   const { from, to, userId, action, objectType, objectId } = query;
   const createdAt: Prisma.DateTimeFilter = {};
-  if (from) createdAt.gte = toDate(from);
-  if (to) createdAt.lte = endOfDayUtc(toDate(to));
+  if (from) createdAt.gte = parseDayOrThrow(from);
+  if (to) createdAt.lte = endOfDayUtc(parseDayOrThrow(to));
   if (createdAt.gte && createdAt.lte && createdAt.gte > createdAt.lte) throw apiError.badRequest('INVALID_DATA');
   return {
     projectId,
