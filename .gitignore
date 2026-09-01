@@ -35,9 +35,8 @@ coverage/
 # Swagger exports (optional)
 swagger-output.json
 
-# Local documentation (dev guides) — sauf les spécifications, versionnées avec le code
-docs/*
-!docs/SPEC-*.md
+# Documentation locale (specs, features, tests curl, maquettes) — jamais commitée (décision du 01/09/2026)
+docs/
 
 # Claude Code local files
 .claude/*

@@ -63,7 +63,7 @@ recette front/QA. Helpers partagés : `docs/tests/lib.sh` (lit `.env`).
 
 ## Documentation
 
-- **Specs** (versionnées, source de vérité) : `docs/SPEC-01` fonctionnelle · `02` technique ·
+- **Specs** (locales, non versionnées — source de vérité de l'équipe) : `docs/SPEC-01` fonctionnelle · `02` technique ·
   `03` héritage soft-m · `04` moteur tarifaire · `05` import de reprise · `06` permissions et
   contrat `/profile/me` · `07` **user stories + handoff front** · `08` plan du lot L0 ·
   `09` manifeste de réutilisation · `10` configuration projet · `11` **handoff front détaillé par route**.
