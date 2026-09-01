@@ -59,6 +59,7 @@ bash docs/tests/test-settings.sh    # BDD curl US-00-08
 bash docs/tests/test-reference-items.sh  # BDD curl US-00-09
 bash docs/tests/test-audit-log.sh   # BDD curl US-00-10
 bash docs/tests/test-users-backoffice.sh  # BDD curl US-00-11
+bash docs/tests/run-all.sh           # toutes les suites, rapport consolidé
 npm run swagger:check               # contrat exposé
 ```
 
