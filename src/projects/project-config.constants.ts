@@ -12,18 +12,21 @@ export interface ReferenceItemSeed {
   metadata?: Prisma.InputJsonValue;
 }
 
-export type ReferenceCategory =
-  | 'STRUCTURE_TYPE'
-  | 'TAG'
-  | 'LEAD_SOURCE'
-  | 'SERVICE'
-  | 'ACTIVITY_TYPE'
-  | 'ACTIVITY_RESULT'
-  | 'TICKET_CATEGORY'
-  | 'TRAINING_TYPE'
-  | 'VENDOR'
-  | 'SOLUTION'
-  | 'LOSS_REASON';
+/** Reference categories (SPEC-10 §1) — the only values accepted by /reference-items. */
+export const REFERENCE_CATEGORIES = [
+  'STRUCTURE_TYPE',
+  'TAG',
+  'LEAD_SOURCE',
+  'SERVICE',
+  'ACTIVITY_TYPE',
+  'ACTIVITY_RESULT',
+  'TICKET_CATEGORY',
+  'TRAINING_TYPE',
+  'VENDOR',
+  'SOLUTION',
+  'LOSS_REASON',
+] as const;
+export type ReferenceCategory = (typeof REFERENCE_CATEGORIES)[number];
 
 export interface ProjectConfig {
   settings: {

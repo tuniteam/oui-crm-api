@@ -19,6 +19,7 @@ import { UsersModule } from './users/users.module';
 import { RolesModule } from './roles/roles.module';
 import { ScopesModule } from './scopes/scopes.module';
 import { SettingsModule } from './settings/settings.module';
+import { ReferenceItemsModule } from './reference-items/reference-items.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { SettingsModule } from './settings/settings.module';
     RolesModule,
     ScopesModule,
     SettingsModule,
+    ReferenceItemsModule,
     HealthModule,
     StorageModule,
     FilesModule,
