@@ -10,7 +10,7 @@ import { PermissionsGuard } from '@/auth/guards/permissions.guard';
 import { ProjectGuard } from '@/auth/guards/project.guard';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
-import { ApiCuidParam, ApiDeleteResponse, ApiListResponse, ApiPatchResponse, ApiPostResponse } from '@/common/decorators';
+import { ApiCuidParam, ApiDeleteResponse, ApiListResponse, ApiPatchResponse, ApiPostResponse, ApiAuthResponses } from '@/common/decorators';
 import { ApiMessages } from '@/common/messages';
 import { ParseCuidPipe } from '@/common/pipes';
 import { CreateScopeDto, ScopeIdResponseDto } from './dto/create-scope.dto';
@@ -23,6 +23,7 @@ const swagger = ApiMessages.swagger;
 /** US-00-07 — geographic scopes of the current project (+ static regions table). */
 @ApiTags(swagger.scopes.tag)
 @ApiBearerAuth(SWAGGER_BEARER_AUTH)
+@ApiAuthResponses()
 @UseGuards(JwtAuthGuard, ProjectGuard, PermissionsGuard)
 @ProjectScoped()
 @ApiHeader({ name: PROJECT_ID_HEADER, description: swagger.projectIdHeaderDesc, required: true })

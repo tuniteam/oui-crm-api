@@ -8,7 +8,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guards';
 import { PermissionsGuard } from '@/auth/guards/permissions.guard';
 import { ProjectGuard } from '@/auth/guards/project.guard';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
-import { ApiListResponse } from '@/common/decorators';
+import { ApiListResponse, ApiAuthResponses } from '@/common/decorators';
 import { ApiMessages } from '@/common/messages';
 import { AuditLogService } from './audit-log.service';
 import { AuditLogQueryDto } from './dto/query-audit-log.dto';
@@ -19,6 +19,7 @@ const swagger = ApiMessages.swagger;
 /** US-00-10 — journal of the current project (read only; CSV export comes with US-05-03). */
 @ApiTags(swagger.auditLog.tag)
 @ApiBearerAuth(SWAGGER_BEARER_AUTH)
+@ApiAuthResponses()
 @UseGuards(JwtAuthGuard, ProjectGuard, PermissionsGuard)
 @ProjectScoped()
 @ApiHeader({ name: PROJECT_ID_HEADER, description: swagger.projectIdHeaderDesc, required: true })

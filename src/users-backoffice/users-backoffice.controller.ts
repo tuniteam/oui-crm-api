@@ -6,7 +6,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guards';
 import { PermissionsGuard } from '@/auth/guards/permissions.guard';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
-import { ApiCuidParam, ApiDeleteResponse, ApiGetById, ApiListResponse, ApiPatchResponse, ApiPostResponse } from '@/common/decorators';
+import { ApiCuidParam, ApiDeleteResponse, ApiGetById, ApiListResponse, ApiPatchResponse, ApiPostResponse, ApiAuthResponses, ApiActionResponses } from '@/common/decorators';
 import { ApiMessages } from '@/common/messages';
 import { ParseCuidPipe } from '@/common/pipes';
 import { CreateBackofficeUserDto, CreateBackofficeUserResponseDto } from './dto/create-user-backoffice.dto';
@@ -20,6 +20,7 @@ const swagger = ApiMessages.swagger;
 /** US-00-11 — platform routes (no x-project-id): backoffice accounts, same shape as soft-m /backoffice/users. */
 @ApiTags(swagger.usersBackoffice.tag)
 @ApiBearerAuth(SWAGGER_BEARER_AUTH)
+@ApiAuthResponses()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('backoffice')
 export class UsersBackofficeController {
@@ -77,6 +78,7 @@ export class UsersBackofficeController {
   @ApiOperation(swagger.usersBackoffice.resendActivation)
   @ApiCuidParam('id', swagger.params.userId)
   @ApiOkResponse({ description: swagger.responses.success })
+  @ApiActionResponses()
   resendActivation(@Param('id', ParseCuidPipe) id: string, @CurrentUser() actor: AuthenticatedUser): Promise<{ sent: boolean }> {
     return this.usersBackofficeService.resendActivation(id, actor);
   }

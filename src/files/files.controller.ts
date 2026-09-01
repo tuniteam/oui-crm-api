@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guards';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { ApiDeleteResponse, ApiGetResponse, ApiMessages, ParseCuidPipe } from '@/common';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
+import { ApiAuthResponses } from '@/common/decorators';
 import { FileService } from './file.service';
 import { FileDownloadResponseDto } from './dto/response-file-download.dto';
 
@@ -18,6 +19,7 @@ const swagger = ApiMessages.swagger;
 @ApiTags(swagger.files.tag)
 @Controller('files')
 @ApiBearerAuth(SWAGGER_BEARER_AUTH)
+@ApiAuthResponses()
 @UseGuards(JwtAuthGuard)
 export class FilesController {
   constructor(private readonly fileService: FileService) {}

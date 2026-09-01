@@ -15,7 +15,7 @@ import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOkResponse, ApiOperation, ApiTa
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
 import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guards';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
-import { ApiDeleteResponse, ApiGetResponse, ApiPatchResponse } from '@/common/decorators';
+import { ApiDeleteResponse, ApiGetResponse, ApiPatchResponse, ApiAuthResponses, ApiInvalidData } from '@/common/decorators';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
 import { ApiMessages } from '@/common/messages';
 import { AvatarResponseDto } from './dto/avatar-response.dto';
@@ -35,6 +35,7 @@ const swagger = ApiMessages.swagger;
  */
 @ApiTags(swagger.profile.tag)
 @ApiBearerAuth(SWAGGER_BEARER_AUTH)
+@ApiAuthResponses()
 @UseGuards(JwtAuthGuard)
 @Controller('profile')
 export class ProfileController {
@@ -62,6 +63,7 @@ export class ProfileController {
   @ApiOperation(swagger.profile.changePassword)
   @ApiBody({ type: ChangePasswordDto })
   @ApiOkResponse({ type: SuccessResponseDto })
+  @ApiInvalidData()
   async changePassword(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,

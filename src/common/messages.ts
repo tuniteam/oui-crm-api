@@ -149,6 +149,8 @@ export const ApiMessages = {
       invalidData: 'Invalid request data',
       conflict: 'Resource already exists',
       attachment: 'File download (attachment)',
+      unauthorized: 'Missing, invalid or expired access token',
+      forbidden: 'Insufficient permissions, or project not accessible to the user',
     },
 
     params: {
