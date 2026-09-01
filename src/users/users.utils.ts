@@ -1,5 +1,6 @@
 import { Prisma, RelationshipStatus, Role, UserStatus } from '@prisma/client';
 import { effectivePermissions } from '@/auth/utils/permissions.util';
+import { roleVisibleFromProjectWhere } from '@/auth/utils/roles.util';
 import { apiError } from '@/common/api-error';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
@@ -37,9 +38,7 @@ export function buildUserWhere(
     const search = filters.search;
     where.OR = [
       { initials: { equals: search, mode: 'insensitive' } },
-      { user: { email: { contains: search, mode: 'insensitive' } } },
-      { user: { firstName: { contains: search, mode: 'insensitive' } } },
-      { user: { lastName: { contains: search, mode: 'insensitive' } } },
+      ...userSearchOr(search).map((clause) => ({ user: clause })),
     ];
   }
   return where;
@@ -65,12 +64,7 @@ export async function resolveRoleOrThrow(
   projectId: string,
   roleCode: string,
 ): Promise<Role> {
-  const role = await db.role.findFirst({
-    where: {
-      code: roleCode,
-      OR: [{ projectId: null, isSystem: true, isBackoffice: false }, { projectId }],
-    },
-  });
+  const role = await db.role.findFirst({ where: { code: roleCode, ...roleVisibleFromProjectWhere(projectId) } });
   if (!role) throw apiError.badRequest('INVALID_ROLE');
   return role;
 }
@@ -84,9 +78,19 @@ export async function assertScopeInProject(
   if (!scope) throw apiError.notFound('SCOPE_NOT_FOUND', scopeId);
 }
 
-function projectStatus(rel: RelationWithAccess): ProjectUserStatus {
-  if (rel.status === RelationshipStatus.SUSPENDED) return ProjectUserStatus.SUSPENDED;
-  return rel.user.status as unknown as ProjectUserStatus;
+/** SUSPENDED assignment wins over the account status (users and backoffice screens). */
+export function compositeStatus(relationStatus: RelationshipStatus, accountStatus: UserStatus): ProjectUserStatus {
+  if (relationStatus === RelationshipStatus.SUSPENDED) return ProjectUserStatus.SUSPENDED;
+  return accountStatus as unknown as ProjectUserStatus;
+}
+
+/** Case-insensitive search on the account identity fields. */
+export function userSearchOr(search: string): Prisma.UserWhereInput[] {
+  return [
+    { email: { contains: search, mode: 'insensitive' } },
+    { firstName: { contains: search, mode: 'insensitive' } },
+    { lastName: { contains: search, mode: 'insensitive' } },
+  ];
 }
 
 export function mapToUserListItem(rel: RelationWithAccess): UserListItemResponseDto {
@@ -97,7 +101,7 @@ export function mapToUserListItem(rel: RelationWithAccess): UserListItemResponse
     firstName: rel.user.firstName,
     lastName: rel.user.lastName,
     initials: rel.initials,
-    status: projectStatus(rel),
+    status: compositeStatus(rel.status, rel.user.status),
     roleCode: rel.role.code,
     roleLabel: rel.role.label,
     scope: rel.scope,

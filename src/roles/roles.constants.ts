@@ -6,7 +6,9 @@ export const ROLES_AUDIT = {
 } as const;
 
 /** Role code: uppercase snake case, unique per project (system roles live with projectId null). */
-export const ROLE_CODE_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+import { UPPER_SNAKE_PATTERN } from '@/common/constants/app.constants';
+
+export const ROLE_CODE_PATTERN = UPPER_SNAKE_PATTERN;
 export const ROLE_CODE_MAX_LENGTH = 50;
 export const ROLE_LABEL_MAX_LENGTH = 100;
 

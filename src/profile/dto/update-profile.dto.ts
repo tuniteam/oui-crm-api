@@ -1,3 +1,4 @@
+import { USER_NAME_MAX_LENGTH } from '@/common/constants/app.constants';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { IsOptionalNotNull } from '@/common/decorators/optional-not-null.decorator';
@@ -7,14 +8,14 @@ export class UpdateProfileDto {
   @IsOptionalNotNull()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLength(USER_NAME_MAX_LENGTH)
   firstName?: string;
 
   @ApiPropertyOptional({ example: 'Bousaid' })
   @IsOptionalNotNull()
   @IsString()
   @IsNotEmpty()
-  @MaxLength(100)
+  @MaxLength(USER_NAME_MAX_LENGTH)
   lastName?: string;
 
   @ApiPropertyOptional({ example: '0601020304', nullable: true })

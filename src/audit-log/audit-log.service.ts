@@ -2,7 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { PrismaService } from '@/prisma/prisma.service';
-import { resolveObjectLabels } from './audit-log-labels';
+import { AuditObjectType } from './audit-log.constants';
+import { loadUsersWithInitials, resolveObjectLabels } from './audit-log-labels';
 import { buildAuditWhere, mapToAuditItem } from './audit-log.utils';
 import { AuditLogQueryDto } from './dto/query-audit-log.dto';
 import { AuditLogListResponseDto, AuditUserRefDto } from './dto/response-audit-log.dto';
@@ -13,7 +14,7 @@ export interface AuditEntry {
   userId: string | null;
   /** `object.verb`, e.g. 'project.create', 'quote.validate' (SPEC-02 §4.3). */
   action: string;
-  objectType?: string;
+  objectType?: AuditObjectType;
   objectId?: string;
   metadata?: Prisma.InputJsonValue;
 }
@@ -69,11 +70,7 @@ export class AuditLogService {
   private async actorRefs(projectId: string, userIds: (string | null)[]): Promise<Map<string, AuditUserRefDto>> {
     const ids = [...new Set(userIds.filter((id): id is string => !!id))];
     if (ids.length === 0) return new Map();
-    const [users, relations] = await Promise.all([
-      this.prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true } }),
-      this.prisma.userRoleProject.findMany({ where: { projectId, userId: { in: ids } }, select: { userId: true, initials: true } }),
-    ]);
-    const initials = new Map(relations.map((r) => [r.userId, r.initials]));
-    return new Map(users.map((u) => [u.id, { ...u, initials: initials.get(u.id) ?? null }]));
+    const users = await loadUsersWithInitials(this.prisma, projectId, ids);
+    return new Map([...users.values()].map((u) => [u.id, { id: u.id, firstName: u.firstName, lastName: u.lastName, initials: u.initials ?? null }]));
   }
 }

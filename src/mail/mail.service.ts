@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
-import { DEFAULT_PLATFORM_NAME } from '@/common/constants/app.constants';
+import { APP_ENV, DEFAULT_PLATFORM_NAME } from '@/common/constants/app.constants';
 import { getBoolean, getNumber } from '@/common/utils/config.utils';
 import { MS_PER_HOUR, MS_PER_MINUTE } from '@/common/utils/date.utils';
 import { ACTIVATION_MAIL } from './constants/activation-email.constants';
@@ -32,7 +32,7 @@ export class MailService {
 
   constructor(private readonly config: ConfigService) {
     this.enabled = getBoolean(this.config, MAIL_ENV.EMAIL_SENDING_ENABLED);
-    this.platformName = this.config.get<string>(MAIL_ENV.PLATFORM_NAME) || DEFAULT_PLATFORM_NAME;
+    this.platformName = this.config.get<string>(APP_ENV.PLATFORM_NAME) || DEFAULT_PLATFORM_NAME;
     // No silent fallback for the sender: a misconfigured address must fail at boot when sending is on
     this.from = this.enabled
       ? this.config.getOrThrow<string>(MAIL_ENV.EMAIL_FROM)

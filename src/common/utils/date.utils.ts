@@ -1,4 +1,8 @@
 // UTC only: business dates are @db.Date columns handled as YYYY-MM-DD strings.
+import { apiError } from '@/common/api-error';
+
+/** Calendar day: YYYY-MM-DD (shape only — parseDayOrThrow also rejects impossible dates). */
+export const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 export const MS_PER_SECOND = 1000;
 export const MS_PER_MINUTE = 60 * MS_PER_SECOND;
@@ -15,12 +19,23 @@ export function formatDateField(date: Date): string {
   return date.toISOString().split('T')[0];
 }
 
-/** Today as a UTC midnight Date (for @db.Date columns). */
 /** Last millisecond of the UTC day of `date` (inclusive upper bound of a calendar-day filter). */
 export function endOfDayUtc(date: Date): Date {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1) - 1);
 }
 
+/** Today as a UTC midnight Date (for @db.Date columns). */
 export function todayUtc(now: Date = new Date()): Date {
   return toDate(formatDateField(now));
+}
+
+/**
+ * Strict calendar-day parsing: shape AND existence (2027-02-30 or 2026-13-45 → 400 INVALID_DATA,
+ * never an Invalid Date reaching Prisma as a 500).
+ */
+export function parseDayOrThrow(s: string): Date {
+  if (!DAY_PATTERN.test(s)) throw apiError.badRequest('INVALID_DATA');
+  const date = toDate(s);
+  if (Number.isNaN(date.getTime()) || formatDateField(date) !== s) throw apiError.badRequest('INVALID_DATA');
+  return date;
 }

@@ -14,6 +14,7 @@ import { AvatarResponseDto } from './dto/avatar-response.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { MeResponseDto } from './dto/me-response.dto';
 import { ProfileCoreResponseDto, UpdateProfileDto } from './dto/update-profile.dto';
+import { assertFilePresent } from '@/files/files.utils';
 import { UploadedFileLike } from '@/files/uploaded-file.interface';
 import { PROFILE_AUDIT } from './profile.constants';
 import { mapToMeResponse, userWithAccess } from './profile.utils';
@@ -73,7 +74,7 @@ export class ProfileService {
 
   /** Replaces the avatar (single per user, FileService AVATAR rules) and returns its URL. */
   async updateAvatar(userId: string, file: UploadedFileLike | undefined): Promise<AvatarResponseDto> {
-    if (!file || file.buffer.byteLength === 0) throw apiError.badRequest('STORAGE_FILE_REQUIRED');
+    assertFilePresent(file);
 
     const saved = await this.fileService.upload({
       projectId: null,

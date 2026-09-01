@@ -1,3 +1,4 @@
+import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { Injectable, Logger } from '@nestjs/common';
 import { FeatureCode, Prisma, ProjectStatus } from '@prisma/client';
 import { AuditLogService } from '@/audit-log/audit-log.service';
@@ -94,7 +95,7 @@ export class ProjectsService {
       });
     } catch (err) {
       // Concurrent creation with the same slug between the precheck and the write
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === PRISMA_ERROR.UNIQUE_VIOLATION) {
+      if (isUniqueViolation(err)) {
         throw apiError.conflict('PROJECT_SLUG_EXISTS');
       }
       throw err;

@@ -1,3 +1,4 @@
+import { SEARCH_MAX_LENGTH } from '@/common/constants/app.constants';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
@@ -7,7 +8,7 @@ export class BackofficeUserListQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ description: 'Search in e-mail, first name and last name' })
   @IsOptional()
   @IsString()
-  @MaxLength(100)
+  @MaxLength(SEARCH_MAX_LENGTH)
   search?: string;
 
   @ApiPropertyOptional({ enum: ProjectUserStatus, description: 'Account status, or SUSPENDED (backoffice access suspended)' })

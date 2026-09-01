@@ -4,6 +4,7 @@ import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { apiError } from '@/common/api-error';
+import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateScopeDto, ScopeIdResponseDto } from './dto/create-scope.dto';
 import { GeoRegionsResponseDto, ScopeResponseDto, ScopesListResponseDto } from './dto/response-scope.dto';
@@ -41,9 +42,11 @@ export class ScopesService {
     assertRegionsKnown(dto.regions ?? []);
     await this.assertNameFree(projectId, dto.name);
 
-    const scope = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.scope.create({
-        data: {
+    let scope;
+    try {
+      scope = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.scope.create({
+          data: {
           projectId,
           name: dto.name,
           description: dto.description ?? '',
@@ -61,8 +64,13 @@ export class ScopesService {
         objectId: created.id,
         metadata: { name: created.name },
       });
-      return created;
-    });
+        return created;
+      });
+    } catch (err) {
+      // Concurrent create racing the precheck: the (projectId, name) unique index wins
+      if (isUniqueViolation(err)) throw apiError.conflict('SCOPE_NAME_EXISTS');
+      throw err;
+    }
     return { id: scope.id, name: scope.name };
   }
 

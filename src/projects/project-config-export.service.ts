@@ -1,11 +1,12 @@
+import { MIME } from '@/common/constants/mime.constants';
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma } from '@prisma/client';
 import * as ExcelJS from 'exceljs';
-import { DEFAULT_PLATFORM_NAME } from '@/common/constants/app.constants';
+import { APP_ENV, DEFAULT_PLATFORM_NAME } from '@/common/constants/app.constants';
 import { formatDateField } from '@/common/utils/date.utils';
 import { PrismaService } from '@/prisma/prisma.service';
-import { CONFIG_SHEETS, XLSX_MIME_TYPE } from './projects.constants';
+import { CONFIG_SHEETS } from './projects.constants';
 
 const projectConfigArgs = Prisma.validator<Prisma.ProjectDefaultArgs>()({
   include: {
@@ -34,10 +35,10 @@ export class ProjectConfigExportService {
 
   async export(projectId: string): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
     const project = await this.prisma.project.findFirstOrThrow({ where: { id: projectId }, ...projectConfigArgs });
-    const workbook = buildConfigWorkbook(project, this.config.get<string>('PLATFORM_NAME') || DEFAULT_PLATFORM_NAME);
+    const workbook = buildConfigWorkbook(project, this.config.get<string>(APP_ENV.PLATFORM_NAME) || DEFAULT_PLATFORM_NAME);
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     const day = formatDateField(new Date());
-    return { buffer, filename: `${project.slug}-config-${day}.xlsx`, contentType: XLSX_MIME_TYPE };
+    return { buffer, filename: `${project.slug}-config-${day}.xlsx`, contentType: MIME.XLSX };
   }
 }
 

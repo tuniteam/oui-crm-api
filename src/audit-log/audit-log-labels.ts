@@ -15,19 +15,35 @@ export type LabelResolver = (db: Db, projectId: string, ids: string[]) => Promis
  * (`Organization` → name, `Quote` → number…) from their own module through
  * `registerLabelResolver`. A deleted object or a type without resolver → null label.
  */
+export interface UserWithInitials {
+  id: string;
+  firstName: string;
+  lastName: string;
+  /** Initials on this project; undefined once unassigned. */
+  initials?: string;
+}
+
+/** Identity + project initials for a set of user ids (actor refs and User labels share it). */
+export async function loadUsersWithInitials(db: Db, projectId: string, ids: string[]): Promise<Map<string, UserWithInitials>> {
+  const [users, relations] = await Promise.all([
+    db.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true } }),
+    db.userRoleProject.findMany({ where: { projectId, userId: { in: ids } }, select: { userId: true, initials: true } }),
+  ]);
+  const initials = new Map(relations.map((r) => [r.userId, r.initials]));
+  return new Map(users.map((u) => [u.id, { ...u, initials: initials.get(u.id) }]));
+}
+
 const resolvers: Partial<Record<AuditObjectType, LabelResolver>> = {
   [AUDIT_OBJECTS.USER]: async (db, projectId, ids) => {
-    const [users, relations] = await Promise.all([
-      db.user.findMany({ where: { id: { in: ids } }, select: { id: true, firstName: true, lastName: true } }),
-      db.userRoleProject.findMany({ where: { projectId, userId: { in: ids } }, select: { userId: true, initials: true } }),
-    ]);
-    const initials = new Map(relations.map((r) => [r.userId, r.initials]));
-    return new Map(users.map((u) => [u.id, userLabel(u, initials.get(u.id))]));
+    const users = await loadUsersWithInitials(db, projectId, ids);
+    return new Map([...users.values()].map((u) => [u.id, userLabel(u, u.initials)]));
   },
   [AUDIT_OBJECTS.PROJECT]: async (db, _projectId, ids) =>
     new Map((await db.project.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } })).map((p) => [p.id, p.name])),
-  [AUDIT_OBJECTS.ROLE]: async (db, _projectId, ids) =>
-    new Map((await db.role.findMany({ where: { id: { in: ids } }, select: { id: true, label: true } })).map((r) => [r.id, r.label])),
+  [AUDIT_OBJECTS.ROLE]: async (db, projectId, ids) =>
+    new Map(
+      (await db.role.findMany({ where: { id: { in: ids }, OR: [{ projectId }, { projectId: null }] }, select: { id: true, label: true } })).map((r) => [r.id, r.label]),
+    ),
   [AUDIT_OBJECTS.SCOPE]: async (db, projectId, ids) =>
     new Map((await db.scope.findMany({ where: { id: { in: ids }, projectId }, select: { id: true, name: true } })).map((s) => [s.id, s.name])),
   [AUDIT_OBJECTS.SETTINGS]: async (_db, _projectId, ids) => new Map(ids.map((id) => [id, labels.auditObjects.settings])),

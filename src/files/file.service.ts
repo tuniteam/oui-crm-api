@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { DocumentTemplateType, File, FileCategory, FileOwnerType, Prisma } from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { PRISMA_ERROR } from '@/common/constants/app.constants';
+import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
+import { AuditLogService } from '@/audit-log/audit-log.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { StorageService } from '@/storage/storage.service';
 import { assertFileSize, detectAndValidateMimeType, isMinioNotFoundError, sanitizeFileName } from '@/storage/storage.utils';
@@ -9,6 +11,7 @@ import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interfac
 import { userHasPermission } from '@/auth/utils/permissions.util';
 import {
   ALLOWED_MIME_BY_CATEGORY,
+  FILES_AUDIT,
   MAX_SIZE_BY_CATEGORY,
   NEVER_DELETABLE,
   READ_PERMISSION_BY_CATEGORY,
@@ -54,6 +57,7 @@ export class FileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService,
+    private readonly audit: AuditLogService,
   ) {}
 
   // ============================================
@@ -192,13 +196,20 @@ export class FileService {
     if (NEVER_DELETABLE.has(file.category)) throw apiError.forbidden('FILE_RETENTION_LOCKED');
     if (!this.canDelete(file, user)) throw apiError.forbidden('STORAGE_ACCESS_DENIED');
 
-    // MinIO first (tolerating an already-missing object), then DB — idempotent overall.
-    await this.storageService.deleteObject(file.projectId, user.id, file.filePath).catch((err) => {
-      if (!isMinioNotFoundError(err)) throw err;
-    });
-
+    // DB row (+ audit) first so a MinIO failure never leaves a row whose object is gone;
+    // the orphaned object is then removed best-effort (review du 01/09/2026).
     try {
-      await this.prisma.file.delete({ where: { id: file.id } });
+      await this.prisma.$transaction(async (tx) => {
+        await tx.file.delete({ where: { id: file.id } });
+        await this.audit.log(tx, {
+          projectId: file.projectId,
+          userId: user.id,
+          action: FILES_AUDIT.DELETE,
+          objectType: AUDIT_OBJECTS.FILE,
+          objectId: file.id,
+          metadata: { category: file.category, fileName: file.fileName, ...(file.templateType ? { templateType: file.templateType } : {}) },
+        });
+      });
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -208,6 +219,9 @@ export class FileService {
       }
       throw err;
     }
+    await this.storageService.deleteObject(file.projectId, user.id, file.filePath).catch((err) => {
+      if (!isMinioNotFoundError(err)) this.logger.warn(`Orphaned object after delete: ${file.filePath}`);
+    });
   }
 
   // ============================================

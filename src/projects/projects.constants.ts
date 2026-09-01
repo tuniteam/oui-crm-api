@@ -38,4 +38,3 @@ export const CONFIG_SHEETS = {
   users: 'Users',
 } as const;
 
-export const XLSX_MIME_TYPE = MIME.XLSX;

@@ -26,6 +26,7 @@ export const DEFAULT_NODE_ENV = NodeEnv.DEVELOPMENT;
 export const PRISMA_ERROR = {
   RECORD_NOT_FOUND: 'P2025',
   UNIQUE_VIOLATION: 'P2002',
+  FOREIGN_KEY_VIOLATION: 'P2003',
 } as const;
 
 /** Application-level environment keys read outside a module's own *_ENV map. */
@@ -36,3 +37,10 @@ export const APP_ENV = {
   CORS_ORIGINS: 'CORS_ORIGINS',
   PLATFORM_NAME: 'PLATFORM_NAME',
 } as const;
+
+/** Machine codes typed by administrators (role codes, reference keys). */
+export const UPPER_SNAKE_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+/** users.first_name / last_name are VarChar(100) (schema). */
+export const USER_NAME_MAX_LENGTH = 100;
+/** Free-text search inputs of list filters. */
+export const SEARCH_MAX_LENGTH = 100;

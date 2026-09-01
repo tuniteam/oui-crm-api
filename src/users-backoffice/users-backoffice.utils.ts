@@ -1,7 +1,9 @@
 import { Prisma, RelationshipStatus, Role, UserStatus } from '@prisma/client';
+import { BACKOFFICE_ROLE_WHERE } from '@/auth/utils/roles.util';
 import { apiError } from '@/common/api-error';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ProjectUserStatus } from '@/users/users.constants';
+import { compositeStatus, userSearchOr } from '@/users/users.utils';
 import { BackofficeUserResponseDto } from './dto/response-user-backoffice.dto';
 
 /** The backoffice relation of a user: no project, backoffice role. */
@@ -22,14 +24,7 @@ export function buildBackofficeWhere(filters: { search?: string; status?: Projec
     where.status = RelationshipStatus.ACTIVE;
     user.status = filters.status as unknown as UserStatus;
   }
-  if (filters.search) {
-    const search = filters.search;
-    user.OR = [
-      { email: { contains: search, mode: 'insensitive' } },
-      { firstName: { contains: search, mode: 'insensitive' } },
-      { lastName: { contains: search, mode: 'insensitive' } },
-    ];
-  }
+  if (filters.search) user.OR = userSearchOr(filters.search);
   if (Object.keys(user).length) where.user = user;
   return where;
 }
@@ -49,7 +44,7 @@ export async function resolveBackofficeRoleOrThrow(
   db: Pick<PrismaService, 'role'> | Prisma.TransactionClient,
   roleCode: string,
 ): Promise<Role> {
-  const role = await db.role.findFirst({ where: { code: roleCode, projectId: null, isSystem: true, isBackoffice: true } });
+  const role = await db.role.findFirst({ where: { code: roleCode, ...BACKOFFICE_ROLE_WHERE } });
   if (!role) throw apiError.badRequest('INVALID_ROLE');
   return role;
 }
@@ -60,7 +55,7 @@ export function mapToBackofficeUser(rel: BackofficeRelation): BackofficeUserResp
     email: rel.user.email,
     firstName: rel.user.firstName,
     lastName: rel.user.lastName,
-    status: rel.status === RelationshipStatus.SUSPENDED ? ProjectUserStatus.SUSPENDED : (rel.user.status as unknown as ProjectUserStatus),
+    status: compositeStatus(rel.status, rel.user.status),
     roleCode: rel.role.code,
     roleLabel: rel.role.label,
     lastLoginAt: rel.user.lastLoginAt,

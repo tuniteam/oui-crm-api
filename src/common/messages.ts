@@ -32,7 +32,6 @@ const errorDefinitions = {
   PROJECT_MISMATCH: 'You do not have access to this project',
   USER_HAS_NO_PROJECT: 'User is not assigned to any project',
   FEATURE_NOT_ENABLED: (feature: string) => `Feature ${feature} is not enabled for this project`,
-  BACKOFFICE_FILTER_REQUIRED: 'Backoffice users must specify the isBackoffice filter',
 
   // Activation / password reset / e-mail change
   ACTIVATION_TOKEN_INVALID: 'Activation token is invalid',
@@ -61,14 +60,13 @@ const errorDefinitions = {
   ROLE_IS_SYSTEM: 'System roles cannot be modified',
   ROLE_CODE_EXISTS: 'A role with this code already exists in the project',
   ROLE_IN_USE: 'Role is assigned to users and cannot be deleted',
+  CANNOT_UPDATE_OWN_ACCESS: 'You cannot change your own scope, expiration or permissions',
   CANNOT_UPDATE_OWN_ROLE: 'You cannot change your own role',
   CANNOT_DELETE_SELF: 'You cannot delete your own account',
   USER_IS_LAST_ADMIN: 'Cannot remove the last project administrator',
-  USER_SHOULD_BE_ACTIVE: 'User account must be active',
   USER_ALREADY_ACTIVE: 'User is already active',
   USER_INACTIVE: 'User is inactive',
   USER_AVATAR_NOT_SET: 'User has no avatar',
-  USER_ROLE_PROJECT_NOT_FOUND: 'User is not assigned to this project',
   EXPIRATION_REQUIRED_FOR_EXTERNAL: 'External accounts require an expiration date',
   INITIALS_ALREADY_USED: 'These initials are already used in this project',
   PERMISSION_NOT_FOUND: (code: string) => `Permission ${code} not found`,
@@ -88,10 +86,7 @@ const errorDefinitions = {
   STAGE_PROBABILITY_FIXED: 'WON and LOST probabilities cannot be changed',
   REFERENCE_ITEM_NOT_FOUND: (id: string) => `Reference item ${id} not found`,
   REFERENCE_KEY_EXISTS: 'A reference item with this key already exists in this category',
-  INVALID_REFERENCE_VALUE: (category: string, key: string) =>
-    `Unknown value "${key}" for reference ${category}`,
   TEMPLATE_INVALID: (issues: string) => `Template is invalid: ${issues}`,
-  TEMPLATE_NOT_CONFIGURED: 'No active template for this document type',
   SIGNATURE_IMAGE_NOT_SET: 'No signature image configured for this project',
 
   // Storage & files
@@ -100,7 +95,6 @@ const errorDefinitions = {
   STORAGE_INVALID_MAGIC_BYTES: 'File content does not match its declared type',
   STORAGE_OBJECT_NOT_FOUND: (key: string) => `Stored object not found: ${key}`,
   STORAGE_UPLOAD_FAILED: 'File upload failed',
-  STORAGE_DELETE_FAILED: 'File deletion failed',
   STORAGE_ACCESS_DENIED: 'You are not allowed to access this file',
   STORAGE_CONTEXT_UNSUPPORTED: 'Unsupported storage context',
   STORAGE_FILE_REQUIRED: 'A file is required',

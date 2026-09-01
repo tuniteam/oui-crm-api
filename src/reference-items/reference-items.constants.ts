@@ -1,3 +1,4 @@
+import { UPPER_SNAKE_PATTERN } from '@/common/constants/app.constants';
 import { Prisma } from '@prisma/client';
 import { ReferenceCategory } from '@/projects/project-config.constants';
 
@@ -8,7 +9,7 @@ export const REFERENCE_ITEMS_AUDIT = {
 } as const;
 
 /** Immutable technical key of a value (matches the seed keys: UPPER_SNAKE). */
-export const REFERENCE_KEY_PATTERN = /^[A-Z][A-Z0-9_]*$/;
+export const REFERENCE_KEY_PATTERN = UPPER_SNAKE_PATTERN;
 export const REFERENCE_KEY_MAX_LENGTH = 60;
 export const REFERENCE_LABEL_MAX_LENGTH = 150;
 

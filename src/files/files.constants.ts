@@ -119,3 +119,11 @@ export const WRITE_PERMISSION_BY_CATEGORY: Partial<Record<FileCategory, string>>
   SIGNED_RETURN: 'quotes:update',
   IMPORT_SOURCE: 'organizations:import',
 };
+
+/** Audit action written by FileService.delete (uploads are audited by their feature). */
+export const FILES_AUDIT = {
+  DELETE: 'file.delete',
+} as const;
+
+/** Multipart part name expected by every upload endpoint. */
+export const UPLOAD_FIELD = 'file';

@@ -94,5 +94,7 @@ changement d'e-mail) · **US-00-03** profil + légal · **US-00-04** administrat
 **US-00-05/06/07** utilisateurs, rôles, périmètres (+ `ScopeService`) · **US-00-08/09** réglages,
 gabarits HTML + cachet, référentiels · **US-00-10** journal d'activité (lecture paginée, filtres,
 libellés résolus ; export CSV au L5) · **US-00-11** comptes backoffice (`/backoffice/users`, pattern soft-m).
-Reste : phase I — job `accounts.expire`, Postman `error-tests`, rapport L0.
+**Lot L0 terminé le 02/09/2026** : revue totale appliquée (2 vagues), 556 contrôles BDD verts
+(`docs/tests/run-all.sh`), 86 tests unitaires, Swagger 45 routes — bilan : `docs/RAPPORT-L0.md`.
+Prochain lot : L1 (base commerciale — organismes, contacts, actions, kanban).
 Détail : `docs/SPEC-08-PLAN-L0.md` ; contrat front par route : `docs/SPEC-11-HANDOFF-FRONT.md`.

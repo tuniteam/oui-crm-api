@@ -1,3 +1,4 @@
+import { MIME } from '@/common/constants/mime.constants';
 import {
   Body,
   Controller,
@@ -36,7 +37,7 @@ import { UpdateProjectFeaturesDto } from './dto/update-project-features.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { ProjectConfigExportService } from './project-config-export.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
-import { PROJECT_AUDIT, XLSX_MIME_TYPE } from './projects.constants';
+import { PROJECT_AUDIT } from './projects.constants';
 import { ProjectsService } from './projects.service';
 
 const swagger = ApiMessages.swagger;
@@ -127,7 +128,7 @@ export class ProjectsController {
   @Permissions({ code: 'projects:read' })
   @ApiOperation(swagger.projects.configExport)
   @ApiCuidParam('id', swagger.params.projectId)
-  @ApiProduces(XLSX_MIME_TYPE)
+  @ApiProduces(MIME.XLSX)
   @ApiOkResponse({ description: swagger.responses.attachment })
   @ApiResourceNotFound()
   @ApiInvalidData()

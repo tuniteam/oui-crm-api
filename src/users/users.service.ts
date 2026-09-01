@@ -5,9 +5,10 @@ import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interfac
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { apiError } from '@/common/api-error';
+import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { PRISMA_ERROR } from '@/common/constants/app.constants';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
-import { toDate } from '@/common/utils/date.utils';
+import { parseDayOrThrow, todayUtc } from '@/common/utils/date.utils';
 import { normalizeEmail } from '@/common/utils/email.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateUserDto, CreateUserResponseDto } from './dto/create-user.dto';
@@ -15,7 +16,7 @@ import { UserListQueryDto } from './dto/query-user-list.dto';
 import { UserDetailResponseDto, UserListResponseDto } from './dto/response-user.dto';
 import { SetOverridesDto } from './dto/set-overrides.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
-import { USERS_AUDIT } from './users.constants';
+import { ADMIN_PERMISSION_CODE, USERS_AUDIT } from './users.constants';
 import {
   assertScopeInProject,
   buildUserWhere,
@@ -26,7 +27,7 @@ import {
   resolveRoleOrThrow,
 } from './users.utils';
 
-const expiresAtOf = (dto: CreateUserDto): Date | null => (dto.expiresAt ? toDate(dto.expiresAt) : null);
+const expiresAtOf = (dto: CreateUserDto): Date | null => (dto.expiresAt ? parseDayOrThrow(dto.expiresAt) : null);
 
 /** US-00-05 — users of the current project, always addressed through their assignment. */
 @Injectable()
@@ -70,15 +71,17 @@ export class UsersService {
 
     const existing = await this.prisma.user.findUnique({
       where: { email },
-      include: { userRoleProjects: { select: { id: true, projectId: true, displayOrder: true, status: true, initials: true } } },
+      include: { userRoleProjects: { select: { id: true, projectId: true, displayOrder: true, status: true } } },
     });
+    // Backoffice accounts are dedicated (US-00-11): they are never assigned to a project
+    if (existing?.userRoleProjects.some((r) => r.projectId === null)) throw apiError.conflict('EMAIL_ALREADY_TAKEN');
     const onProject = existing?.userRoleProjects.find((r) => r.projectId === projectId);
     if (onProject?.status === RelationshipStatus.ACTIVE) {
       throw apiError.conflict('EMAIL_EXISTS_FOR_PROJECT');
     }
     if (onProject) {
       // Suspended assignment: re-creating the user REACTIVATES it with the submitted role/scope
-      return this.reactivate(projectId, existing!.id, onProject.id, dto, role.id, expiresAtOf(dto), actor);
+      return this.reactivate(projectId, existing!.id, existing!.status, onProject.id, dto, role.id, expiresAtOf(dto), actor);
     }
     await this.assertInitialsFree(projectId, dto.initials);
 
@@ -129,6 +132,10 @@ export class UsersService {
   async update(projectId: string, userId: string, dto: UpdateUserDto, actor: AuthenticatedUser): Promise<UserDetailResponseDto> {
     if (Object.keys(dto).length === 0) throw apiError.badRequest('EMPTY_UPDATE_PAYLOAD');
     if (dto.roleCode && userId === actor.id) throw apiError.badRequest('CANNOT_UPDATE_OWN_ROLE');
+    // Own scope or expiration can no longer be widened by their holder (review du 01/09/2026)
+    if (userId === actor.id && (dto.scopeId !== undefined || dto.expiresAt !== undefined)) {
+      throw apiError.badRequest('CANNOT_UPDATE_OWN_ACCESS');
+    }
 
     const relation = await getRelationOrThrow(this.prisma, projectId, userId);
     const role = dto.roleCode ? await resolveRoleOrThrow(this.prisma, projectId, dto.roleCode) : null;
@@ -150,8 +157,8 @@ export class UsersService {
           data: {
             roleId: role?.id,
             initials: dto.initials,
-            scopeId: dto.scopeId === undefined ? undefined : dto.scopeId,
-            expiresAt: dto.expiresAt === undefined ? undefined : dto.expiresAt ? toDate(dto.expiresAt) : null,
+            scopeId: dto.scopeId,
+            expiresAt: dto.expiresAt === undefined ? undefined : dto.expiresAt ? parseDayOrThrow(dto.expiresAt) : null,
           },
         });
         await this.audit.log(tx, {
@@ -172,6 +179,8 @@ export class UsersService {
 
   /** Replaces the whole override set (SPEC-06 §2 — removal > addition > role). */
   async setOverrides(projectId: string, userId: string, dto: SetOverridesDto, actor: AuthenticatedUser): Promise<UserDetailResponseDto> {
+    // A user must never grant themselves permissions (privilege escalation — review du 01/09/2026)
+    if (userId === actor.id) throw apiError.badRequest('CANNOT_UPDATE_OWN_ACCESS');
     const both = dto.added.filter((code) => dto.removed.includes(code));
     if (both.length) throw apiError.badRequest('INVALID_DATA');
     await getRelationOrThrow(this.prisma, projectId, userId);
@@ -225,9 +234,11 @@ export class UsersService {
   async suspend(projectId: string, userId: string, actor: AuthenticatedUser): Promise<void> {
     if (userId === actor.id) throw apiError.badRequest('CANNOT_DELETE_SELF');
     const relation = await getRelationOrThrow(this.prisma, projectId, userId);
-    await this.assertNotLastAdmin(projectId, relation.id);
 
     await this.prisma.$transaction(async (tx) => {
+      // Serializes concurrent suspensions on the project so two "last admins" cannot both pass
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${projectId}))`;
+      await this.assertNotLastAdmin(tx, projectId, relation.id);
       await tx.userRoleProject.update({
         where: { id: relation.id },
         data: { status: RelationshipStatus.SUSPENDED },
@@ -253,6 +264,7 @@ export class UsersService {
   private async reactivate(
     projectId: string,
     userId: string,
+    accountStatus: UserStatus,
     relationId: string,
     dto: CreateUserDto,
     roleId: string,
@@ -260,7 +272,7 @@ export class UsersService {
     actor: AuthenticatedUser,
   ): Promise<CreateUserResponseDto> {
     try {
-      const user = await this.prisma.$transaction(async (tx) => {
+      await this.prisma.$transaction(async (tx) => {
         await tx.userRoleProject.update({
           where: { id: relationId },
           data: {
@@ -278,9 +290,8 @@ export class UsersService {
           objectType: AUDIT_OBJECTS.USER,
           objectId: userId,
         });
-        return tx.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, status: true } });
       });
-      return { id: user.id, status: user.status };
+      return { id: userId, status: accountStatus };
     } catch (err) {
       this.rethrowUniqueAsInitials(err);
       throw err;
@@ -295,21 +306,28 @@ export class UsersService {
     if (taken) throw apiError.conflict('INITIALS_ALREADY_USED');
   }
 
-  /** Concurrent creation racing the precheck: the (projectId, initials) unique index wins. */
+  /** Concurrent creation racing the prechecks: map the violated unique index to its 409. */
   private rethrowUniqueAsInitials(err: unknown): void {
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === PRISMA_ERROR.UNIQUE_VIOLATION) {
-      throw apiError.conflict('INITIALS_ALREADY_USED');
-    }
+    if (isUniqueViolation(err, 'initials')) throw apiError.conflict('INITIALS_ALREADY_USED');
+    if (isUniqueViolation(err)) throw apiError.conflict('EMAIL_EXISTS_FOR_PROJECT');
   }
 
-  /** An admin = an active assignment whose role grants users:update on the project. */
-  private async assertNotLastAdmin(projectId: string, excludedRelationId: string): Promise<void> {
-    const admins = await this.prisma.userRoleProject.count({
+  /**
+   * An admin = an active, non-expired assignment of an ACTIVE account whose role grants
+   * users:update and whose overrides do not remove it (review du 01/09/2026).
+   */
+  private async assertNotLastAdmin(tx: Prisma.TransactionClient, projectId: string, excludedRelationId: string): Promise<void> {
+    const admins = await tx.userRoleProject.count({
       where: {
         projectId,
         status: RelationshipStatus.ACTIVE,
         id: { not: excludedRelationId },
-        role: { permissions: { some: { permission: { code: 'users:update' } } } },
+        OR: [{ expiresAt: null }, { expiresAt: { gte: todayUtc() } }],
+        role: { permissions: { some: { permission: { code: ADMIN_PERMISSION_CODE } } } },
+        user: {
+          status: UserStatus.ACTIVE,
+          overrides: { none: { projectId, granted: false, permission: { code: ADMIN_PERMISSION_CODE } } },
+        },
       },
     });
     if (admins === 0) throw apiError.conflict('USER_IS_LAST_ADMIN');
