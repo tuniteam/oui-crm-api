@@ -16,6 +16,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { ProfileModule } from './profile/profile.module';
 import { LegalModule } from './legal/legal.module';
 import { UsersModule } from './users/users.module';
+import { RolesModule } from './roles/roles.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { UsersModule } from './users/users.module';
     ProfileModule,
     LegalModule,
     UsersModule,
+    RolesModule,
     HealthModule,
     StorageModule,
     FilesModule,

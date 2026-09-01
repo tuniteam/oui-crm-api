@@ -6,4 +6,6 @@
 export const AUDIT_OBJECTS = {
   USER: 'User',
   PROJECT: 'Project',
+  ROLE: 'Role',
+  SCOPE: 'Scope',
 } as const;
