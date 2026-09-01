@@ -55,6 +55,8 @@ bash docs/tests/test-projects.sh    # BDD curl US-00-04
 bash docs/tests/test-users.sh       # BDD curl US-00-05
 bash docs/tests/test-roles.sh       # BDD curl US-00-06
 bash docs/tests/test-scopes.sh      # BDD curl US-00-07
+bash docs/tests/test-settings.sh    # BDD curl US-00-08
+bash docs/tests/test-reference-items.sh  # BDD curl US-00-09
 npm run swagger:check               # contrat exposé
 ```
 
@@ -86,6 +88,7 @@ recette front/QA. Helpers partagés : `docs/tests/lib.sh` (lit `.env`).
 
 Livré : socle commun + schéma + seeds · **US-00-01/02** auth (sessions, activation, reset,
 changement d'e-mail) · **US-00-03** profil + légal · **US-00-04** administration des projets ·
-**US-00-05/06/07** utilisateurs, rôles, périmètres (+ `ScopeService`).
-Reste : réglages/gabarits/référentiels (G), journal (H), jobs + qualité (I).
+**US-00-05/06/07** utilisateurs, rôles, périmètres (+ `ScopeService`) · **US-00-08/09** réglages,
+gabarits HTML + cachet, référentiels.
+Reste : journal (H), jobs + qualité (I).
 Détail : `docs/SPEC-08-PLAN-L0.md` ; contrat front par route : `docs/SPEC-11-HANDOFF-FRONT.md`.
