@@ -46,6 +46,8 @@ export const apiError: {
   conflict: Factory;
   gone: Factory;
   locked: Factory;
+  serviceUnavailable: Factory;
+  gatewayTimeout: Factory;
   internal: Factory;
 } = {
   badRequest: (key, ...args) => new BadRequestException(apiErrorBody(key, ...args)),
@@ -55,6 +57,8 @@ export const apiError: {
   conflict: (key, ...args) => new ConflictException(apiErrorBody(key, ...args)),
   gone: (key, ...args) => new GoneException(apiErrorBody(key, ...args)),
   locked: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.LOCKED),
+  serviceUnavailable: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.SERVICE_UNAVAILABLE),
+  gatewayTimeout: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.GATEWAY_TIMEOUT),
   internal: (key, ...args) => new InternalServerErrorException(apiErrorBody(key, ...args)),
 };
 

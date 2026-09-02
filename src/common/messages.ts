@@ -198,6 +198,11 @@ export const ApiMessages = {
 
     organizations: {
       tag: 'Organizations',
+      searchRegistry: {
+        summary: 'Search the official registry',
+        description:
+          'Pre-fill helper: a 14-digit query is a Sirene SIRET lookup, anything else is a full-text name search on recherche-entreprises. 503/504 mean the front falls back to manual input.',
+      },
       list: {
         summary: 'List organizations',
         description:

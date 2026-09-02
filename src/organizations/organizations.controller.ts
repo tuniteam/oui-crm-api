@@ -43,6 +43,8 @@ import {
   UpdateOrganizationDto,
 } from './dto';
 import { OrganizationsService } from './organizations.service';
+import { RegistrySearchQueryDto, RegistrySearchResponseDto } from './dto/registry-search.dto';
+import { RegistryService } from './registry.service';
 
 const swagger = ApiMessages.swagger;
 
@@ -54,7 +56,10 @@ const swagger = ApiMessages.swagger;
 @ApiHeader({ name: PROJECT_ID_HEADER, description: swagger.projectIdHeaderDesc, required: true })
 @Controller('organizations')
 export class OrganizationsController {
-  constructor(private readonly organizationsService: OrganizationsService) {}
+  constructor(
+    private readonly organizationsService: OrganizationsService,
+    private readonly registryService: RegistryService,
+  ) {}
 
   @Get()
   @Permissions({ code: 'organizations:read' })
@@ -66,6 +71,14 @@ export class OrganizationsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<OrganizationListResponseDto> {
     return this.organizationsService.findAll(projectId, query, user);
+  }
+
+  @Get('search-registry')
+  @Permissions({ code: 'organizations:create' })
+  @ApiOperation(swagger.organizations.searchRegistry)
+  @ApiListResponse(RegistrySearchResponseDto)
+  searchRegistry(@Query() query: RegistrySearchQueryDto): Promise<RegistrySearchResponseDto> {
+    return this.registryService.search(query.q);
   }
 
   @Get(':id')
