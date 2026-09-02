@@ -45,6 +45,7 @@ export const apiError: {
   notFound: Factory;
   conflict: Factory;
   gone: Factory;
+  payloadTooLarge: Factory;
   locked: Factory;
   serviceUnavailable: Factory;
   gatewayTimeout: Factory;
@@ -56,6 +57,7 @@ export const apiError: {
   notFound: (key, ...args) => new NotFoundException(apiErrorBody(key, ...args)),
   conflict: (key, ...args) => new ConflictException(apiErrorBody(key, ...args)),
   gone: (key, ...args) => new GoneException(apiErrorBody(key, ...args)),
+  payloadTooLarge: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.PAYLOAD_TOO_LARGE),
   locked: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.LOCKED),
   serviceUnavailable: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.SERVICE_UNAVAILABLE),
   gatewayTimeout: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.GATEWAY_TIMEOUT),
