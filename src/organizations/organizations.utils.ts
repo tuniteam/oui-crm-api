@@ -2,7 +2,7 @@
 // OUI-CRM - Organizations utils: pure rules + reusable Prisma fragments
 // ============================================
 
-import { CustomerStatus, Organization, Prisma, PrismaClient, Priority, SalesStatus } from '@prisma/client';
+import { CustomerStatus, Organization, Prisma, PrismaClient, Priority, RelationshipStatus, SalesStatus } from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { resolveDepartments } from '@/scopes/geo.constants';
 import {
@@ -226,4 +226,58 @@ export function buildOrganizationOrderBy(
 ): Prisma.OrganizationOrderByWithRelationInput {
   if (NULLABLE_SORT_FIELDS.includes(sort)) return { [sort]: { sort: order, nulls: 'last' } };
   return { [sort]: order };
+}
+
+// ---- payload validators (US-01-02/03 — promised by the handoff, enforced here) -----------
+
+type ValidatorDb = Pick<PrismaClient, 'referenceItem' | 'userRoleProject'> | Prisma.TransactionClient;
+
+/** Reference-list fields of the payload → their ReferenceItem category (SPEC-13 §2.3). */
+const REFERENCE_FIELD_CATEGORIES = { type: 'STRUCTURE_TYPE', solution: 'SOLUTION', leadSource: 'LEAD_SOURCE' } as const;
+const REFERENCE_ARRAY_CATEGORIES = { tags: 'TAG', services: 'SERVICE' } as const;
+
+export interface ReferenceInput {
+  type?: string | null;
+  solution?: string | null;
+  leadSource?: string | null;
+  tags?: string[] | null;
+  services?: string[] | null;
+}
+
+/** Every reference key must exist in the project's lists → 400 INVALID_REFERENCE_VALUE. */
+export async function assertReferencesKnown(db: ValidatorDb, projectId: string, input: ReferenceInput): Promise<void> {
+  const checks: { category: string; key: string }[] = [];
+  for (const [field, category] of Object.entries(REFERENCE_FIELD_CATEGORIES)) {
+    const key = input[field as keyof ReferenceInput] as string | null | undefined;
+    if (key) checks.push({ category, key });
+  }
+  for (const [field, category] of Object.entries(REFERENCE_ARRAY_CATEGORIES)) {
+    for (const key of (input[field as keyof ReferenceInput] as string[] | null | undefined) ?? []) checks.push({ category, key });
+  }
+  if (!checks.length) return;
+  const rows = await db.referenceItem.findMany({
+    where: { projectId, OR: checks.map((c) => ({ category: c.category, key: c.key })) },
+    select: { category: true, key: true },
+  });
+  const known = new Set(rows.map((r) => `${r.category}:${r.key}`));
+  const unknown = checks.find((c) => !known.has(`${c.category}:${c.key}`));
+  if (unknown) throw apiError.badRequest('INVALID_REFERENCE_VALUE', unknown.category, unknown.key);
+}
+
+export interface AssigneeInput {
+  salesRepId?: string | null;
+  consultantId?: string | null;
+  trainerId?: string | null;
+}
+
+/** salesRep / consultant / trainer must be ACTIVE members of the project → 404 USER_NOT_FOUND. */
+export async function assertAssigneesAreMembers(db: ValidatorDb, projectId: string, input: AssigneeInput): Promise<void> {
+  const ids = [...new Set([input.salesRepId, input.consultantId, input.trainerId].filter((id): id is string => !!id))];
+  if (!ids.length) return;
+  const members = await db.userRoleProject.findMany({
+    where: { projectId, userId: { in: ids }, status: RelationshipStatus.ACTIVE },
+    select: { userId: true },
+  });
+  const active = new Set(members.map((m) => m.userId));
+  if (ids.some((id) => !active.has(id))) throw apiError.notFound('USER_NOT_FOUND');
 }

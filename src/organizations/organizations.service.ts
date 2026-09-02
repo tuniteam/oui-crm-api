@@ -9,7 +9,7 @@ import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { apiError, withMeta } from '@/common/api-error';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
-import { toDate } from '@/common/utils/date.utils';
+import { parseDayOrThrow } from '@/common/utils/date.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ScopeAccess, ScopeContext, ScopeService } from '@/scopes/scope.service';
 import { loadScopeContext } from '@/scopes/scopes.utils';
@@ -24,7 +24,9 @@ import {
 } from './dto';
 import { ORGANIZATION_AUDIT } from './organizations.constants';
 import {
+  assertAssigneesAreMembers,
   assertIdentifiersAvailable,
+  assertReferencesKnown,
   buildOrganizationOrderBy,
   buildOrganizationWhere,
   computeCompleteness,
@@ -150,6 +152,8 @@ export class OrganizationsService {
   ): Promise<CreateOrganizationResponseDto> {
     const { force, goLiveTarget, ...data } = dto;
 
+    await assertReferencesKnown(this.prisma, projectId, data);
+    await assertAssigneesAreMembers(this.prisma, projectId, data);
     await assertIdentifiersAvailable(this.prisma, projectId, data);
 
     if (!force) {
@@ -167,7 +171,7 @@ export class OrganizationsService {
           ...data,
           projectId,
           createdBy: user.id,
-          ...(goLiveTarget && { goLiveTarget: toDate(goLiveTarget) }),
+          ...(goLiveTarget && { goLiveTarget: parseDayOrThrow(goLiveTarget) }),
         },
       });
       // A brand-new record has no contact yet: the score is computed on its own columns.
@@ -199,17 +203,20 @@ export class OrganizationsService {
     projectId: string,
     user: AuthenticatedUser,
   ): Promise<OrganizationDetailDto | OrganizationListItemDto> {
+    if (Object.keys(dto).length === 0) throw apiError.badRequest('EMPTY_UPDATE_PAYLOAD');
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const existing = await getOrganizationOrThrow(this.prisma, id, projectId);
     this.assertWritable(ctx, existing, id);
 
     const { goLiveTarget, ...data } = dto;
+    await assertReferencesKnown(this.prisma, projectId, data);
+    await assertAssigneesAreMembers(this.prisma, projectId, data);
     await assertIdentifiersAvailable(this.prisma, projectId, data, id);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.organization.update({
         where: { id },
-        data: { ...data, ...(goLiveTarget !== undefined && { goLiveTarget: toDate(goLiveTarget) }) },
+        data: { ...data, ...(goLiveTarget !== undefined && { goLiveTarget: parseDayOrThrow(goLiveTarget) }) },
       });
       await recomputeCompleteness(tx, id);
       await this.audit.log(tx, {
