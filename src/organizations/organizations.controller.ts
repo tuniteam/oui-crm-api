@@ -34,6 +34,8 @@ import {
 import { ApiMessages } from '@/common/messages';
 import { ParseCuidPipe } from '@/common/pipes';
 import {
+  BulkResultDto,
+  BulkActionDto,
   ChangeSalesStatusResponseDto,
   ChangeSalesStatusDto,
   BoardResponseDto,
@@ -74,6 +76,19 @@ export class OrganizationsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<OrganizationListResponseDto> {
     return this.organizationsService.findAll(projectId, query, user);
+  }
+
+  @Post('bulk')
+  @Permissions({ code: 'organizations:bulk', ownerField: 'salesRepId' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation(swagger.organizations.bulk)
+  @ApiPatchResponse(BulkResultDto)
+  bulk(
+    @CurrentProjectId() projectId: string,
+    @Body() dto: BulkActionDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<BulkResultDto> {
+    return this.organizationsService.bulk(projectId, dto, user);
   }
 
   @Get('board')

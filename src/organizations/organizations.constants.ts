@@ -86,3 +86,18 @@ export const BOARD_COLUMNS: readonly SalesStatus[] = [
 ];
 export const BOARD_COLUMN_LIMIT = 200;
 export const SALES_STATUS_REASON_MAX_LENGTH = 500;
+
+/** Bulk operations (US-01-05). DELETE additionally requires organizations:delete. */
+export const BULK_ACTIONS = ['ASSIGN_SALES_REP', 'SET_SALES_STATUS', 'SET_PRIORITY', 'ADD_TO_CAMPAIGN', 'DELETE'] as const;
+export type BulkAction = (typeof BULK_ACTIONS)[number];
+export type BulkSkipReason = 'NOT_FOUND' | 'OUT_OF_SCOPE';
+export const BULK_BATCH_MAX = 500;
+/** The payload field each action requires — anything else in the payload is a mistake. */
+export const BULK_PAYLOAD_FIELD: Record<BulkAction, 'salesRepId' | 'salesStatus' | 'priority' | 'campaignId' | null> = {
+  ASSIGN_SALES_REP: 'salesRepId',
+  SET_SALES_STATUS: 'salesStatus',
+  SET_PRIORITY: 'priority',
+  ADD_TO_CAMPAIGN: 'campaignId',
+  DELETE: null,
+};
+export const BULK_AUDIT_ACTION = 'organization.bulk';

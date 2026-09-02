@@ -3,7 +3,7 @@
 // ============================================
 
 import { Injectable } from '@nestjs/common';
-import { Organization, Prisma } from '@prisma/client';
+import { Organization, Prisma, SalesStatus, ScopeType } from '@prisma/client';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
@@ -11,10 +11,13 @@ import { apiError, withMeta } from '@/common/api-error';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { parseDayOrThrow } from '@/common/utils/date.utils';
 import { PrismaService } from '@/prisma/prisma.service';
+import { findPermission } from '@/auth/utils/permissions.util';
 import { ScopeAccess, ScopeContext, ScopeService } from '@/scopes/scope.service';
 import { loadScopeContext } from '@/scopes/scopes.utils';
 import {
   BoardItemDto,
+  BulkActionDto,
+  BulkResultDto,
   BoardResponseDto,
   ChangeSalesStatusDto,
   ChangeSalesStatusResponseDto,
@@ -26,7 +29,7 @@ import {
   OrganizationListResponseDto,
   UpdateOrganizationDto,
 } from './dto';
-import { BOARD_COLUMN_LIMIT, BOARD_COLUMNS, ORGANIZATION_AUDIT } from './organizations.constants';
+import { BOARD_COLUMN_LIMIT, BOARD_COLUMNS, BULK_AUDIT_ACTION, BULK_PAYLOAD_FIELD, ORGANIZATION_AUDIT } from './organizations.constants';
 import {
   applySalesStatus,
   assertAssigneesAreMembers,
@@ -111,6 +114,150 @@ export class OrganizationsService {
       ),
       meta: buildPaginationMeta(total, page, limit),
     };
+  }
+
+  // -------------------------------------------------------------------------------- bulk
+
+  /**
+   * US-01-05. One mass operation, partial by design: only FULL-access records are processed,
+   * the others come back in `skipped` with their reason — never a global failure. selectAll
+   * replays the list filters server-side (the only mass action whose set the client does not
+   * enumerate). DELETE additionally requires organizations:delete.
+   */
+  async bulk(projectId: string, dto: BulkActionDto, user: AuthenticatedUser): Promise<BulkResultDto> {
+    const payloadField = BULK_PAYLOAD_FIELD[dto.action];
+    if (payloadField && !dto.payload?.[payloadField]) throw apiError.badRequest('INVALID_DATA');
+    if (!dto.selectAll && !dto.ids?.length) throw apiError.badRequest('INVALID_DATA');
+    if (dto.action === 'DELETE' && !findPermission(user, projectId, 'organizations:delete')) {
+      throw apiError.forbidden('ACCESS_DENIED');
+    }
+    if (dto.action === 'ASSIGN_SALES_REP') {
+      await assertAssigneesAreMembers(this.prisma, projectId, { salesRepId: dto.payload.salesRepId });
+    }
+    if (dto.action === 'ADD_TO_CAMPAIGN') {
+      const campaign = await this.prisma.campaign.findFirst({ where: { id: dto.payload.campaignId, projectId }, select: { id: true } });
+      if (!campaign) throw apiError.notFound('CAMPAIGN_NOT_FOUND', dto.payload.campaignId as string);
+    }
+
+    const ctx = await loadScopeContext(this.prisma, user, projectId);
+    const where: Prisma.OrganizationWhereInput = dto.selectAll
+      ? buildOrganizationWhere(projectId, dto.filters ?? {})
+      : { projectId, deletedAt: null, id: { in: dto.ids } };
+    const candidates = await this.prisma.organization.findMany({ where });
+
+    // Mass actions are granted OWN to sales reps (SPEC-06): unit updates reach the whole
+    // geographic scope, bulk only the caller's own portfolio.
+    const ownOnly = findPermission(user, projectId, 'organizations:bulk')?.scope === ScopeType.OWN;
+    const accessById = new Map(candidates.map((org) => [org.id, this.accessOf(ctx, org)]));
+    const eligible = candidates.filter(
+      (org) => accessById.get(org.id) === 'FULL' && (!ownOnly || org.salesRepId === user.id),
+    );
+    const eligibleIds = new Set(eligible.map((o) => o.id));
+    const skipped: BulkResultDto['skipped'] = [];
+    if (!dto.selectAll) {
+      // A NONE caller must not learn that a hidden record exists — same contract as findOne
+      for (const id of dto.ids ?? []) {
+        if (!accessById.has(id) || accessById.get(id) === 'NONE') skipped.push({ id, reason: 'NOT_FOUND' });
+        else if (!eligibleIds.has(id)) skipped.push({ id, reason: 'OUT_OF_SCOPE' });
+      }
+    } else {
+      for (const org of candidates) {
+        if (!eligibleIds.has(org.id) && accessById.get(org.id) !== 'NONE') {
+          skipped.push({ id: org.id, reason: 'OUT_OF_SCOPE' });
+        }
+      }
+    }
+
+    const processed = await this.prisma.$transaction(async (tx) => {
+      const count = await this.applyBulk(tx, projectId, dto, eligible, user);
+      await this.audit.log(tx, {
+        projectId,
+        userId: user.id,
+        action: BULK_AUDIT_ACTION,
+        objectType: AUDIT_OBJECTS.ORGANIZATION,
+        metadata: {
+          action: dto.action,
+          processed: count,
+          skipped: skipped.length,
+          ...(payloadField ? { [payloadField]: dto.payload[payloadField] } : {}),
+          ...(dto.selectAll ? { selectAll: true, filters: (dto.filters ?? {}) as Prisma.InputJsonValue } : {}),
+        },
+      });
+      return count;
+    });
+    return { processed, skipped };
+  }
+
+  private async applyBulk(
+    tx: Prisma.TransactionClient,
+    projectId: string,
+    dto: BulkActionDto,
+    eligible: Organization[],
+    user: AuthenticatedUser,
+  ): Promise<number> {
+    const ids = eligible.map((o) => o.id);
+    switch (dto.action) {
+      case 'ASSIGN_SALES_REP': {
+        await tx.organization.updateMany({ where: { id: { in: ids } }, data: { salesRepId: dto.payload.salesRepId } });
+        return ids.length;
+      }
+      case 'SET_PRIORITY': {
+        await tx.organization.updateMany({ where: { id: { in: ids } }, data: { priority: dto.payload.priority } });
+        return ids.length;
+      }
+      case 'SET_SALES_STATUS': {
+        // Through the single writer, so every real transition lands in the journal
+        for (const org of eligible) {
+          const change = await applySalesStatus(tx, org, dto.payload.salesStatus as SalesStatus);
+          if (change) {
+            await this.audit.log(tx, {
+              projectId,
+              userId: user.id,
+              action: ORGANIZATION_AUDIT.SALES_STATUS,
+              objectType: AUDIT_OBJECTS.ORGANIZATION,
+              objectId: org.id,
+              metadata: { ...change, trigger: 'bulk' },
+            });
+          }
+        }
+        return ids.length;
+      }
+      case 'ADD_TO_CAMPAIGN': {
+        await tx.campaignOrganization.createMany({
+          data: ids.map((organizationId) => ({ campaignId: dto.payload.campaignId as string, organizationId, addedBy: user.id })),
+          skipDuplicates: true,
+        });
+        // Same automatism as the direct targeting (US-01-11)
+        for (const org of eligible.filter((o) => o.salesStatus === SalesStatus.NOT_CONTACTED)) {
+          const change = await applySalesStatus(tx, org, SalesStatus.TO_CONTACT);
+          if (change) {
+            await this.audit.log(tx, {
+              projectId,
+              userId: user.id,
+              action: ORGANIZATION_AUDIT.SALES_STATUS,
+              objectType: AUDIT_OBJECTS.ORGANIZATION,
+              objectId: org.id,
+              metadata: { ...change, trigger: 'campaign.targeted', campaignId: dto.payload.campaignId },
+            });
+          }
+        }
+        return ids.length;
+      }
+      case 'DELETE': {
+        await tx.organization.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date() } });
+        for (const org of eligible) {
+          await this.audit.log(tx, {
+            projectId,
+            userId: user.id,
+            action: ORGANIZATION_AUDIT.DELETE,
+            objectType: AUDIT_OBJECTS.ORGANIZATION,
+            objectId: org.id,
+            metadata: { name: org.name, bulk: true },
+          });
+        }
+        return ids.length;
+      }
+    }
   }
 
   // -------------------------------------------------------------------------------- board
