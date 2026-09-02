@@ -11,6 +11,12 @@ export const AUDIT_OBJECTS = {
   SETTINGS: 'Settings',
   REFERENCE_ITEM: 'ReferenceItem',
   FILE: 'File',
+  // L1 — base commerciale (SPEC-13 phase A). Label resolvers are registered by each module.
+  ORGANIZATION: 'Organization',
+  CONTACT: 'Contact',
+  ACTIVITY: 'Activity',
+  CAMPAIGN: 'Campaign',
+  IMPORT_BATCH: 'ImportBatch',
 } as const;
 
 export type AuditObjectType = (typeof AUDIT_OBJECTS)[keyof typeof AUDIT_OBJECTS];

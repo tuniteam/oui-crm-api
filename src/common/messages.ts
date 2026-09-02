@@ -109,6 +109,44 @@ const errorDefinitions = {
   FILE_PROJECT_OWNER_MISMATCH: 'Owner project does not match the current project',
   FILENAME_INVALID_CHARS: 'File name contains invalid characters',
 
+  // Organizations (L1)
+  ORGANIZATION_NOT_FOUND: (id: string) => `Organization ${id} not found`,
+  ORGANIZATION_SIRET_EXISTS: 'An organization with this SIRET already exists',
+  ORGANIZATION_INSEE_CODE_EXISTS: 'An organization with this INSEE code already exists',
+  ORGANIZATION_POSSIBLE_DUPLICATE:
+    'An organization with a similar name already exists at this postal code',
+  ORGANIZATION_HAS_CONTRACTS: 'Organization has contracts and cannot be deleted',
+  ORGANIZATION_INVALID_TRANSITION: (from: string) =>
+    `Invalid sales status transition from ${from}`,
+  INVALID_REFERENCE_VALUE: (category: string, key: string) =>
+    `${key} is not a valid value of the ${category} reference list`,
+
+  // Contacts (L1)
+  CONTACT_NOT_FOUND: (id: string) => `Contact ${id} not found`,
+  CONTACT_HAS_ACTIVITIES: 'Contact is used by activities and cannot be deleted',
+
+  // Activities (L1)
+  ACTIVITY_NOT_FOUND: (id: string) => `Activity ${id} not found`,
+  ACTIVITY_ALREADY_CLOSED: 'Activity is already completed or cancelled',
+  ICS_NOT_AVAILABLE: 'This activity type cannot be exported to a calendar',
+
+  // Campaigns (L1)
+  CAMPAIGN_NOT_FOUND: (id: string) => `Campaign ${id} not found`,
+  CAMPAIGN_NAME_EXISTS: 'A campaign with this name already exists in the project',
+  CAMPAIGN_IN_USE_BY_SCOPE:
+    'Campaign is referenced by a scope; detach it from the scope before deleting',
+
+  // Import & export (L1)
+  IMPORT_BATCH_NOT_FOUND: (id: string) => `Import batch ${id} not found`,
+  IMPORT_BATCH_MODIFIED: 'Some imported records have been modified; the batch cannot be cancelled',
+  IMPORT_TOO_MANY_ROWS: (max: number) => `File exceeds the maximum of ${max} rows`,
+  IMPORT_PROFILE_UNSUPPORTED: (profile: string) => `Import profile ${profile} is not supported`,
+  TERRITORY_SOURCE_UNAVAILABLE: 'The territory reference service is unavailable',
+  REGISTRY_UNAVAILABLE: 'The company registry service is unavailable',
+  REGISTRY_TIMEOUT: 'The company registry service did not answer in time',
+  EXPORT_TOO_LARGE: (max: number) =>
+    `Export exceeds the maximum of ${max} rows; narrow the filters`,
+
 } as const;
 
 type ErrorKey = keyof typeof errorDefinitions;
@@ -118,6 +156,17 @@ export const labels = {
   auditObjects: {
     settings: 'Réglages',
   },
+} as const;
+
+/** Reference lists consumed by the commercial base (L1). Values live in ReferenceItem. */
+export const REFERENCE_CATEGORIES = {
+  STRUCTURE_TYPE: 'STRUCTURE_TYPE',
+  SOLUTION: 'SOLUTION',
+  LEAD_SOURCE: 'LEAD_SOURCE',
+  TAG: 'TAG',
+  SERVICE: 'SERVICE',
+  ACTIVITY_TYPE: 'ACTIVITY_TYPE',
+  ACTIVITY_RESULT: 'ACTIVITY_RESULT',
 } as const;
 
 export const ApiMessages = {
@@ -155,6 +204,11 @@ export const ApiMessages = {
       fileId: 'File unique identifier (CUID)',
       referenceItemId: 'Reference item unique identifier (CUID)',
       templateType: 'Document template type (QUOTE | CONTRACT)',
+      organizationId: 'Organization unique identifier (CUID)',
+      contactId: 'Contact unique identifier (CUID)',
+      activityId: 'Activity unique identifier (CUID)',
+      campaignId: 'Campaign unique identifier (CUID)',
+      importBatchId: 'Import batch unique identifier (CUID)',
     },
 
     health: {

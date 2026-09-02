@@ -107,6 +107,62 @@ enum EmailLogType {
   NOTIFICATION
 }
 
+// --------------------------------------------
+// L1 — base commerciale (SPEC-13 §2.3).
+// Valeurs relevées dans la maquette V8, seule référence fonctionnelle.
+// --------------------------------------------
+
+/// Statut commercial — les 5 colonnes du kanban de prospection (US-01-10).
+enum SalesStatus {
+  NOT_CONTACTED
+  TO_CONTACT
+  IN_PROGRESS
+  MEETING_SCHEDULED
+  CLOSED
+}
+
+/// Statut client, indépendant du statut commercial.
+enum CustomerStatus {
+  NOT_CUSTOMER
+  DEPLOYING
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+  LOST_BEFORE_GOLIVE
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+}
+
+enum ActivityStatus {
+  PLANNED
+  DONE
+  CANCELLED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+/// Import profiles (SPEC-05, SPEC-10 §3.3). TERRITORY = geo.api.gouv.fr, sans fichier (US-01-14).
+enum ImportProfile {
+  GENERIC
+  OUICRM_V2_1
+  PROJECT_CONFIG
+  TERRITORY
+}
+
+enum ImportBatchStatus {
+  SIMULATED
+  APPLIED
+  CANCELLED
+}
+
 enum DocumentType {
   QUOTE
   INVOICE
@@ -140,6 +196,7 @@ model Project {
   files            File[]
   emailLogs        EmailLog[]
   numberSequences  DocumentNumberSequence[]
+  organizations    Organization[]
 
   @@index([status])
   @@map("projects")
@@ -491,20 +548,20 @@ model AuditLog {
 }
 
 model File {
-  id         String        @id @default(cuid())
-  projectId  String?       @map("project_id") // null = fichier de compte (avatar)
-  ownerType  FileOwnerType @map("owner_type")
-  ownerId    String        @map("owner_id")
-  category   FileCategory
+  id           String                @id @default(cuid())
+  projectId    String?               @map("project_id") // null = fichier de compte (avatar)
+  ownerType    FileOwnerType         @map("owner_type")
+  ownerId      String                @map("owner_id")
+  category     FileCategory
   /// Set on HTML_TEMPLATE files only
   templateType DocumentTemplateType? @map("template_type")
-  fileName   String        @map("file_name") @db.VarChar(255)
-  filePath   String        @unique @map("file_path") @db.VarChar(512)
-  fileSize   Int           @map("file_size")
-  mimeType   String        @map("mime_type") @db.VarChar(100)
-  uploadedBy String        @map("uploaded_by")
-  note       String?
-  uploadedAt DateTime      @default(now()) @map("uploaded_at")
+  fileName     String                @map("file_name") @db.VarChar(255)
+  filePath     String                @unique @map("file_path") @db.VarChar(512)
+  fileSize     Int                   @map("file_size")
+  mimeType     String                @map("mime_type") @db.VarChar(100)
+  uploadedBy   String                @map("uploaded_by")
+  note         String?
+  uploadedAt   DateTime              @default(now()) @map("uploaded_at")
 
   project  Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   uploader User     @relation(fields: [uploadedBy], references: [id])
@@ -535,4 +592,199 @@ model EmailLog {
   @@index([targetType, targetId])
   @@index([projectId, status])
   @@map("email_logs")
+}
+
+// ============================================
+// L1 — BASE COMMERCIALE (SPEC-02 §2.4, SPEC-13 phase A)
+// projectId NOT NULL partout. Suppression logique (deletedAt) sur Organization et Contact.
+// Index partiels et GIN : dans la migration, Prisma ne les exprime pas.
+// ============================================
+
+model Organization {
+  id        String @id @default(cuid())
+  projectId String @map("project_id")
+
+  // Identité. `region` n'est pas stockée : dérivée du département (geo.constants, SPEC-13 §2.4).
+  name          String  @db.VarChar(200)
+  type          String  @db.VarChar(60) // clé du référentiel STRUCTURE_TYPE
+  displayPrefix String? @map("display_prefix") @db.VarChar(60)
+  siret         String? @db.VarChar(14)
+  siren         String? @db.VarChar(9)
+  inseeCode     String? @map("insee_code") @db.VarChar(5)
+  address       String? @db.VarChar(255)
+  postalCode    String? @map("postal_code") @db.VarChar(10)
+  city          String? @db.VarChar(120)
+  department    String  @db.VarChar(3) // même forme que Scope.departments
+  population    Int?
+  epci          String? @db.VarChar(150)
+  phone         String? @db.VarChar(20)
+  email         String? @db.VarChar(255)
+  website       String? @db.VarChar(255)
+
+  // Environnement produit
+  solution    String?  @db.VarChar(60) // clé du référentiel SOLUTION
+  schoolCount Int?     @map("school_count")
+  childCount  Int?     @map("child_count")
+  services    String[] @default([]) @db.VarChar(60) // clés du référentiel SERVICE
+
+  // Suivi commercial
+  salesStatus    SalesStatus    @default(NOT_CONTACTED) @map("sales_status")
+  customerStatus CustomerStatus @default(NOT_CUSTOMER) @map("customer_status")
+  priority       Priority       @default(NORMAL)
+  tags           String[]       @default([]) @db.VarChar(60) // clés du référentiel TAG
+  leadSource     String?        @map("lead_source") @db.VarChar(60)
+  targetPlan     String?        @map("target_plan") @db.VarChar(60)
+  salesRepId     String?        @map("sales_rep_id")
+  consultantId   String?        @map("consultant_id")
+  trainerId      String?        @map("trainer_id")
+  notes          String?
+  goLiveTarget   DateTime?      @map("go_live_target") @db.Date
+
+  // Colonnes dérivées, maintenues à l'écriture (SPEC-13 §2.4) : filtrées et triées en SQL.
+  completenessScore Int       @default(0) @map("completeness_score")
+  lastActivityAt    DateTime? @map("last_activity_at")
+  nextActivityAt    DateTime? @map("next_activity_at")
+
+  // Traçabilité
+  importBatchId     String?   @map("import_batch_id")
+  productCustomerId String?   @map("product_customer_id") @db.VarChar(60) // réservé, décision 11
+  deletedAt         DateTime? @map("deleted_at")
+  createdBy         String?   @map("created_by")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  project     Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  importBatch ImportBatch?           @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  contacts    Contact[]
+  activities  Activity[]
+  campaigns   CampaignOrganization[]
+
+  @@index([projectId, salesStatus])
+  @@index([projectId, customerStatus])
+  @@index([projectId, department])
+  @@index([projectId, salesRepId])
+  @@index([projectId, completenessScore])
+  @@index([importBatchId])
+  @@map("organizations")
+}
+
+model Contact {
+  id             String  @id @default(cuid())
+  projectId      String  @map("project_id")
+  organizationId String  @map("organization_id")
+  civility       String? @db.VarChar(10)
+  firstName      String  @map("first_name") @db.VarChar(100)
+  lastName       String  @map("last_name") @db.VarChar(100)
+  role           String? @db.VarChar(120)
+  email          String? @db.VarChar(255)
+  phone          String? @db.VarChar(20)
+  mobile         String? @db.VarChar(20)
+  isPrimary      Boolean @default(false) @map("is_primary")
+  optOut         Boolean @default(false) @map("opt_out")
+  notes          String?
+
+  /// true = contact extrait d'une note à l'import : à vérifier par un humain (US-01-04).
+  extractedFromNote Boolean   @default(false) @map("extracted_from_note")
+  importBatchId     String?   @map("import_batch_id")
+  deletedAt         DateTime? @map("deleted_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  activities   Activity[]
+
+  @@index([projectId, organizationId])
+  @@index([organizationId, isPrimary])
+  @@map("contacts")
+}
+
+model Activity {
+  id             String  @id @default(cuid())
+  projectId      String  @map("project_id")
+  organizationId String  @map("organization_id")
+  contactId      String? @map("contact_id")
+  userId         String  @map("user_id")
+  campaignId     String? @map("campaign_id")
+
+  type        String         @db.VarChar(60) // clé du référentiel ACTIVITY_TYPE
+  date        DateTime       @db.Date
+  /// Heure locale « HH:MM », affichée telle quelle ; ICS en heure flottante (SPEC-13 D9).
+  time        String?        @db.VarChar(5)
+  durationMin Int?           @map("duration_min")
+  location    String?        @db.VarChar(255)
+  status      ActivityStatus @default(PLANNED)
+  report      String?
+  result      String?        @db.VarChar(60) // clé du référentiel ACTIVITY_RESULT
+  completedAt DateTime?      @map("completed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  campaign     Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+
+  @@index([projectId, userId, date])
+  @@index([organizationId, date])
+  @@index([projectId, status, date])
+  @@index([campaignId])
+  @@map("activities")
+}
+
+model Campaign {
+  id          String         @id @default(cuid())
+  projectId   String         @map("project_id")
+  name        String         @db.VarChar(150)
+  description String?        @db.VarChar(1000)
+  status      CampaignStatus @default(DRAFT)
+  ownerId     String?        @map("owner_id")
+  startDate   DateTime?      @map("start_date") @db.Date
+  endDate     DateTime?      @map("end_date") @db.Date
+
+  /// Critères de constitution de la cible, à titre documentaire : la liste est figée.
+  criteria  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organizations CampaignOrganization[]
+  activities    Activity[]
+
+  @@unique([projectId, name])
+  @@index([projectId, status])
+  @@map("campaigns")
+}
+
+/// Liste cible figée d'une campagne. L'unicité porte l'idempotence de l'ajout en masse.
+model CampaignOrganization {
+  id             String   @id @default(cuid())
+  campaignId     String   @map("campaign_id")
+  organizationId String   @map("organization_id")
+  addedBy        String?  @map("added_by")
+  addedAt        DateTime @default(now()) @map("added_at")
+
+  campaign     Campaign     @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, organizationId])
+  @@index([organizationId])
+  @@map("campaign_organizations")
+}
+
+/// Lot d'import, annulable tant qu'aucune ligne créée n'a été modifiée (US-01-06).
+/// Le fichier source est un File de catégorie IMPORT_SOURCE, rattaché par ownerId.
+model ImportBatch {
+  id         String            @id @default(cuid())
+  projectId  String            @map("project_id")
+  profile    ImportProfile
+  status     ImportBatchStatus @default(SIMULATED)
+  /// Compteurs du rapport : { created, updated, skipped, errors, warnings }.
+  totals     Json              @default("{}")
+  createdBy  String            @map("created_by")
+  createdAt  DateTime          @default(now()) @map("created_at")
+  canceledAt DateTime?         @map("canceled_at")
+
+  organizations Organization[]
+
+  @@index([projectId, createdAt(sort: Desc)])
+  @@map("import_batches")
 }
