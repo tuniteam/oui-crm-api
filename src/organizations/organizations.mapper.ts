@@ -40,6 +40,7 @@ export function mapToListItem(
   organization: OrganizationWithRefs,
   access: ScopeAccess,
   missing: string[] = [],
+  bracketLabel: string | null = null,
 ): OrganizationListItemDto {
   const base = {
     id: organization.id,
@@ -57,6 +58,7 @@ export function mapToListItem(
   return {
     ...base,
     population: organization.population,
+    bracketLabel,
     priority: organization.priority,
     tags: organization.tags,
     solution: organization.solution ? { key: organization.solution } : null,
@@ -69,10 +71,10 @@ export function mapToListItem(
 /** Full record: everything the list carries, plus the columns only the drawer needs. */
 export function mapToDetail(
   organization: OrganizationWithRefs,
-  extra: { completeness: CompletenessDetailDto; counts: OrganizationCountsDto },
+  extra: { completeness: CompletenessDetailDto; counts: OrganizationCountsDto; bracketLabel: string | null },
 ): OrganizationDetailDto {
   return {
-    ...mapToListItem(organization, 'FULL'),
+    ...mapToListItem(organization, 'FULL', [], extra.bracketLabel),
     displayPrefix: organization.displayPrefix,
     siret: organization.siret,
     siren: organization.siren,
