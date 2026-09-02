@@ -247,6 +247,11 @@ export const ApiMessages = {
 
     organizations: {
       tag: 'Organizations',
+      bulk: {
+        summary: 'Bulk action on organizations',
+        description:
+          'ASSIGN_SALES_REP, SET_SALES_STATUS, SET_PRIORITY, ADD_TO_CAMPAIGN, DELETE on an explicit selection or selectAll with the list filters; out-of-scope records are skipped, never a global failure',
+      },
       board: { summary: 'Prospection board', description: 'The 5 sales-status columns with their cards; geographic scope applied, 200 cards per column' },
       changeSalesStatus: {
         summary: 'Move a record on the board',
