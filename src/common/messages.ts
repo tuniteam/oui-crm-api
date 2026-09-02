@@ -196,6 +196,34 @@ export const ApiMessages = {
       forbidden: 'Insufficient permissions, or project not accessible to the user',
     },
 
+    organizations: {
+      tag: 'Organizations',
+      list: {
+        summary: 'List organizations',
+        description:
+          'Paginated and filtered. Records outside the caller geographic scope are hidden for a NONE role, and returned with a reduced set of fields (access=RESTRICTED) for a RESTRICTED role.',
+      },
+      findOne: {
+        summary: 'Get organization by ID',
+        description:
+          'Full record with completeness detail and counts. Outside the scope: reduced projection, or 404 for a NONE role — the existence of a record is never revealed.',
+      },
+      create: {
+        summary: 'Create organization',
+        description:
+          'SIRET and INSEE code must be free within the project. A record with the same name at the same postal code answers 409 ORGANIZATION_POSSIBLE_DUPLICATE with the candidates in messages.meta.duplicates; resend with force=true to confirm.',
+      },
+      update: {
+        summary: 'Update organization',
+        description:
+          'Partial update. Sales and customer statuses are not accepted here: they change through their own routes and automations.',
+      },
+      remove: {
+        summary: 'Delete organization',
+        description: 'Soft delete. The SIRET and INSEE code become available again for a new record.',
+      },
+    },
+
     params: {
       userId: 'User unique identifier (CUID)',
       roleId: 'Role unique identifier (CUID)',

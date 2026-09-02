@@ -243,15 +243,18 @@ model User {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  sessions            Session[]
-  activationTokens    ActivationToken[]
-  passwordResetTokens PasswordResetToken[]
-  emailChangeTokens   EmailChangeToken[]
-  userRoleProjects    UserRoleProject[]
-  overrides           UserPermissionOverride[]
-  auditLogs           AuditLog[]
-  uploadedFiles       File[]
-  pricingGridsCreated PricingGrid[]
+  sessions                  Session[]
+  activationTokens          ActivationToken[]
+  passwordResetTokens       PasswordResetToken[]
+  emailChangeTokens         EmailChangeToken[]
+  userRoleProjects          UserRoleProject[]
+  overrides                 UserPermissionOverride[]
+  auditLogs                 AuditLog[]
+  uploadedFiles             File[]
+  pricingGridsCreated       PricingGrid[]
+  organizationsAsSalesRep   Organization[]           @relation("OrganizationSalesRep")
+  organizationsAsConsultant Organization[]           @relation("OrganizationConsultant")
+  organizationsAsTrainer    Organization[]           @relation("OrganizationTrainer")
 
   @@index([status])
   @@map("users")
@@ -655,6 +658,9 @@ model Organization {
 
   project     Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
   importBatch ImportBatch?           @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  salesRep    User?                  @relation("OrganizationSalesRep", fields: [salesRepId], references: [id], onDelete: SetNull)
+  consultant  User?                  @relation("OrganizationConsultant", fields: [consultantId], references: [id], onDelete: SetNull)
+  trainer     User?                  @relation("OrganizationTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
   contacts    Contact[]
   activities  Activity[]
   campaigns   CampaignOrganization[]

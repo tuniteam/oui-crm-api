@@ -1,4 +1,4 @@
-import { OutOfScopeAccess, ScopeNature } from '@prisma/client';
+import { CustomerStatus, OutOfScopeAccess, ScopeNature } from '@prisma/client';
 import { resolveDepartments } from './geo.constants';
 import { ScopeContext, ScopedOrganization, ScopeService } from './scope.service';
 
@@ -19,7 +19,7 @@ const org = (over: Partial<ScopedOrganization> = {}): ScopedOrganization => ({
   salesRepId: null,
   consultantId: null,
   trainerId: null,
-  isCustomer: false,
+  customerStatus: CustomerStatus.NOT_CUSTOMER,
   ...over,
 });
 
@@ -54,8 +54,8 @@ describe('ScopeService.whereVisible (SPEC-02 §4.2)', () => {
       AND: [
         { department: { in: ['2A', '2B'] } },
         { OR: [{ salesRepId: 'u1' }, { consultantId: 'u1' }, { trainerId: 'u1' }] },
-        { isCustomer: true },
-        { campaignIds: { hasSome: ['c1'] } },
+        { customerStatus: { not: CustomerStatus.NOT_CUSTOMER } },
+        { campaigns: { some: { campaignId: { in: ['c1'] } } } },
       ],
     });
   });
@@ -81,8 +81,10 @@ describe('ScopeService.access', () => {
 
   it('nature: prospects-only scope hides customers', () => {
     const prospects = ctx({ outOfScopeAccess: OutOfScopeAccess.NONE }, { nature: ScopeNature.PROSPECTS });
-    expect(service.access(prospects, org({ isCustomer: false }))).toBe('FULL');
-    expect(service.access(prospects, org({ isCustomer: true }))).toBe('NONE');
+    expect(service.access(prospects, org({ customerStatus: CustomerStatus.NOT_CUSTOMER }))).toBe('FULL');
+    expect(service.access(prospects, org({ customerStatus: CustomerStatus.ACTIVE }))).toBe('NONE');
+    // Un client résilié reste un client : il sort d'un périmètre PROSPECTS.
+    expect(service.access(prospects, org({ customerStatus: CustomerStatus.TERMINATED }))).toBe('NONE');
   });
 
   it('a record without department is outside any department-restricted scope', () => {

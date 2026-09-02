@@ -14,6 +14,7 @@
 import { PrismaClient } from '@prisma/client';
 import { mergeProjectConfig, upsertProjectFeatures } from '../src/projects/project-bootstrap';
 import { PERISCOLIA_CONFIG, PERISCOLIA_PROJECT } from './seed-data/periscolia.config';
+import { seedDemoOrganizations } from './seedOrganizations';
 
 const prisma = new PrismaClient();
 
@@ -75,10 +76,11 @@ async function restore(slug: string, withData: boolean): Promise<void> {
       await tx.organization.deleteMany({ where: { projectId } });
       await tx.campaign.deleteMany({ where: { projectId } });
       await tx.importBatch.deleteMany({ where: { projectId } });
+      const seeded = await seedDemoOrganizations(tx, projectId);
+      console.log('  commercial data reset — ' + seeded + ' demo organizations recreated');
     }
 
     console.log(`✓ ${project.name} (${slug}) restored — settings, ${realigned} reference items, features`);
-    if (withData) console.log('  commercial data cleared (organizations, campaigns, import batches)');
   });
 }
 
