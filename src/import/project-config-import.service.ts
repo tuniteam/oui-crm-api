@@ -1,5 +1,6 @@
 import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { Prisma, ScopeNature } from '@prisma/client';
+import * as ExcelJS from 'exceljs';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
@@ -17,7 +18,26 @@ import { UsersService } from '@/users/users.service';
 import { CreateUserDto } from '@/users/dto/create-user.dto';
 import { IMPORT_RESOURCES, IMPORT_ROW_CODES } from './import-file.constants';
 import { ParsedWorkbook, PreparedImport, ReportBuilder, SheetRow, cellBool, splitList } from './import-parse.utils';
+import {
+  ACTION_MAP,
+  EDITOR_MAP,
+  ETIQUETTE_MAP,
+  PARAM_BLOCKS,
+  SALES_PERSON_MAP,
+  SECTOR_REGIONS,
+  SOLUTION_LABELS,
+  SOURCE_MAP,
+  WEIGHTS_TO_STAGES,
+} from './ouicrm.constants';
+import { canonical, scanParamBlocks } from './ouicrm.utils';
 import { KNOWN_DEPARTMENTS } from './territory.utils';
+import { REGIONS } from '@/scopes/geo.constants';
+
+/** §3.2 — pipeline vocabulary of the workbook, validated by entry A (quotes land at L2). */
+const PIPELINE_VOCABULARY = new Set(
+  ['ANALYSE DEVIS', 'RELANCE', 'NÉGOCIATION', 'ACCORD ORAL', 'SIGNÉ - VALIDÉ', 'SANS SUITE - SS', 'ABANDONNÉ / PERDU'],
+);
+const REGION_BY_CANONICAL = new Map(REGIONS.map((r) => [canonical(r.name), r.name]));
 
 /** Numeric settings keys of the Settings sheet — everything else is company.* or identity. */
 const NUMERIC_SETTINGS = [
@@ -79,7 +99,7 @@ export class ProjectConfigImportService {
     private readonly users: UsersService,
   ) {}
 
-  async plan(projectId: string, sheets: ParsedWorkbook): Promise<PreparedImport> {
+  async plan(projectId: string, sheets: ParsedWorkbook, workbook?: ExcelJS.Workbook | null): Promise<PreparedImport> {
     const report = new ReportBuilder();
     const known = new Set<string>(Object.values(CONFIG_SHEETS));
     for (const name of sheets.keys()) {
@@ -103,9 +123,21 @@ export class ProjectConfigImportService {
     ]);
 
     const settingsPatch = this.planSettings(sheets.get(CONFIG_SHEETS.settings) ?? [], current, report);
-    const stagesPatch = this.planStages(sheets.get(CONFIG_SHEETS.stageProbabilities) ?? [], current, report);
+    let stagesPatch = this.planStages(sheets.get(CONFIG_SHEETS.stageProbabilities) ?? [], current, report);
     const refUpserts = this.planReferenceItems(sheets.get(CONFIG_SHEETS.referenceItems) ?? [], referenceItems, report);
     const scopeUpserts = this.planScopes(sheets.get(CONFIG_SHEETS.scopes) ?? [], scopes, report);
+
+    // Entry A (SPEC-10 §3.3): a workbook without the template sheets but carrying the real
+    // ⚙️ Paramètres tab — its blocks feed the same upserts through the same rules
+    const hasTemplateRows = Object.values(CONFIG_SHEETS).some((name) => (sheets.get(name) ?? []).length > 0);
+    if (!hasTemplateRows && workbook) {
+      stagesPatch = this.planEntryA(
+        workbook,
+        { current, referenceItems, scopes, memberInitials: new Set(members.map((m) => m.initials)) },
+        { refUpserts, scopeUpserts, stagesPatch },
+        report,
+      );
+    }
     const userCreates = this.planUsers(
       sheets.get(CONFIG_SHEETS.users) ?? [],
       {
@@ -417,6 +449,130 @@ export class ProjectConfigImportService {
       });
     }
     return out;
+  }
+
+  // ------------------------------------------------------------------------------ entry A
+
+  /**
+   * SPEC-10 §3.3, entry A — the real workbook's ⚙️ Paramètres tab. Blocks located by header
+   * (emojis stripped), values read down to the first empty cell, correspondence tables of
+   * SPEC-05 §3.3-3.6. Merge only, and a scope that already exists is NEVER rewritten
+   * (access control). Returns the stagesPatch (weights initialize 25/60/80 — SPEC-10 §2).
+   */
+  private planEntryA(
+    workbook: ExcelJS.Workbook,
+    ctx: {
+      current: { stageProbabilities?: unknown } | null;
+      referenceItems: { category: string; key: string }[];
+      scopes: { name: string }[];
+      memberInitials: Set<string>;
+    },
+    out: { refUpserts: ReferenceUpsert[]; scopeUpserts: ScopeUpsert[]; stagesPatch: Record<string, number> | null },
+    report: ReportBuilder,
+  ): Record<string, number> | null {
+    const knownBlocks = Object.values(PARAM_BLOCKS);
+    let sheetName = '';
+    let blocks = new Map<string, string[]>();
+    let unknown: string[] = [];
+    workbook.eachSheet((sheet) => {
+      const scan = scanParamBlocks(sheet, knownBlocks);
+      if (scan.blocks.size > blocks.size) {
+        blocks = scan.blocks;
+        unknown = scan.unknown;
+        sheetName = sheet.name;
+      }
+    });
+    if (!blocks.size) return out.stagesPatch;
+
+    for (const name of unknown) {
+      report.warn(sheetName, 1, IMPORT_ROW_CODES.UNKNOWN_BLOCK, `Block « ${name} » is not part of the configuration — ignored`);
+    }
+    const hasRef = (category: string, key: string): boolean =>
+      ctx.referenceItems.some((r) => r.category === category && r.key === key);
+    const pushRef = (category: string, key: string, label: string): void => {
+      if (hasRef(category, key) || out.refUpserts.some((u) => u.category === category && u.key === key)) {
+        report.skipped(IMPORT_RESOURCES.REFERENCE_ITEMS);
+        return;
+      }
+      report.created(IMPORT_RESOURCES.REFERENCE_ITEMS);
+      out.refUpserts.push({ id: null, category, key, data: { label, order: null, active: null, metadata: null } });
+    };
+
+    for (const value of blocks.get(PARAM_BLOCKS.ETIQUETTES) ?? []) {
+      const mapped = ETIQUETTE_MAP[canonical(value)];
+      if (!mapped) {
+        report.warn(sheetName, 1, IMPORT_ROW_CODES.INVALID_VALUE, `Étiquette « ${value} » outside the Chaud/Tiède/Froid rule`, 'ÉTIQUETTES');
+      } else if (mapped.tag) {
+        pushRef('TAG', mapped.tag, 'Chaud');
+      }
+    }
+    for (const value of blocks.get(PARAM_BLOCKS.EDITORS) ?? []) {
+      const key = EDITOR_MAP[canonical(value)];
+      if (!key) {
+        report.warn(sheetName, 1, IMPORT_ROW_CODES.UNKNOWN_EDITOR, `Éditeur « ${value} » outside the §3.4 table — map it by hand`, 'ÉDITEURS');
+        continue;
+      }
+      pushRef('SOLUTION', key, SOLUTION_LABELS[key] ?? value);
+    }
+    for (const value of blocks.get(PARAM_BLOCKS.SOURCES) ?? []) {
+      if (!SOURCE_MAP[canonical(value)]) {
+        report.warn(sheetName, 1, IMPORT_ROW_CODES.UNKNOWN_REFERENCE, `Source « ${value} » outside the §3.3 table`, 'SOURCES');
+      }
+    }
+    for (const value of blocks.get(PARAM_BLOCKS.ACTIONS) ?? []) {
+      if (!ACTION_MAP[canonical(value)]) {
+        report.warn(sheetName, 1, IMPORT_ROW_CODES.UNKNOWN_REFERENCE, `Action « ${value} » outside the §3.5 table`, 'ACTIONS / COMMENTAIRES');
+      }
+    }
+    for (const value of blocks.get(PARAM_BLOCKS.PIPELINE) ?? []) {
+      if (!PIPELINE_VOCABULARY.has(canonical(value))) {
+        report.warn(sheetName, 1, IMPORT_ROW_CODES.INVALID_VALUE, `Statut pipeline « ${value} » outside the §3.2 table (quotes land at L2)`, 'STATUTS PIPELINE');
+      }
+    }
+    for (const value of blocks.get(PARAM_BLOCKS.SALES_PEOPLE) ?? []) {
+      const initials = SALES_PERSON_MAP[canonical(value)];
+      if (!initials || !ctx.memberInitials.has(initials)) {
+        report.warn(sheetName, 1, IMPORT_ROW_CODES.UNKNOWN_SALES_PERSON, `« ${value} » has no active member behind it (§3.6 — demo value?)`, 'COMMERCIAUX');
+      }
+    }
+
+    // Weights initialize the three configurable stages (SPEC-10 §2); WON/LOST stay fixed
+    let stagesPatch = out.stagesPatch;
+    if (blocks.has(PARAM_BLOCKS.WEIGHTS)) {
+      const currentStages = (ctx.current?.stageProbabilities ?? {}) as Record<string, number>;
+      const patch: Record<string, number> = { ...(stagesPatch ?? {}) };
+      for (const [stage, value] of Object.entries(WEIGHTS_TO_STAGES)) {
+        if (currentStages[stage] === value) report.skipped(IMPORT_RESOURCES.STAGE_PROBABILITIES);
+        else {
+          patch[stage] = value;
+          report.updated(IMPORT_RESOURCES.STAGE_PROBABILITIES);
+        }
+      }
+      stagesPatch = Object.keys(patch).length ? patch : null;
+    }
+
+    // A sector becomes a scope only when no scope carries that name yet — access control is
+    // never rewritten by an import
+    const scopeNames = new Set(ctx.scopes.map((s) => canonical(s.name)));
+    for (const value of blocks.get(PARAM_BLOCKS.SECTORS) ?? []) {
+      if (scopeNames.has(canonical(value)) || out.scopeUpserts.some((u) => canonical(u.name) === canonical(value))) {
+        report.skipped(IMPORT_RESOURCES.SCOPES);
+        continue;
+      }
+      const regions =
+        SECTOR_REGIONS[canonical(value)] ??
+        (REGION_BY_CANONICAL.has(canonical(value)) ? [REGION_BY_CANONICAL.get(canonical(value))!] : null);
+      if (!regions) {
+        report.warn(sheetName, 1, IMPORT_ROW_CODES.UNKNOWN_SECTOR, `Secteur « ${value} » matches no region — empty scope created, to complete by hand`, 'SECTEURS / INSTANCES');
+      }
+      report.created(IMPORT_RESOURCES.SCOPES);
+      out.scopeUpserts.push({
+        id: null,
+        name: value,
+        data: { description: 'Importé du classeur (entrée A)', regions: regions ?? [], departments: [], portfolioOnly: false, nature: ScopeNature.ALL },
+      });
+    }
+    return stagesPatch;
   }
 
   // ------------------------------------------------------------------------------ apply

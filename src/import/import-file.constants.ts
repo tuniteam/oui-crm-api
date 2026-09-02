@@ -13,8 +13,12 @@ export const IMPORT_FILE = {
   LIST_SEPARATOR: '|',
 } as const;
 
-/** Profiles the file route accepts at L1 — OUICRM_V2_1 waits on decision D2, TERRITORY has its own route. */
-export const FILE_PROFILES: readonly ImportProfile[] = [ImportProfile.GENERIC, ImportProfile.PROJECT_CONFIG];
+/** Profiles the file route accepts — TERRITORY has its own route. OUICRM_V2_1 opened by decision D2 (02/09/2026). */
+export const FILE_PROFILES: readonly ImportProfile[] = [
+  ImportProfile.GENERIC,
+  ImportProfile.PROJECT_CONFIG,
+  ImportProfile.OUICRM_V2_1,
+];
 
 export const GENERIC_SHEETS = {
   organizations: 'Organizations',
@@ -80,6 +84,17 @@ export const IMPORT_ROW_CODES = {
   STAGE_PROBABILITY_FIXED: 'STAGE_PROBABILITY_FIXED',
   INITIALS_ALREADY_USED: 'INITIALS_ALREADY_USED',
   ALREADY_MEMBER: 'ALREADY_MEMBER',
+  // OUICRM_V2_1 takeover (SPEC-05)
+  DUPLICATE_LEAD: 'DUPLICATE_LEAD',
+  POSSIBLE_DUPLICATE: 'POSSIBLE_DUPLICATE',
+  CONTACT_NOT_EXTRACTED: 'CONTACT_NOT_EXTRACTED',
+  TYPE_DEFAULTED: 'TYPE_DEFAULTED',
+  UNKNOWN_EDITOR: 'UNKNOWN_EDITOR',
+  COMPOSITE_VALUE: 'COMPOSITE_VALUE',
+  SHEET_DEFERRED: 'SHEET_DEFERRED',
+  UNKNOWN_BLOCK: 'UNKNOWN_BLOCK',
+  UNKNOWN_SECTOR: 'UNKNOWN_SECTOR',
+  UNKNOWN_SALES_PERSON: 'UNKNOWN_SALES_PERSON',
 } as const;
 export type ImportRowCode = (typeof IMPORT_ROW_CODES)[keyof typeof IMPORT_ROW_CODES];
 
@@ -92,4 +107,5 @@ export const IMPORT_RESOURCES = {
   REFERENCE_ITEMS: 'referenceItems',
   SCOPES: 'scopes',
   USERS: 'users',
+  ACTIVITIES: 'activities',
 } as const;

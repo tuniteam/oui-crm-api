@@ -13,6 +13,7 @@ import { ProjectConfigExportService } from '@/projects/project-config-export.ser
 import { PrismaService } from '@/prisma/prisma.service';
 import { ImportFileQueryDto, ImportReportDto } from './dto/import-file.dto';
 import { GenericImportService } from './generic-import.service';
+import { OuicrmImportService } from './ouicrm-import.service';
 import { ProjectConfigImportService } from './project-config-import.service';
 import { IMPORT_AUDIT } from './import.constants';
 import {
@@ -41,6 +42,7 @@ export class ImportFileService {
     private readonly configExport: ProjectConfigExportService,
     private readonly generic: GenericImportService,
     private readonly projectConfig: ProjectConfigImportService,
+    private readonly ouicrm: OuicrmImportService,
   ) {}
 
   // ------------------------------------------------------------------------------ template
@@ -51,6 +53,8 @@ export class ImportFileService {
     user: AuthenticatedUser,
   ): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
     this.assertProfileAllowed(projectId, profile, user);
+    // The takeover profile has no template: the workbook itself is the source (D2)
+    if (profile === ImportProfile.OUICRM_V2_1) throw apiError.badRequest('INVALID_DATA');
     if (profile === ImportProfile.PROJECT_CONFIG) {
       // The template IS the export of the current configuration (SPEC-10 §4): same sheets,
       // pre-filled — edit and replay.
@@ -101,12 +105,20 @@ export class ImportFileService {
     this.assertProfileAllowed(projectId, profile, user);
     if (!file?.buffer?.length) throw apiError.badRequest('INVALID_DATA');
 
-    const sheets = await this.parse(profile, file);
-    const rowCount = [...sheets.values()].reduce((n, rows) => n + rows.length, 0);
-    if (rowCount > IMPORT_FILE.MAX_ROWS) throw apiError.payloadTooLarge('IMPORT_TOO_MANY_ROWS', IMPORT_FILE.MAX_ROWS);
+    const { sheets, workbook } = await this.parse(profile, file);
+    // The takeover workbook is capped on its data rows by its own reader (KPI bands, huge
+    // formatted-but-empty ranges); the header-keyed profiles are capped here
+    if (profile !== ImportProfile.OUICRM_V2_1) {
+      const rowCount = [...sheets.values()].reduce((n, rows) => n + rows.length, 0);
+      if (rowCount > IMPORT_FILE.MAX_ROWS) throw apiError.payloadTooLarge('IMPORT_TOO_MANY_ROWS', IMPORT_FILE.MAX_ROWS);
+    }
 
-    const runner = profile === ImportProfile.GENERIC ? this.generic : this.projectConfig;
-    const prepared = await runner.plan(projectId, sheets);
+    const prepared =
+      profile === ImportProfile.OUICRM_V2_1
+        ? await this.ouicrm.plan(projectId, workbook!)
+        : profile === ImportProfile.GENERIC
+          ? await this.generic.plan(projectId, sheets)
+          : await this.projectConfig.plan(projectId, sheets, workbook);
     if (dryRun) return prepared.report.build(true);
 
     const batch = await this.prisma.importBatch.create({
@@ -165,12 +177,15 @@ export class ImportFileService {
 
   // ------------------------------------------------------------------------------ helpers
 
-  private async parse(profile: ImportProfile, file: UploadedFileLike): Promise<ParsedWorkbook> {
+  private async parse(
+    profile: ImportProfile,
+    file: UploadedFileLike,
+  ): Promise<{ sheets: ParsedWorkbook; workbook: ExcelJS.Workbook | null }> {
     const isCsv = file.originalname.toLowerCase().endsWith('.csv') || file.mimetype === MIME.CSV;
     if (isCsv) {
       // A CSV is a single table: only the GENERIC organizations sheet fits in one
       if (profile !== ImportProfile.GENERIC) throw apiError.badRequest('INVALID_DATA');
-      return new Map([[GENERIC_SHEETS.organizations, csvToRows(file.buffer.toString('utf8'))]]);
+      return { sheets: new Map([[GENERIC_SHEETS.organizations, csvToRows(file.buffer.toString('utf8'))]]), workbook: null };
     }
     const workbook = new ExcelJS.Workbook();
     try {
@@ -180,7 +195,7 @@ export class ImportFileService {
     }
     const sheets: ParsedWorkbook = new Map();
     workbook.eachSheet((sheet) => sheets.set(sheet.name, sheetToRows(sheet)));
-    return sheets;
+    return { sheets, workbook };
   }
 
   /** GENERIC = commercial base; PROJECT_CONFIG = configuration (all three permissions). */
@@ -188,7 +203,7 @@ export class ImportFileService {
     const required =
       profile === ImportProfile.PROJECT_CONFIG
         ? ['settings:update', 'references:update', 'scopes:update']
-        : ['organizations:import'];
+        : ['organizations:import']; // GENERIC and the OUICRM_V2_1 takeover write the commercial base
     for (const code of required) {
       if (!findPermission(user, projectId, code)) throw apiError.forbidden('ACCESS_DENIED');
     }
