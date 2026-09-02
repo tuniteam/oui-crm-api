@@ -105,7 +105,8 @@ async function bootstrap() {
   // ============================================
   // Start
   // ============================================
-  await app.listen(PORT, '0.0.0.0');
+  // Dual-stack: browsers resolve localhost to ::1 first — IPv4-only binding drops those requests
+  await app.listen(PORT, '::');
 
   console.log('');
   console.log('🚀 ====================================');
