@@ -31,6 +31,7 @@ export function mapToScopeResponse(scope: Scope, usersCount: number): ScopeRespo
     departments: scope.departments,
     portfolioOnly: scope.portfolioOnly,
     nature: scope.nature,
+    campaignIds: scope.campaignIds,
     usersCount,
     resolvedDepartments: resolveDepartments(scope.regions, scope.departments),
   };
@@ -60,4 +61,15 @@ export async function loadScopeContext(
     select: { regions: true, departments: true, portfolioOnly: true, nature: true, campaignIds: true },
   });
   return { ...base, scope: scope ?? null };
+}
+
+/** Every campaign a scope cites must belong to the project (US-01-11 / D7). */
+export async function assertCampaignsInProject(
+  db: Pick<PrismaService, 'campaign'>,
+  projectId: string,
+  campaignIds: readonly string[] | undefined,
+): Promise<void> {
+  if (!campaignIds?.length) return;
+  const found = await db.campaign.count({ where: { projectId, id: { in: [...campaignIds] } } });
+  if (found !== campaignIds.length) throw apiError.badRequest('INVALID_DATA');
 }

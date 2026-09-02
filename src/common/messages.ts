@@ -218,6 +218,22 @@ export const ApiMessages = {
       ics: { summary: 'Export an activity to ICS', description: 'Meeting-like types only (referential metadata ics), floating local time' },
     },
 
+    campaigns: {
+      tag: 'Campaigns',
+      list: { summary: 'List campaigns', description: 'Paginated, with owner, frozen-target size and on-demand results' },
+      create: { summary: 'Create a campaign', description: 'Owner defaults to the caller; the criteria are documentary, the target list is frozen' },
+      update: { summary: 'Update a campaign', description: 'Nullable fields cleared with null; the name stays unique per project' },
+      changeStatus: { summary: 'Change campaign status', description: 'DRAFT → ACTIVE → CLOSED, and a closed campaign can be reopened' },
+      addOrganizations: {
+        summary: 'Target records',
+        description: 'Idempotent; unknown or out-of-scope records are skipped; fresh NOT_CONTACTED records move to TO_CONTACT',
+      },
+      removeOrganization: { summary: 'Remove a record from the target', description: 'The record itself is untouched' },
+      listOrganizations: { summary: 'List the frozen target', description: 'Same visibility rules as the organization list' },
+      results: { summary: 'Campaign results', description: 'Computed on demand, never stored; only activities are counted at L1' },
+      delete: { summary: 'Delete a campaign', description: 'Refused while a geographic scope cites the campaign (D7): detach it first' },
+    },
+
     contacts: {
       tag: 'Contacts',
       list: { summary: 'List the contacts of an organization', description: 'Primary first; requires FULL geographic access to the record' },

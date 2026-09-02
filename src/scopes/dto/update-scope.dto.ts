@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { ScopeNature } from '@prisma/client';
-import { ArrayUnique, IsArray, IsBoolean, IsEnum, IsNotEmpty, IsString, Matches, MaxLength } from 'class-validator';
+import { ArrayUnique, IsArray, IsBoolean, IsEnum, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsCuid } from '@/common/decorators/is-cuid.decorator';
 import { IsOptionalNotNull } from '@/common/decorators/optional-not-null.decorator';
 import { DEPARTMENT_CODE_PATTERN, SCOPE_DESCRIPTION_MAX_LENGTH, SCOPE_NAME_MAX_LENGTH } from '../scopes.constants';
 
@@ -42,4 +43,15 @@ export class UpdateScopeDto {
   @IsOptionalNotNull()
   @IsEnum(ScopeNature)
   nature?: ScopeNature;
+
+  @ApiPropertyOptional({
+    type: [String],
+    example: [],
+    description: 'Campaigns the scope is limited to (US-01-11) — every id must be a campaign of the project',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsCuid({ each: true })
+  campaignIds?: string[];
 }
