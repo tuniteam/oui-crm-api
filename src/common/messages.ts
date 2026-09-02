@@ -231,6 +231,11 @@ export const ApiMessages = {
 
     organizations: {
       tag: 'Organizations',
+      board: { summary: 'Prospection board', description: 'The 5 sales-status columns with their cards; geographic scope applied, 200 cards per column' },
+      changeSalesStatus: {
+        summary: 'Move a record on the board',
+        description: 'Free transitions between the 5 statuses; moving onto the current status answers 409. The reason lands in the journal',
+      },
       searchRegistry: {
         summary: 'Search the official registry',
         description:

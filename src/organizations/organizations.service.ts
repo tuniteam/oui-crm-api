@@ -14,6 +14,10 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { ScopeAccess, ScopeContext, ScopeService } from '@/scopes/scope.service';
 import { loadScopeContext } from '@/scopes/scopes.utils';
 import {
+  BoardItemDto,
+  BoardResponseDto,
+  ChangeSalesStatusDto,
+  ChangeSalesStatusResponseDto,
   CreateOrganizationDto,
   CreateOrganizationResponseDto,
   OrganizationDetailDto,
@@ -22,8 +26,9 @@ import {
   OrganizationListResponseDto,
   UpdateOrganizationDto,
 } from './dto';
-import { ORGANIZATION_AUDIT } from './organizations.constants';
+import { BOARD_COLUMN_LIMIT, BOARD_COLUMNS, ORGANIZATION_AUDIT } from './organizations.constants';
 import {
+  applySalesStatus,
   assertAssigneesAreMembers,
   assertFullOrganizationAccess,
   assertIdentifiersAvailable,
@@ -101,6 +106,93 @@ export class OrganizationsService {
         ),
       ),
       meta: buildPaginationMeta(total, page, limit),
+    };
+  }
+
+  // -------------------------------------------------------------------------------- board
+
+  /**
+   * US-01-10. Same visibility as the list: a NONE role does not see out-of-scope records at
+   * all; a RESTRICTED role gets their cards greyed (reduced fields, drag disabled by the
+   * front). Cards are ordered by next activity so the actionable ones come first.
+   */
+  async board(projectId: string, user: AuthenticatedUser): Promise<BoardResponseDto> {
+    const ctx = await loadScopeContext(this.prisma, user, projectId);
+    const base: Prisma.OrganizationWhereInput = { projectId, deletedAt: null };
+    if (this.hidesOutOfScope(ctx)) {
+      const scopeWhere = this.scopeService.whereVisible(ctx);
+      if (Object.keys(scopeWhere).length) base.AND = [scopeWhere];
+    }
+
+    const columns = await Promise.all(
+      BOARD_COLUMNS.map(async (salesStatus) => {
+        const where = { ...base, salesStatus };
+        const [count, rows] = await Promise.all([
+          this.prisma.organization.count({ where }),
+          this.prisma.organization.findMany({
+            where,
+            orderBy: [{ nextActivityAt: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
+            take: BOARD_COLUMN_LIMIT,
+            include: ORGANIZATION_REFS,
+          }),
+        ]);
+        return {
+          salesStatus,
+          count,
+          hasMore: count > rows.length,
+          items: rows.map((row) => this.toBoardItem(row, this.accessOf(ctx, row))),
+        };
+      }),
+    );
+    return { columns };
+  }
+
+  /**
+   * US-01-10. The single writer applySalesStatus is shared with the activity automatisms;
+   * transitions are free between the 5 statuses — dropping a card on its own column is the
+   * only invalid move (409, the front puts the card back).
+   */
+  async changeSalesStatus(
+    id: string,
+    dto: ChangeSalesStatusDto,
+    projectId: string,
+    user: AuthenticatedUser,
+  ): Promise<ChangeSalesStatusResponseDto> {
+    const ctx = await loadScopeContext(this.prisma, user, projectId);
+    const organization = await getOrganizationOrThrow(this.prisma, id, projectId);
+    this.assertWritable(ctx, organization, id);
+    if (organization.salesStatus === dto.salesStatus) {
+      throw apiError.conflict('ORGANIZATION_INVALID_TRANSITION', organization.salesStatus);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      const change = await applySalesStatus(tx, organization, dto.salesStatus);
+      await this.audit.log(tx, {
+        projectId,
+        userId: user.id,
+        action: ORGANIZATION_AUDIT.SALES_STATUS,
+        objectType: AUDIT_OBJECTS.ORGANIZATION,
+        objectId: id,
+        metadata: { ...change, trigger: 'manual', ...(dto.reason ? { reason: dto.reason } : {}) },
+      });
+    });
+    return { id, salesStatus: dto.salesStatus };
+  }
+
+  private toBoardItem(row: OrganizationWithRefs, access: ScopeAccess): BoardItemDto {
+    const restricted: BoardItemDto = {
+      id: row.id,
+      name: row.name,
+      salesRep: row.salesRep ? { id: row.salesRep.id, fullName: `${row.salesRep.firstName} ${row.salesRep.lastName}`.trim(), initials: null } : null,
+      access: access === 'FULL' ? 'FULL' : 'RESTRICTED',
+    };
+    if (access !== 'FULL') return restricted;
+    return {
+      ...restricted,
+      priority: row.priority,
+      tags: row.tags,
+      nextActivityAt: row.nextActivityAt,
+      lastActivityAt: row.lastActivityAt,
     };
   }
 
