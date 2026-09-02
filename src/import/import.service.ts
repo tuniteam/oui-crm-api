@@ -3,6 +3,7 @@ import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interfac
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { apiError } from '@/common/api-error';
+import { recomputeCompleteness } from '@/organizations/organizations.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { IMPORT_AUDIT, IMPORT_BATCH_MODIFIED_TOLERANCE_MS } from './import.constants';
 
@@ -23,19 +24,33 @@ export class ImportService {
     if (!batch) throw apiError.notFound('IMPORT_BATCH_NOT_FOUND', batchId);
     if (batch.status === 'CANCELLED') return; // idempotent
 
-    const organizations = await this.prisma.organization.findMany({
-      where: { importBatchId: batchId },
-      select: { id: true, createdAt: true, updatedAt: true },
-    });
-    const modified = organizations.some(
-      (o) => o.updatedAt.getTime() - o.createdAt.getTime() > IMPORT_BATCH_MODIFIED_TOLERANCE_MS,
-    );
-    if (modified) throw apiError.conflict('IMPORT_BATCH_MODIFIED');
+    const [organizations, contacts] = await Promise.all([
+      this.prisma.organization.findMany({
+        where: { importBatchId: batchId },
+        select: { id: true, createdAt: true, updatedAt: true },
+      }),
+      this.prisma.contact.findMany({
+        where: { importBatchId: batchId },
+        select: { id: true, organizationId: true, createdAt: true, updatedAt: true, deletedAt: true },
+      }),
+    ]);
+    const drifted = (row: { createdAt: Date; updatedAt: Date }): boolean =>
+      row.updatedAt.getTime() - row.createdAt.getTime() > IMPORT_BATCH_MODIFIED_TOLERANCE_MS;
+    if (organizations.some(drifted) || contacts.some((c) => drifted(c) || c.deletedAt !== null)) {
+      throw apiError.conflict('IMPORT_BATCH_MODIFIED');
+    }
+
+    const batchOrgIds = new Set(organizations.map((o) => o.id));
+    const hostOrgIds = [...new Set(contacts.map((c) => c.organizationId))].filter((id) => !batchOrgIds.has(id));
 
     await this.prisma.$transaction(async (tx) => {
       // Hard delete: import artifacts nobody touched — contacts, activities and campaign
-      // links cascade. Population refreshes on pre-existing records are NOT reverted.
+      // links cascade with their organization; contacts imported onto pre-existing records
+      // are removed too. Field fills and population refreshes are NOT reverted.
+      await tx.contact.deleteMany({ where: { importBatchId: batchId } });
       await tx.organization.deleteMany({ where: { importBatchId: batchId } });
+      // The primary-contact criterion may have changed on the host records
+      for (const id of hostOrgIds) await recomputeCompleteness(tx, id);
       await tx.importBatch.update({ where: { id: batchId }, data: { status: 'CANCELLED', canceledAt: new Date() } });
       await this.audit.log(tx, {
         projectId,
@@ -43,7 +58,7 @@ export class ImportService {
         action: IMPORT_AUDIT.CANCEL,
         objectType: AUDIT_OBJECTS.IMPORT_BATCH,
         objectId: batchId,
-        metadata: { profile: batch.profile, deleted: organizations.length },
+        metadata: { profile: batch.profile, deleted: organizations.length, deletedContacts: contacts.length },
       });
     });
   }

@@ -241,6 +241,20 @@ export const ApiMessages = {
         description:
           'Creates every commune of the requested departments or EPCIs from geo.api.gouv.fr (population included); dryRun first, INSEE-code matching, nothing existing is overwritten (population excepted behind updatePopulation)',
       },
+      template: {
+        summary: 'Download an import template',
+        description:
+          'GENERIC: two sheets (Organizations, Contacts) with an example row. PROJECT_CONFIG: the export of the current configuration, same sheets - edit and replay',
+      },
+      run: {
+        summary: 'Import a file',
+        description:
+          'XLSX (CSV for GENERIC organizations), explicit dryRun, row-by-row report keyed by Excel row numbers; valid rows are applied, rejected rows are listed - the batch is cancellable while nothing was modified',
+      },
+      errorsPdf: {
+        summary: 'Import report as PDF',
+        description: 'Renders a posted report (totals, rejected rows, caveats) for review by the sales team',
+      },
       cancelBatch: {
         summary: 'Cancel an import batch',
         description: 'Deletes everything the batch created, in one block — refused once any of its records has been modified',
