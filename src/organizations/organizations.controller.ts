@@ -34,6 +34,9 @@ import {
 import { ApiMessages } from '@/common/messages';
 import { ParseCuidPipe } from '@/common/pipes';
 import {
+  ChangeSalesStatusResponseDto,
+  ChangeSalesStatusDto,
+  BoardResponseDto,
   CreateOrganizationDto,
   CreateOrganizationResponseDto,
   OrganizationDetailDto,
@@ -71,6 +74,14 @@ export class OrganizationsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<OrganizationListResponseDto> {
     return this.organizationsService.findAll(projectId, query, user);
+  }
+
+  @Get('board')
+  @Permissions({ code: 'organizations:read' })
+  @ApiOperation(swagger.organizations.board)
+  @ApiListResponse(BoardResponseDto)
+  board(@CurrentProjectId() projectId: string, @CurrentUser() user: AuthenticatedUser): Promise<BoardResponseDto> {
+    return this.organizationsService.board(projectId, user);
   }
 
   @Get('search-registry')
@@ -121,6 +132,21 @@ export class OrganizationsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<OrganizationDetailDto | OrganizationListItemDto> {
     return this.organizationsService.update(id, dto, projectId, user);
+  }
+
+  @Post(':id/sales-status')
+  @Permissions({ code: 'organizations:update' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation(swagger.organizations.changeSalesStatus)
+  @ApiCuidParam('id', swagger.params.organizationId)
+  @ApiPatchResponse(ChangeSalesStatusResponseDto)
+  changeSalesStatus(
+    @CurrentProjectId() projectId: string,
+    @Param('id', ParseCuidPipe) id: string,
+    @Body() dto: ChangeSalesStatusDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<ChangeSalesStatusResponseDto> {
+    return this.organizationsService.changeSalesStatus(id, dto, projectId, user);
   }
 
   @Delete(':id')

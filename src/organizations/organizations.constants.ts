@@ -2,7 +2,7 @@
 // OUI-CRM - Organizations constants (US-01-01 → 03, 13)
 // ============================================
 
-import { Prisma } from '@prisma/client';
+import { Prisma, SalesStatus } from '@prisma/client';
 
 /** Audit actions of the module (AUDIT_OBJECTS.ORGANIZATION). */
 export const ORGANIZATION_AUDIT = {
@@ -75,3 +75,14 @@ export const DEFAULT_ORGANIZATION_SORT: OrganizationSortField = 'name';
 
 /** Duplicate detection on creation: same name at the same postal code (US-01-02). */
 export const DUPLICATE_CHECK_LIMIT = 5;
+
+/** Kanban (US-01-10): the 5 columns in pipeline order; per-column payload cap. */
+export const BOARD_COLUMNS: readonly SalesStatus[] = [
+  SalesStatus.NOT_CONTACTED,
+  SalesStatus.TO_CONTACT,
+  SalesStatus.IN_PROGRESS,
+  SalesStatus.MEETING_SCHEDULED,
+  SalesStatus.CLOSED,
+];
+export const BOARD_COLUMN_LIMIT = 200;
+export const SALES_STATUS_REASON_MAX_LENGTH = 500;
