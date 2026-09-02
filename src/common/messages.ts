@@ -109,6 +109,45 @@ const errorDefinitions = {
   FILE_PROJECT_OWNER_MISMATCH: 'Owner project does not match the current project',
   FILENAME_INVALID_CHARS: 'File name contains invalid characters',
 
+  // Organizations (L1)
+  ORGANIZATION_NOT_FOUND: (id: string) => `Organization ${id} not found`,
+  ORGANIZATION_SIRET_EXISTS: 'An organization with this SIRET already exists',
+  ORGANIZATION_INSEE_CODE_EXISTS: 'An organization with this INSEE code already exists',
+  ORGANIZATION_POSSIBLE_DUPLICATE:
+    'An organization with a similar name already exists at this postal code',
+  ORGANIZATION_HAS_CONTRACTS: 'Organization has contracts and cannot be deleted',
+  ORGANIZATION_INVALID_TRANSITION: (from: string) =>
+    `Invalid sales status transition from ${from}`,
+  INVALID_REFERENCE_VALUE: (category: string, key: string) =>
+    `${key} is not a valid value of the ${category} reference list`,
+
+  // Contacts (L1)
+  CONTACT_NOT_FOUND: (id: string) => `Contact ${id} not found`,
+  CONTACT_HAS_ACTIVITIES: 'Contact is used by activities and cannot be deleted',
+  CONTACT_PRIMARY_CONFLICT: 'Another primary contact was set at the same time — retry',
+
+  // Activities (L1)
+  ACTIVITY_NOT_FOUND: (id: string) => `Activity ${id} not found`,
+  ACTIVITY_ALREADY_CLOSED: 'Activity is already completed or cancelled',
+  ICS_NOT_AVAILABLE: 'This activity type cannot be exported to a calendar',
+
+  // Campaigns (L1)
+  CAMPAIGN_NOT_FOUND: (id: string) => `Campaign ${id} not found`,
+  CAMPAIGN_NAME_EXISTS: 'A campaign with this name already exists in the project',
+  CAMPAIGN_IN_USE_BY_SCOPE:
+    'Campaign is referenced by a scope; detach it from the scope before deleting',
+
+  // Import & export (L1)
+  IMPORT_BATCH_NOT_FOUND: (id: string) => `Import batch ${id} not found`,
+  IMPORT_BATCH_MODIFIED: 'Some imported records have been modified; the batch cannot be cancelled',
+  IMPORT_TOO_MANY_ROWS: (max: number) => `File exceeds the maximum of ${max} rows`,
+  IMPORT_PROFILE_UNSUPPORTED: (profile: string) => `Import profile ${profile} is not supported`,
+  TERRITORY_SOURCE_UNAVAILABLE: 'The territory reference service is unavailable',
+  REGISTRY_UNAVAILABLE: 'The company registry service is unavailable',
+  REGISTRY_TIMEOUT: 'The company registry service did not answer in time',
+  EXPORT_TOO_LARGE: (max: number) =>
+    `Export exceeds the maximum of ${max} rows; narrow the filters`,
+
 } as const;
 
 type ErrorKey = keyof typeof errorDefinitions;
@@ -118,6 +157,17 @@ export const labels = {
   auditObjects: {
     settings: 'Réglages',
   },
+} as const;
+
+/** Reference lists consumed by the commercial base (L1). Values live in ReferenceItem. */
+export const REFERENCE_CATEGORIES = {
+  STRUCTURE_TYPE: 'STRUCTURE_TYPE',
+  SOLUTION: 'SOLUTION',
+  LEAD_SOURCE: 'LEAD_SOURCE',
+  TAG: 'TAG',
+  SERVICE: 'SERVICE',
+  ACTIVITY_TYPE: 'ACTIVITY_TYPE',
+  ACTIVITY_RESULT: 'ACTIVITY_RESULT',
 } as const;
 
 export const ApiMessages = {
@@ -147,6 +197,76 @@ export const ApiMessages = {
       forbidden: 'Insufficient permissions, or project not accessible to the user',
     },
 
+    activities: {
+      tag: 'Activities',
+      list: { summary: 'List activities', description: 'Paginated; an OWN-scoped caller only sees their own activities (applied in SQL)' },
+      create: {
+        summary: 'Plan an activity',
+        description: 'Created PLANNED for the caller; planning a meeting-like type books the record (MEETING_SCHEDULED)',
+      },
+      update: { summary: 'Reschedule an activity', description: 'PLANNED only — a completed or cancelled activity is history' },
+      complete: {
+        summary: 'Complete an activity',
+        description: 'Report required; moves NOT_CONTACTED / TO_CONTACT records to IN_PROGRESS',
+      },
+      cancel: { summary: 'Cancel an activity', description: 'PLANNED only' },
+      delete: { summary: 'Delete an activity', description: 'Hard delete (admin and director); the organization activity marks are recomputed' },
+      agenda: {
+        summary: 'Agenda',
+        description: 'Merged calendar view; kinds=ACTIVITY,TRAINING,CONTRACT_END,QUOTE_EXPIRY accepted, only ACTIVITY answers at L1',
+      },
+      ics: { summary: 'Export an activity to ICS', description: 'Meeting-like types only (referential metadata ics), floating local time' },
+    },
+
+    contacts: {
+      tag: 'Contacts',
+      list: { summary: 'List the contacts of an organization', description: 'Primary first; requires FULL geographic access to the record' },
+      create: {
+        summary: 'Add a contact',
+        description: 'A new primary demotes the previous one (at most one per organization, enforced by the database)',
+      },
+      update: { summary: 'Update a contact', description: 'Nullable free-text fields are cleared with null; isPrimary true demotes the current one' },
+      delete: { summary: 'Delete a contact', description: 'Soft delete; refused while activities reference the contact' },
+    },
+
+    organizations: {
+      tag: 'Organizations',
+      board: { summary: 'Prospection board', description: 'The 5 sales-status columns with their cards; geographic scope applied, 200 cards per column' },
+      changeSalesStatus: {
+        summary: 'Move a record on the board',
+        description: 'Free transitions between the 5 statuses; moving onto the current status answers 409. The reason lands in the journal',
+      },
+      searchRegistry: {
+        summary: 'Search the official registry',
+        description:
+          'Pre-fill helper: a 14-digit query is a Sirene SIRET lookup, anything else is a full-text name search on recherche-entreprises. 503/504 mean the front falls back to manual input.',
+      },
+      list: {
+        summary: 'List organizations',
+        description:
+          'Paginated and filtered. Records outside the caller geographic scope are hidden for a NONE role, and returned with a reduced set of fields (access=RESTRICTED) for a RESTRICTED role.',
+      },
+      findOne: {
+        summary: 'Get organization by ID',
+        description:
+          'Full record with completeness detail and counts. Outside the scope: reduced projection, or 404 for a NONE role — the existence of a record is never revealed.',
+      },
+      create: {
+        summary: 'Create organization',
+        description:
+          'SIRET and INSEE code must be free within the project. A record with the same name at the same postal code answers 409 ORGANIZATION_POSSIBLE_DUPLICATE with the candidates in messages.meta.duplicates; resend with force=true to confirm.',
+      },
+      update: {
+        summary: 'Update organization',
+        description:
+          'Partial update. Sales and customer statuses are not accepted here: they change through their own routes and automations.',
+      },
+      remove: {
+        summary: 'Delete organization',
+        description: 'Soft delete. The SIRET and INSEE code become available again for a new record.',
+      },
+    },
+
     params: {
       userId: 'User unique identifier (CUID)',
       roleId: 'Role unique identifier (CUID)',
@@ -155,6 +275,11 @@ export const ApiMessages = {
       fileId: 'File unique identifier (CUID)',
       referenceItemId: 'Reference item unique identifier (CUID)',
       templateType: 'Document template type (QUOTE | CONTRACT)',
+      organizationId: 'Organization unique identifier (CUID)',
+      contactId: 'Contact unique identifier (CUID)',
+      activityId: 'Activity unique identifier (CUID)',
+      campaignId: 'Campaign unique identifier (CUID)',
+      importBatchId: 'Import batch unique identifier (CUID)',
     },
 
     health: {

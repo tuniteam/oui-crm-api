@@ -30,6 +30,16 @@ export function findRegion(name: string): GeoRegion | undefined {
   return byName.get(name);
 }
 
+const byDepartment = new Map(REGIONS.flatMap((r) => r.departments.map((d) => [d, r.name])));
+
+/**
+ * Region of a department code. `Organization.region` is not stored: this table is the single
+ * source of truth, read at response time (SPEC-13 §2.4).
+ */
+export function regionOfDepartment(department: string | null): string | null {
+  return department ? (byDepartment.get(department) ?? null) : null;
+}
+
 /** Regions + explicit departments → deduplicated, sorted department codes. */
 export function resolveDepartments(regions: readonly string[], departments: readonly string[]): string[] {
   const set = new Set<string>(departments);

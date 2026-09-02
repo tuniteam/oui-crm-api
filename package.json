@@ -20,6 +20,7 @@
     "db:studio": "prisma studio",
     "db:push": "prisma db push",
     "db:seed": "npx tsx prisma/seed.ts",
+    "db:restore": "npx tsx prisma/restoreProject.ts",
     "typecheck:seed": "tsc -p tsconfig.seed.json",
     "dev:local": "scripts\\dev-start.bat",
     "docker:rebuild:prod": "docker-compose down && docker-compose build --no-cache api && docker-compose up -d",
