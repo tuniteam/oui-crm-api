@@ -11,7 +11,7 @@ import { GeoRegionsResponseDto, ScopeResponseDto, ScopesListResponseDto } from '
 import { UpdateScopeDto } from './dto/update-scope.dto';
 import { REGIONS } from './geo.constants';
 import { SCOPES_AUDIT } from './scopes.constants';
-import { assertRegionsKnown, getScopeOrThrow, mapToScopeResponse } from './scopes.utils';
+import { assertCampaignsInProject, assertRegionsKnown, getScopeOrThrow, mapToScopeResponse } from './scopes.utils';
 
 /** US-00-07 — geographic scopes of a project. */
 @Injectable()
@@ -40,6 +40,7 @@ export class ScopesService {
 
   async create(projectId: string, dto: CreateScopeDto, actor: AuthenticatedUser): Promise<ScopeIdResponseDto> {
     assertRegionsKnown(dto.regions ?? []);
+    await assertCampaignsInProject(this.prisma, projectId, dto.campaignIds);
     await this.assertNameFree(projectId, dto.name);
 
     let scope;
@@ -54,6 +55,7 @@ export class ScopesService {
           departments: dto.departments ?? [],
           portfolioOnly: dto.portfolioOnly ?? false,
           nature: dto.nature,
+          campaignIds: dto.campaignIds ?? [],
         },
       });
       await this.audit.log(tx, {
@@ -78,6 +80,7 @@ export class ScopesService {
     if (Object.keys(dto).length === 0) throw apiError.badRequest('EMPTY_UPDATE_PAYLOAD');
     const scope = await getScopeOrThrow(this.prisma, projectId, scopeId);
     if (dto.regions) assertRegionsKnown(dto.regions);
+    await assertCampaignsInProject(this.prisma, projectId, dto.campaignIds ?? undefined);
     if (dto.name && dto.name !== scope.name) await this.assertNameFree(projectId, dto.name);
 
     const updated = await this.prisma.$transaction(async (tx) => {

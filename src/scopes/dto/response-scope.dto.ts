@@ -23,6 +23,9 @@ export class ScopeResponseDto {
   @ApiProperty({ enum: ScopeNature, example: ScopeNature.ALL })
   nature: ScopeNature;
 
+  @ApiProperty({ type: [String], example: [], description: 'Campaigns the scope is limited to (detach before deleting a campaign — D7)' })
+  campaignIds: string[];
+
   @ApiProperty({ example: 2, description: 'Active assignments using this scope' })
   usersCount: number;
 
