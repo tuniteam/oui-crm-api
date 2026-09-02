@@ -13,6 +13,7 @@ import { ImportFileService } from './import-file.service';
 import { ImportReportPdfService } from './import-report-pdf.service';
 import { ImportController } from './import.controller';
 import { ImportService } from './import.service';
+import { OuicrmImportService } from './ouicrm-import.service';
 import { ProjectConfigImportService } from './project-config-import.service';
 import { TerritoryController } from './territory.controller';
 import { TerritoryService } from './territory.service';
@@ -40,6 +41,7 @@ registerOwnerChecker(FileOwnerType.IMPORT_BATCH, async (prisma, ownerId, project
     ImportFileService,
     GenericImportService,
     ProjectConfigImportService,
+    OuicrmImportService,
     ImportReportPdfService,
     TerritoryService,
   ],

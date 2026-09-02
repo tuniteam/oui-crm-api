@@ -249,7 +249,7 @@ export const ApiMessages = {
       run: {
         summary: 'Import a file',
         description:
-          'XLSX (CSV for GENERIC organizations), explicit dryRun, row-by-row report keyed by Excel row numbers; valid rows are applied, rejected rows are listed - the batch is cancellable while nothing was modified',
+          'XLSX (CSV for GENERIC organizations), explicit dryRun, row-by-row report keyed by Excel row numbers; valid rows are applied, rejected rows are listed - the batch is cancellable while nothing was modified. OUICRM_V2_1 takes over the real workbook (Leads at L1, Pipeline deferred to L2)',
       },
       errorsPdf: {
         summary: 'Import report as PDF',
