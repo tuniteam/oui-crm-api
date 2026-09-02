@@ -234,6 +234,19 @@ export const ApiMessages = {
       delete: { summary: 'Delete a campaign', description: 'Refused while a geographic scope cites the campaign (D7): detach it first' },
     },
 
+    imports: {
+      tag: 'Import',
+      territory: {
+        summary: 'Import a whole territory',
+        description:
+          'Creates every commune of the requested departments or EPCIs from geo.api.gouv.fr (population included); dryRun first, INSEE-code matching, nothing existing is overwritten (population excepted behind updatePopulation)',
+      },
+      cancelBatch: {
+        summary: 'Cancel an import batch',
+        description: 'Deletes everything the batch created, in one block — refused once any of its records has been modified',
+      },
+    },
+
     contacts: {
       tag: 'Contacts',
       list: { summary: 'List the contacts of an organization', description: 'Primary first; requires FULL geographic access to the record' },
