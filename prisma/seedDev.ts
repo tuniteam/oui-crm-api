@@ -166,7 +166,7 @@ async function renameDemoAccount(
   console.log(`Demo account ${initials}: ${relation.user.email} -> ${email}`);
 }
 
-async function seedSignatureImage(prisma: PrismaClient, projectId: string, uploadedBy: string) {
+export async function seedSignatureImage(prisma: PrismaClient, projectId: string, uploadedBy: string) {
   const existing = await prisma.file.findFirst({
     where: { projectId, ownerType: FileOwnerType.PROJECT, category: FileCategory.SIGNATURE_IMAGE },
   });
