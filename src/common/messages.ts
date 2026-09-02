@@ -197,6 +197,27 @@ export const ApiMessages = {
       forbidden: 'Insufficient permissions, or project not accessible to the user',
     },
 
+    activities: {
+      tag: 'Activities',
+      list: { summary: 'List activities', description: 'Paginated; an OWN-scoped caller only sees their own activities (applied in SQL)' },
+      create: {
+        summary: 'Plan an activity',
+        description: 'Created PLANNED for the caller; planning a meeting-like type books the record (MEETING_SCHEDULED)',
+      },
+      update: { summary: 'Reschedule an activity', description: 'PLANNED only — a completed or cancelled activity is history' },
+      complete: {
+        summary: 'Complete an activity',
+        description: 'Report required; moves NOT_CONTACTED / TO_CONTACT records to IN_PROGRESS',
+      },
+      cancel: { summary: 'Cancel an activity', description: 'PLANNED only' },
+      delete: { summary: 'Delete an activity', description: 'Hard delete (admin and director); the organization activity marks are recomputed' },
+      agenda: {
+        summary: 'Agenda',
+        description: 'Merged calendar view; kinds=ACTIVITY,TRAINING,CONTRACT_END,QUOTE_EXPIRY accepted, only ACTIVITY answers at L1',
+      },
+      ics: { summary: 'Export an activity to ICS', description: 'Meeting-like types only (referential metadata ics), floating local time' },
+    },
+
     contacts: {
       tag: 'Contacts',
       list: { summary: 'List the contacts of an organization', description: 'Primary first; requires FULL geographic access to the record' },

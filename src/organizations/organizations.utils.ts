@@ -299,3 +299,18 @@ export function assertFullOrganizationAccess(
   if (access === 'RESTRICTED') throw apiError.forbidden('ACCESS_DENIED');
   throw apiError.notFound('ORGANIZATION_NOT_FOUND', id);
 }
+
+/**
+ * The single writer of Organization.salesStatus (activities automatisms now, kanban in
+ * phase E): both paths converge here so the transition stays observable and idempotent.
+ * Returns the change, or null when the status already holds.
+ */
+export async function applySalesStatus(
+  tx: Prisma.TransactionClient,
+  organization: Pick<Organization, 'id' | 'salesStatus'>,
+  to: SalesStatus,
+): Promise<{ from: SalesStatus; to: SalesStatus } | null> {
+  if (organization.salesStatus === to) return null;
+  await tx.organization.update({ where: { id: organization.id }, data: { salesStatus: to } });
+  return { from: organization.salesStatus, to };
+}
