@@ -124,6 +124,7 @@ const errorDefinitions = {
   // Contacts (L1)
   CONTACT_NOT_FOUND: (id: string) => `Contact ${id} not found`,
   CONTACT_HAS_ACTIVITIES: 'Contact is used by activities and cannot be deleted',
+  CONTACT_PRIMARY_CONFLICT: 'Another primary contact was set at the same time — retry',
 
   // Activities (L1)
   ACTIVITY_NOT_FOUND: (id: string) => `Activity ${id} not found`,
@@ -194,6 +195,17 @@ export const ApiMessages = {
       attachment: 'File download (attachment)',
       unauthorized: 'Missing, invalid or expired access token',
       forbidden: 'Insufficient permissions, or project not accessible to the user',
+    },
+
+    contacts: {
+      tag: 'Contacts',
+      list: { summary: 'List the contacts of an organization', description: 'Primary first; requires FULL geographic access to the record' },
+      create: {
+        summary: 'Add a contact',
+        description: 'A new primary demotes the previous one (at most one per organization, enforced by the database)',
+      },
+      update: { summary: 'Update a contact', description: 'Nullable free-text fields are cleared with null; isPrimary true demotes the current one' },
+      delete: { summary: 'Delete a contact', description: 'Soft delete; refused while activities reference the contact' },
     },
 
     organizations: {

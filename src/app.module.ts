@@ -20,6 +20,7 @@ import { UsersBackofficeModule } from './users-backoffice/users-backoffice.modul
 import { RolesModule } from './roles/roles.module';
 import { ScopesModule } from './scopes/scopes.module';
 import { OrganizationsModule } from './organizations/organizations.module';
+import { ContactsModule } from './contacts/contacts.module';
 import { SettingsModule } from './settings/settings.module';
 import { ReferenceItemsModule } from './reference-items/reference-items.module';
 
@@ -40,6 +41,7 @@ import { ReferenceItemsModule } from './reference-items/reference-items.module';
     RolesModule,
     ScopesModule,
     OrganizationsModule,
+    ContactsModule,
     SettingsModule,
     ReferenceItemsModule,
     HealthModule,

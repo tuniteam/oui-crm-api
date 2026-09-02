@@ -25,6 +25,7 @@ import {
 import { ORGANIZATION_AUDIT } from './organizations.constants';
 import {
   assertAssigneesAreMembers,
+  assertFullOrganizationAccess,
   assertIdentifiersAvailable,
   assertReferencesKnown,
   buildOrganizationOrderBy,
@@ -270,9 +271,6 @@ export class OrganizationsService {
    * and deserves a real answer (403).
    */
   private assertWritable(ctx: ScopeContext, organization: Organization, id: string): void {
-    const access = this.accessOf(ctx, organization);
-    if (access === 'FULL') return;
-    if (access === 'RESTRICTED') throw apiError.forbidden('ACCESS_DENIED');
-    throw apiError.notFound('ORGANIZATION_NOT_FOUND', id);
+    assertFullOrganizationAccess(this.scopeService, ctx, organization, id);
   }
 }

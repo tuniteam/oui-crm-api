@@ -5,6 +5,7 @@
 import { CustomerStatus, Organization, Prisma, PrismaClient, Priority, RelationshipStatus, SalesStatus } from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { resolveDepartments } from '@/scopes/geo.constants';
+import { ScopeContext, ScopeService } from '@/scopes/scope.service';
 import {
   COMPLETENESS_FIELDS,
   CONTRACT_BLOCKING_FIELDS,
@@ -280,4 +281,21 @@ export async function assertAssigneesAreMembers(db: ValidatorDb, projectId: stri
   });
   const active = new Set(members.map((m) => m.userId));
   if (ids.some((id) => !active.has(id))) throw apiError.notFound('USER_NOT_FOUND');
+}
+
+/**
+ * Writing (and reading the details) of a record requires FULL access. The status differs on
+ * purpose: a NONE caller must not learn that the record exists (404), while a RESTRICTED
+ * caller already sees it in its list and deserves a real answer (403). Shared with contacts.
+ */
+export function assertFullOrganizationAccess(
+  scopeService: ScopeService,
+  ctx: ScopeContext,
+  organization: Organization,
+  id: string,
+): void {
+  const access = scopeService.access(ctx, organization);
+  if (access === 'FULL') return;
+  if (access === 'RESTRICTED') throw apiError.forbidden('ACCESS_DENIED');
+  throw apiError.notFound('ORGANIZATION_NOT_FOUND', id);
 }
