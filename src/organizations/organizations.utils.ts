@@ -314,3 +314,29 @@ export async function applySalesStatus(
   await tx.organization.update({ where: { id: organization.id }, data: { salesStatus: to } });
   return { from: organization.salesStatus, to };
 }
+
+/** One bracket of the active pricing grid (PricingGridContent.brackets — SPEC-04 §2). */
+export interface PopulationBracket {
+  label: string;
+  min: number;
+  max: number | null;
+}
+
+/** Brackets of the project's ACTIVE grid; empty when no grid is active. */
+export async function loadActiveBrackets(
+  db: Pick<PrismaClient, 'pricingGrid'>,
+  projectId: string,
+): Promise<PopulationBracket[]> {
+  const grid = await db.pricingGrid.findFirst({ where: { projectId, active: true }, select: { content: true } });
+  const content = grid?.content as { brackets?: PopulationBracket[] } | null;
+  return content?.brackets ?? [];
+}
+
+/**
+ * SPEC-04 règle 1 : the bracket is the first one with min ≤ population ≤ max (max null =
+ * open-ended). No population, or population ≤ 0 → no bracket, and no quote (décision 5).
+ */
+export function resolveBracketLabel(brackets: PopulationBracket[], population: number | null): string | null {
+  if (population === null || population <= 0) return null;
+  return brackets.find((b) => b.min <= population && (b.max === null || population <= b.max))?.label ?? null;
+}

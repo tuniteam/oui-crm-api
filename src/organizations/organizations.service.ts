@@ -38,6 +38,8 @@ import {
   computeCompleteness,
   findPossibleDuplicates,
   getOrganizationOrThrow,
+  loadActiveBrackets,
+  resolveBracketLabel,
   recomputeCompleteness,
 } from './organizations.utils';
 import { mapToDetail, mapToListItem, OrganizationWithRefs, ORGANIZATION_REFS } from './organizations.mapper';
@@ -75,7 +77,7 @@ export class OrganizationsService {
       }
     }
 
-    const [total, rows] = await Promise.all([
+    const [total, rows, brackets] = await Promise.all([
       this.prisma.organization.count({ where }),
       this.prisma.organization.findMany({
         where,
@@ -84,6 +86,7 @@ export class OrganizationsService {
         take: limit,
         include: ORGANIZATION_REFS,
       }),
+      loadActiveBrackets(this.prisma, projectId),
     ]);
 
     // One extra query for the whole page rather than one per row: which records have a
@@ -103,6 +106,7 @@ export class OrganizationsService {
           row,
           this.accessOf(ctx, row),
           computeCompleteness({ ...row, hasPrimaryContact: withPrimary.has(row.id) }).missing,
+          resolveBracketLabel(brackets, row.population),
         ),
       ),
       meta: buildPaginationMeta(total, page, limit),
@@ -229,6 +233,7 @@ export class OrganizationsService {
     return mapToDetail(organization, {
       completeness: computeCompleteness({ ...organization, hasPrimaryContact }),
       counts: { contacts, activities },
+      bracketLabel: resolveBracketLabel(await loadActiveBrackets(this.prisma, projectId), organization.population),
     });
   }
 
