@@ -141,8 +141,13 @@ export class CampaignsController {
   @ApiOperation(swagger.campaigns.results)
   @ApiCuidParam('id', swagger.params.campaignId)
   @ApiListResponse(CampaignResultsResponseDto)
-  results(@CurrentProjectId() projectId: string, @Param('id', ParseCuidPipe) id: string): Promise<CampaignResultsResponseDto> {
-    return this.campaignsService.results(id, projectId);
+  results(
+    @CurrentProjectId() projectId: string,
+    @Param('id', ParseCuidPipe) id: string,
+    @Query() query: CampaignListQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<CampaignResultsResponseDto> {
+    return this.campaignsService.results(id, projectId, query, user);
   }
 
   @Delete(':id')

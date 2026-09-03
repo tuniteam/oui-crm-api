@@ -8,6 +8,7 @@ import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { apiError } from '@/common/api-error';
+import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { fullName } from '@/common/utils/user.utils';
 import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { PrismaService } from '@/prisma/prisma.service';
@@ -17,7 +18,7 @@ import { assertFullOrganizationAccess, getOrganizationOrThrow, recomputeComplete
 import { CONTACTS_AUDIT } from './contacts.constants';
 import { getContactOrThrow, mapToContact } from './contacts.utils';
 import { CreateContactDto } from './dto/create-contact.dto';
-import { ContactDto, ContactsListResponseDto } from './dto/response-contact.dto';
+import { ContactDto, ContactsListResponseDto, ContactListQueryDto } from './dto/response-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 
 /**
@@ -33,13 +34,30 @@ export class ContactsService {
     private readonly audit: AuditLogService,
   ) {}
 
-  async findAll(organizationId: string, projectId: string, user: AuthenticatedUser): Promise<ContactsListResponseDto> {
+  /**
+   * Paginated: the import can extract many contacts from the notes of a single record
+   * (`extractedFromNote`). The primary-first ordering is kept, so page 1 always holds it.
+   * No per-row access here: reaching this route already requires FULL access to the parent.
+   */
+  async findAll(
+    organizationId: string,
+    projectId: string,
+    query: ContactListQueryDto,
+    user: AuthenticatedUser,
+  ): Promise<ContactsListResponseDto> {
     await this.getOrganizationWithFullAccess(organizationId, projectId, user);
-    const contacts = await this.prisma.contact.findMany({
-      where: { organizationId, deletedAt: null },
-      orderBy: [{ isPrimary: 'desc' }, { lastName: 'asc' }, { firstName: 'asc' }],
-    });
-    return { data: contacts.map(mapToContact) };
+    const { page, limit } = query;
+    const where = { organizationId, deletedAt: null };
+    const [total, contacts] = await Promise.all([
+      this.prisma.contact.count({ where }),
+      this.prisma.contact.findMany({
+        where,
+        skip: paginationSkip(page, limit),
+        take: limit,
+        orderBy: [{ isPrimary: 'desc' }, { lastName: 'asc' }, { firstName: 'asc' }],
+      }),
+    ]);
+    return { data: contacts.map(mapToContact), meta: buildPaginationMeta(total, page, limit) };
   }
 
   async create(organizationId: string, dto: CreateContactDto, projectId: string, user: AuthenticatedUser): Promise<ContactDto> {

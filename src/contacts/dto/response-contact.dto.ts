@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { PaginationMetaDto, PaginationQueryDto } from '@/common/dto/pagination.dto';
 
 export class ContactDto {
   @ApiProperty({ example: 'cmtj…' })
@@ -42,6 +43,12 @@ export class ContactDto {
 }
 
 export class ContactsListResponseDto {
-  @ApiProperty({ type: [ContactDto], description: 'Primary first, then by last name' })
+  @ApiProperty({ type: [ContactDto], description: 'Primary first, then by last name — page 1 always holds it' })
   data: ContactDto[];
+
+  @ApiProperty({ type: PaginationMetaDto })
+  meta: PaginationMetaDto;
 }
+
+/** Contacts of one organization: no filter, the parent record is already the filter. */
+export class ContactListQueryDto extends PaginationQueryDto {}

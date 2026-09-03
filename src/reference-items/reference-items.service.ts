@@ -1,4 +1,5 @@
 import { isUniqueViolation } from '@/common/utils/prisma.utils';
+import { buildPaginationMeta, paginationSkip, PAGINATION_DEFAULT_LIMIT } from '@/common/dto/pagination.dto';
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
@@ -23,15 +24,26 @@ export class ReferenceItemsService {
   ) {}
 
   async findAll(projectId: string, query: QueryReferenceItemsDto): Promise<ReferenceItemsListResponseDto> {
-    const items = await this.prisma.referenceItem.findMany({
-      where: { projectId, ...(query.category ? { category: query.category } : {}) },
-      orderBy: [{ category: 'asc' }, { order: 'asc' }, { label: 'asc' }],
-    });
+    const where = { projectId, ...(query.category ? { category: query.category } : {}) };
+    // Paging only when the caller asks for it: the pickers of the front need the full list.
+    const paged = query.page !== undefined;
+    const limit = query.limit ?? PAGINATION_DEFAULT_LIMIT;
+    const [total, items] = await Promise.all([
+      this.prisma.referenceItem.count({ where }),
+      this.prisma.referenceItem.findMany({
+        where,
+        orderBy: [{ category: 'asc' }, { order: 'asc' }, { label: 'asc' }],
+        ...(paged ? { skip: paginationSkip(query.page as number, limit), take: limit } : {}),
+      }),
+    ]);
     const categories = [...new Set(items.map((i) => i.category))];
     const counts = new Map(
       await Promise.all(categories.map(async (c) => [c, await usageCounts(this.prisma, projectId, c)] as const)),
     );
-    return { data: items.map((i) => mapToReferenceItemResponse(i, counts.get(i.category)?.get(i.key) ?? 0)) };
+    return {
+      data: items.map((i) => mapToReferenceItemResponse(i, counts.get(i.category)?.get(i.key) ?? 0)),
+      meta: buildPaginationMeta(total, paged ? (query.page as number) : 1, paged ? limit : total || 1),
+    };
   }
 
   async create(projectId: string, dto: CreateReferenceItemDto, actor: AuthenticatedUser): Promise<ReferenceItemIdResponseDto> {

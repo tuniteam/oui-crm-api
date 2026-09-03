@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PROJECT_ID_HEADER } from '@/auth/auth.constants';
 import { CurrentProjectId } from '@/auth/decorators/current-project.decorator';
@@ -15,7 +27,7 @@ import { ApiMessages } from '@/common/messages';
 import { ParseCuidPipe } from '@/common/pipes';
 import { ContactsService } from './contacts.service';
 import { CreateContactDto } from './dto/create-contact.dto';
-import { ContactDto, ContactsListResponseDto } from './dto/response-contact.dto';
+import { ContactDto, ContactsListResponseDto, ContactListQueryDto } from './dto/response-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 
 const swagger = ApiMessages.swagger;
@@ -39,9 +51,10 @@ export class ContactsController {
   findAll(
     @CurrentProjectId() projectId: string,
     @Param('id', ParseCuidPipe) organizationId: string,
+    @Query() query: ContactListQueryDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<ContactsListResponseDto> {
-    return this.contactsService.findAll(organizationId, projectId, user);
+    return this.contactsService.findAll(organizationId, projectId, query, user);
   }
 
   @Post('organizations/:id/contacts')

@@ -115,4 +115,10 @@ export class AgendaItemDto {
 export class AgendaResponseDto {
   @ApiProperty({ type: [AgendaItemDto], description: 'Sorted by date then time' })
   data: AgendaItemDto[];
+
+  @ApiProperty({
+    type: PaginationMetaDto,
+    description: 'The default limit covers a whole month; a heavier month is paged, never truncated',
+  })
+  meta: PaginationMetaDto;
 }
