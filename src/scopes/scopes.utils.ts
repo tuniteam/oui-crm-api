@@ -3,7 +3,7 @@ import { apiError } from '@/common/api-error';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { ScopeResponseDto } from './dto/response-scope.dto';
-import { ScopeContext } from './scope.service';
+import { ScopeContext, ScopeService } from './scope.service';
 import { findRegion, resolveDepartments } from './geo.constants';
 
 export async function getScopeOrThrow(
@@ -44,6 +44,46 @@ export function mapToScopeResponse(scope: Scope, usersCount: number): ScopeRespo
  *
  * Shared by every module that filters organizations — never rebuilt per module.
  */
+/**
+ * Closure review L1 — the point-access twin of whereVisible's campaign criterion: access()
+ * reads org.campaignIds, which no standard query loads. Hydrates the memberships that matter
+ * to THIS context (one query, only when the scope carries campaigns).
+ */
+export async function hydrateCampaignMembership(
+  db: { campaignOrganization: { findMany: (args: unknown) => Promise<{ organizationId: string; campaignId: string }[]> } },
+  ctx: ScopeContext,
+  organizations: { id: string; campaignIds?: string[] }[],
+): Promise<void> {
+  const wanted = ctx.scope?.campaignIds ?? [];
+  if (!wanted.length || !organizations.length) return;
+  const rows = await db.campaignOrganization.findMany({
+    where: { campaignId: { in: wanted }, organizationId: { in: organizations.map((o) => o.id) } },
+    select: { organizationId: true, campaignId: true },
+  });
+  const byOrg = new Map<string, string[]>();
+  for (const row of rows) {
+    const list = byOrg.get(row.organizationId) ?? [];
+    list.push(row.campaignId);
+    byOrg.set(row.organizationId, list);
+  }
+  for (const org of organizations) org.campaignIds = byOrg.get(org.id) ?? [];
+}
+
+/**
+ * Closure review L1 — the NONE-hides-records merge, in ONE place: a NONE role gets the scope
+ * fragment ANDed into the where; RESTRICTED/FULL roles see every row (projection applies later).
+ */
+export function mergeVisibilityWhere(
+  where: { AND?: unknown },
+  ctx: ScopeContext,
+  scopeService: ScopeService,
+): void {
+  if (ctx.outOfScopeAccess !== 'NONE') return;
+  const scopeWhere = scopeService.whereVisible(ctx);
+  if (!Object.keys(scopeWhere).length) return;
+  where.AND = [...(Array.isArray(where.AND) ? where.AND : []), scopeWhere];
+}
+
 export async function loadScopeContext(
   prisma: PrismaClient | Prisma.TransactionClient,
   user: AuthenticatedUser,

@@ -77,6 +77,8 @@ interface ScopeUpsert {
 }
 interface UserCreate {
   row: number;
+  /** Resolved to a scopeId at apply time — the sheet speaks in names. */
+  scopeName: string | null;
   dto: CreateUserDto;
 }
 
@@ -188,6 +190,11 @@ export class ProjectConfigImportService {
         continue;
       }
       if ((NUMERIC_SETTINGS as readonly string[]).includes(key)) {
+        if (!value.trim()) {
+          // Number('') === 0 would zero a setting silently (closure review L1)
+          report.warn(sheet, row.row, IMPORT_ROW_CODES.INVALID_VALUE, `${key} has an empty value — row ignored`, key);
+          continue;
+        }
         const num = Number(value);
         if (!Number.isFinite(num)) {
           report.error(sheet, row.row, IMPORT_ROW_CODES.INVALID_VALUE, `${key} must be a number`, key);
@@ -220,6 +227,10 @@ export class ProjectConfigImportService {
       if (!stage) continue;
       if (!STAGE_KEYS.includes(stage)) {
         report.error(sheet, row.row, IMPORT_ROW_CODES.INVALID_VALUE, `${stage} is not a pipeline stage`, 'stage');
+        continue;
+      }
+      if (!row.cells.probability?.trim()) {
+        report.error(sheet, row.row, IMPORT_ROW_CODES.INVALID_VALUE, `probability is empty`, 'probability');
         continue;
       }
       const value = Number(row.cells.probability);
@@ -436,16 +447,16 @@ export class ProjectConfigImportService {
       report.created(IMPORT_RESOURCES.USERS);
       out.push({
         row: row.row,
+        scopeName: c.scope || null,
         dto: {
           email: c.email,
           firstName: c.firstName,
           lastName: c.lastName,
           initials: c.initials,
           roleCode: c.role,
-          scopeName: c.scope || null,
           isExternal: Boolean(c.expiresAt),
           expiresAt: c.expiresAt || undefined,
-        } as unknown as CreateUserDto,
+        } as CreateUserDto,
       });
     }
     return out;
@@ -678,11 +689,11 @@ export class ProjectConfigImportService {
       ]),
     );
     for (const create of plan.userCreates) {
-      const { scopeName, ...dto } = create.dto as CreateUserDto & { scopeName: string | null };
+      const dto = create.dto;
       try {
         await this.users.create(
           projectId,
-          { ...dto, scopeId: scopeName ? (scopeIdByName.get(scopeName) ?? null) : null } as CreateUserDto,
+          { ...dto, scopeId: create.scopeName ? (scopeIdByName.get(create.scopeName) ?? null) : null },
           user,
         );
       } catch (err) {

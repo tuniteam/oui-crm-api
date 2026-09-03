@@ -160,15 +160,12 @@ export const labels = {
 } as const;
 
 /** Reference lists consumed by the commercial base (L1). Values live in ReferenceItem. */
-export const REFERENCE_CATEGORIES = {
-  STRUCTURE_TYPE: 'STRUCTURE_TYPE',
-  SOLUTION: 'SOLUTION',
-  LEAD_SOURCE: 'LEAD_SOURCE',
-  TAG: 'TAG',
-  SERVICE: 'SERVICE',
-  ACTIVITY_TYPE: 'ACTIVITY_TYPE',
-  ACTIVITY_RESULT: 'ACTIVITY_RESULT',
-} as const;
+import { REFERENCE_CATEGORIES as REFERENCE_CATEGORY_LIST } from '@/projects/project-config.constants';
+
+/** Key-map view of the ONE category vocabulary (projects/project-config.constants). */
+export const REFERENCE_CATEGORIES = Object.fromEntries(
+  REFERENCE_CATEGORY_LIST.map((c) => [c, c]),
+) as { [K in (typeof REFERENCE_CATEGORY_LIST)[number]]: K };
 
 export const ApiMessages = {
   errors: {

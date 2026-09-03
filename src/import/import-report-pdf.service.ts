@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from '@react-pdf/renderer';
 import { createElement as h } from 'react';
 import { MIME } from '@/common/constants/mime.constants';
+import { formatDateField } from '@/common/utils/date.utils';
 import { ImportReportDto, ImportRowMessageDto } from './dto/import-file.dto';
 
 // OUI-CRM charte (EMAIL_THEME): azure + neutral greys, print-friendly
@@ -28,7 +29,7 @@ const styles = StyleSheet.create({
 @Injectable()
 export class ImportReportPdfService {
   async render(report: ImportReportDto): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
-    const day = new Date().toISOString().slice(0, 10);
+    const day = formatDateField(new Date());
     const doc = h(
       Document,
       null,

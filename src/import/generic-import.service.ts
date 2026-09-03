@@ -4,22 +4,19 @@ import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interfac
 import { completenessScore, recomputeCompleteness } from '@/organizations/organizations.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { REFERENCE_CATEGORIES } from '@/common/messages';
-import {
-  GENERIC_CONTACT_HEADERS,
-  GENERIC_ORGANIZATION_HEADERS,
-  GENERIC_SHEETS,
-  IMPORT_RESOURCES,
-  IMPORT_ROW_CODES,
-} from './import-file.constants';
+import { GENERIC_SHEETS, IMPORT_RESOURCES, IMPORT_ROW_CODES } from './import-file.constants';
 import {
   ParsedWorkbook,
   PreparedImport,
   ReportBuilder,
   SheetRow,
   cellBool,
+  loadReferenceKeys,
   normalizeOrgKey,
   splitList,
 } from './import-parse.utils';
+import { padDepartment } from './ouicrm.utils';
+import { SIRET_PATTERN } from '@/organizations/organizations.constants';
 import { KNOWN_DEPARTMENTS } from './territory.utils';
 
 /** Transaction budget for a full file (2000 rows max, completeness recomputed per touched record). */
@@ -87,7 +84,7 @@ export class GenericImportService {
     }
 
     const [refs, members, existing, primaries, existingContacts] = await Promise.all([
-      this.loadReferenceKeys(projectId),
+      loadReferenceKeys(this.prisma, projectId),
       this.loadMembers(projectId),
       this.prisma.organization.findMany({
         where: { projectId, deletedAt: null },
@@ -200,7 +197,7 @@ export class GenericImportService {
     for (const field of ['name', 'type', 'department'] as const) {
       if (!c[field]) return fail('MISSING_REQUIRED', `Column ${field} is required`, field);
     }
-    const department = c.department.length === 1 ? `0${c.department}` : c.department;
+    const department = padDepartment(c.department);
     if (!KNOWN_DEPARTMENTS.has(department)) {
       return fail('UNKNOWN_DEPARTMENT', `Department ${c.department} is not a known French department`, 'department');
     }
@@ -235,7 +232,7 @@ export class GenericImportService {
       }
     }
     const siret = c.siret ? c.siret.replace(/\s/g, '') : '';
-    if (siret && !/^\d{14}$/.test(siret)) return fail('INVALID_VALUE', `SIRET must be 14 digits`, 'siret');
+    if (siret && !SIRET_PATTERN.test(siret)) return fail('INVALID_VALUE', `SIRET must be 14 digits`, 'siret');
     if (c.inseeCode && !/^[0-9AB]{5}$/i.test(c.inseeCode)) {
       return fail('INVALID_VALUE', `INSEE code must be 5 characters`, 'inseeCode');
     }
@@ -347,7 +344,7 @@ export class GenericImportService {
     for (const field of ['organization', 'department', 'firstName', 'lastName'] as const) {
       if (!c[field]) return fail('MISSING_REQUIRED', `Column ${field} is required`, field);
     }
-    const department = c.department.length === 1 ? `0${c.department}` : c.department;
+    const department = padDepartment(c.department);
     const key = normalizeOrgKey(department, c.organization);
     const existing = ctx.byKey.get(key);
     const fromFile = ctx.fileOrgKeys.has(key);
@@ -435,18 +432,6 @@ export class GenericImportService {
 
   // ------------------------------------------------------------------------------ loads
 
-  private async loadReferenceKeys(projectId: string): Promise<Map<string, Set<string>>> {
-    const rows = await this.prisma.referenceItem.findMany({
-      where: { projectId, active: true },
-      select: { category: true, key: true },
-    });
-    const map = new Map<string, Set<string>>();
-    for (const r of rows) {
-      if (!map.has(r.category)) map.set(r.category, new Set());
-      map.get(r.category)!.add(r.key);
-    }
-    return map;
-  }
 
   /** Active members addressed by email in the salesRep column. */
   private async loadMembers(projectId: string): Promise<Map<string, string>> {

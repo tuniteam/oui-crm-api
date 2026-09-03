@@ -723,6 +723,10 @@ model Activity {
   result      String?        @db.VarChar(60) // clé du référentiel ACTIVITY_RESULT
   completedAt DateTime?      @map("completed_at")
 
+  /// Estampille d'import (revue de clôture L1) : l'annulation d'un lot retire aussi les
+  /// actions créées sur des fiches préexistantes — même contrat que Contact.
+  importBatchId String? @map("import_batch_id")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -730,6 +734,7 @@ model Activity {
   contact      Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
   campaign     Campaign?    @relation(fields: [campaignId], references: [id], onDelete: SetNull)
 
+  @@index([importBatchId])
   @@index([projectId, userId, date])
   @@index([organizationId, date])
   @@index([projectId, status, date])

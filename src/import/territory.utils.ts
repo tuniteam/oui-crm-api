@@ -3,6 +3,7 @@
 // ============================================
 
 import { REGIONS } from '@/scopes/geo.constants';
+import { departmentFromInseeCode } from '@/organizations/registry.utils';
 import { TerritoryItemStatus, TerritorySkipReason } from './import.constants';
 
 /** One commune as geo.api.gouv.fr returns it with COMMUNE_FIELDS. */
@@ -25,9 +26,13 @@ export interface TerritoryPlanItem {
 /** Every department code a scope can reference — the request is validated against this list. */
 export const KNOWN_DEPARTMENTS: ReadonlySet<string> = new Set(REGIONS.flatMap((r) => r.departments));
 
-/** The department is carried by the INSEE code ('89024' → '89', '2A004' → '2A', '97105' → '971'). */
+/**
+ * The department is carried by the INSEE code ('89024' → '89', '2A004' → '2A', '97105' → '971').
+ * One rule for the whole app: delegates to the registry util (closure review L1 — the local
+ * copy missed the '98x' collectivities).
+ */
 export function departmentOfInsee(inseeCode: string): string {
-  return inseeCode.startsWith('97') ? inseeCode.slice(0, 3) : inseeCode.slice(0, 2);
+  return departmentFromInseeCode(inseeCode) ?? '';
 }
 
 /** Population bounds are a selection criterion: communes outside them are not part of the request. */

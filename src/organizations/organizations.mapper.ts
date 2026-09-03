@@ -53,7 +53,7 @@ export function mapToListItem(
     salesRep: toUserRef(organization.salesRep),
     access: access === 'RESTRICTED' ? ('RESTRICTED' as const) : ('FULL' as const),
   };
-  if (access === 'RESTRICTED') return base;
+  if (access !== 'FULL') return base;
 
   return {
     ...base,

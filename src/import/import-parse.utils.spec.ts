@@ -32,6 +32,15 @@ describe('csvToRows', () => {
     expect(rows[0].cells).toEqual({ name: 'Joigny', department: '89' });
   });
 
+  it('keeps line breaks inside quoted cells and counts physical lines for row numbers (RFC 4180)', () => {
+    const rows = csvToRows('name,notes\nJoigny,"ligne1\nligne2"\nAuxerre,ok');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].cells.notes).toBe('ligne1\nligne2');
+    expect(rows[0].row).toBe(2);
+    expect(rows[1].cells.name).toBe('Auxerre');
+    expect(rows[1].row).toBe(4); // the quoted cell consumed a physical line
+  });
+
   it('unescapes doubled quotes', () => {
     const rows = csvToRows('name\n"Mairie ""Le Bourg"""');
     expect(rows[0].cells.name).toBe('Mairie "Le Bourg"');

@@ -3,12 +3,13 @@ import { ActivityStatus, Prisma, Priority, RelationshipStatus, SalesStatus } fro
 import * as ExcelJS from 'exceljs';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { apiError } from '@/common/api-error';
+import { DAY_PATTERN } from '@/common/utils/date.utils';
 import { recomputeActivityMarks } from '@/activities/activities.utils';
 import { completenessScore, recomputeCompleteness } from '@/organizations/organizations.utils';
 import { REFERENCE_CATEGORIES } from '@/common/messages';
 import { PrismaService } from '@/prisma/prisma.service';
 import { IMPORT_FILE, IMPORT_RESOURCES, IMPORT_ROW_CODES } from './import-file.constants';
-import { PreparedImport, ReportBuilder, normalizeOrgKey } from './import-parse.utils';
+import { PreparedImport, ReportBuilder, loadReferenceKeys, normalizeOrgKey } from './import-parse.utils';
 import { EDITOR_MAP, OUICRM } from './ouicrm.constants';
 import {
   LeadRow,
@@ -80,7 +81,7 @@ export class OuicrmImportService {
     }
 
     const [refs, defaultRep, existing, primaries, existingContacts, existingActivities] = await Promise.all([
-      this.loadReferenceKeys(projectId),
+      loadReferenceKeys(this.prisma, projectId, [REFERENCE_CATEGORIES.STRUCTURE_TYPE, REFERENCE_CATEGORIES.TAG]),
       this.prisma.userRoleProject.findFirst({
         where: { projectId, initials: OUICRM.DEFAULT_REP_INITIALS, status: RelationshipStatus.ACTIVE },
         select: { userId: true },
@@ -266,18 +267,23 @@ export class OuicrmImportService {
       }
 
       // §2.1 H — the meeting; §4.3 — the remaining comment as a done NOTE
+      let meetingDate = lead.meetingDate;
+      if (meetingDate && !DAY_PATTERN.test(meetingDate)) {
+        report.warn(LEADS, lead.row, IMPORT_ROW_CODES.INVALID_VALUE, `DATE RDV « ${meetingDate} » is not a readable date — no meeting created`, 'DATE RDV');
+        meetingDate = '';
+      }
       if (defaultRep) {
         const planned: { type: string; date: string; status: ActivityStatus; report: string | null }[] = [];
-        if (lead.meetingDate) {
+        if (meetingDate) {
           planned.push({
             type: 'MEETING',
-            date: lead.meetingDate,
-            status: lead.meetingDate < today ? ActivityStatus.DONE : ActivityStatus.PLANNED,
+            date: meetingDate,
+            status: meetingDate < today ? ActivityStatus.DONE : ActivityStatus.PLANNED,
             report: null,
           });
         }
         if (notes) {
-          planned.push({ type: 'NOTE', date: lead.meetingDate || today, status: ActivityStatus.DONE, report: notes });
+          planned.push({ type: 'NOTE', date: meetingDate || today, status: ActivityStatus.DONE, report: notes });
         }
         for (const a of planned) {
           if (orgId && activityKeys.has(`${orgId}::${a.type}::${a.date}`)) {
@@ -344,6 +350,7 @@ export class OuicrmImportService {
               return {
                 ...a.data,
                 projectId,
+                importBatchId: batchId,
                 organizationId,
                 contactId: a.contactKey ? (contactByOrg.get(organizationId) ?? null) : null,
               };
@@ -366,16 +373,4 @@ export class OuicrmImportService {
     );
   }
 
-  private async loadReferenceKeys(projectId: string): Promise<Map<string, Set<string>>> {
-    const rows = await this.prisma.referenceItem.findMany({
-      where: { projectId, active: true, category: { in: [REFERENCE_CATEGORIES.STRUCTURE_TYPE, REFERENCE_CATEGORIES.TAG] } },
-      select: { category: true, key: true },
-    });
-    const map = new Map<string, Set<string>>();
-    for (const r of rows) {
-      if (!map.has(r.category)) map.set(r.category, new Set());
-      map.get(r.category)!.add(r.key);
-    }
-    return map;
-  }
 }

@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CustomerStatus, Priority, SalesStatus } from '@prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -16,14 +16,15 @@ import {
 } from 'class-validator';
 import { IsCuid } from '@/common/decorators';
 import { DAY_PATTERN } from '@/common/utils/date.utils';
+import { INSEE_PATTERN, SIRET_PATTERN } from '../organizations.constants';
 
 /** SIRET: 14 digits. SIREN: 9. Both optional — the territory import never provides them. */
-const SIRET_PATTERN = /^\d{14}$/;
-const INSEE_PATTERN = /^[0-9AB]\d{4}$/i;
+
 const DEPARTMENT_PATTERN = /^(?:\d{2}|2[AB]|9[7-8]\d)$/i;
 
 export class CreateOrganizationDto {
   @ApiProperty({ example: 'Commune de Joigny' })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @IsNotEmpty()
   @MaxLength(200)
