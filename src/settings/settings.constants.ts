@@ -58,13 +58,6 @@ export const REQUIRED_TEMPLATE_TAGS: Record<DocumentTemplateType, readonly strin
   ],
 };
 
-/** Document numbering formats (SPEC-01 §4.3) — fixed, exposed to the front as examples only. */
-export const NUMBERING = {
-  QUOTE_PREFIX: 'DEV',
-  CONTRACT_PREFIX: 'CTR',
-  INVOICE_PREFIX: 'FAC',
-  DAY_OF_YEAR_WIDTH: 3,
-  DAILY_SEQUENCE_WIDTH: 3,
-  YEARLY_SEQUENCE_WIDTH: 4,
-  FALLBACK_INITIALS: 'XX',
-} as const;
+/** Formats de numérotation : `NUMBERING` vit avec le formateur unique
+ *  (`@/common/utils/document-number.utils`), réexporté ici pour les consommateurs du module. */
+export { NUMBERING } from '@/common/utils/document-number.utils';

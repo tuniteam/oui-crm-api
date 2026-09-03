@@ -10,6 +10,10 @@ export const MONEY_ROUNDING = Prisma.Decimal.ROUND_HALF_UP;
 
 export const MONTHS_PER_YEAR = 12;
 
+/** Base d'un pourcentage. Distincte de la borne de remise : plafonner les remises un jour
+ *  ne doit pas changer le calcul de la TVA. */
+export const PERCENT_BASE = 100;
+
 /** Bornes d'une remise en pourcentage : hors bornes, la valeur est ramenée dedans (§4.7). */
 export const DISCOUNT_MIN = 0;
 export const DISCOUNT_MAX = 100;

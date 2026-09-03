@@ -2,7 +2,7 @@ import { Campaign, Prisma, PrismaClient } from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { formatDateField, parseDayOrThrow } from '@/common/utils/date.utils';
 import { UserWithInitials } from '@/audit-log/audit-log-labels';
-import { fullName } from '@/common/utils/user.utils';
+import { userRef } from '@/common/utils/user.utils';
 import { CampaignDto, CampaignResultsDto } from './dto/campaign.dto';
 
 type Db = Pick<PrismaClient, 'campaign'> | Prisma.TransactionClient;
@@ -39,7 +39,7 @@ export function mapToCampaign(
     name: campaign.name,
     description: campaign.description,
     status: campaign.status,
-    owner: owner ? { id: owner.id, fullName: fullName(owner), initials: owner.initials ?? null } : null,
+    owner: owner ? userRef(owner, owner.id) : null,
     startDate: campaign.startDate ? formatDateField(campaign.startDate) : null,
     endDate: campaign.endDate ? formatDateField(campaign.endDate) : null,
     criteria: (campaign.criteria as Record<string, unknown>) ?? {},

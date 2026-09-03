@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import {
   DISCOUNT_MAX,
   DISCOUNT_MIN,
@@ -7,6 +7,7 @@ import {
   GRID_MAX_PLANS,
   MONEY_ROUNDING,
   MONEY_SCALE,
+  PERCENT_BASE,
 } from './pricing.constants';
 import { PopulationBracket, PricingGridContent, PricingSetupFee } from './pricing.types';
 
@@ -37,7 +38,7 @@ export function safeQty(qty: number | null | undefined): number {
 
 /** Prix après remise de ligne, non arrondi : l'arrondi est fait par l'appelant, une seule fois. */
 export function applyDiscount(amount: Prisma.Decimal, discount: number): Prisma.Decimal {
-  return amount.times(new Prisma.Decimal(DISCOUNT_MAX - clampDiscount(discount)).dividedBy(DISCOUNT_MAX));
+  return amount.times(new Prisma.Decimal(PERCENT_BASE - clampDiscount(discount)).dividedBy(PERCENT_BASE));
 }
 
 /**
@@ -73,6 +74,19 @@ export function priceAt(prices: number[], bracketIndex: number): Prisma.Decimal 
   if (!prices.length) return new Prisma.Decimal(0);
   const value = prices[Math.min(bracketIndex, prices.length - 1)];
   return new Prisma.Decimal(Number.isFinite(value) ? value : 0);
+}
+
+/**
+ * Contenu de la grille **active** du projet, ou `null` s'il n'en a pas. Seule lecture de la
+ * grille active du dépôt : les strates d'un organisme, l'estimation d'une opportunité et la
+ * simulation d'un devis y passent toutes.
+ */
+export async function loadActiveGridContent(
+  db: Pick<PrismaClient, 'pricingGrid'>,
+  projectId: string,
+): Promise<PricingGridContent | null> {
+  const grid = await db.pricingGrid.findFirst({ where: { projectId, active: true }, select: { content: true } });
+  return (grid?.content as unknown as PricingGridContent) ?? null;
 }
 
 // ---------------------------------------------------------------------------

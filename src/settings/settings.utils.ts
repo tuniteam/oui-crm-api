@@ -1,7 +1,7 @@
 import { DocumentTemplateType, Prisma, Settings } from '@prisma/client';
 import * as Handlebars from 'handlebars';
 import { apiError } from '@/common/api-error';
-import { MS_PER_DAY } from '@/common/utils/date.utils';
+import { contractNumber, invoiceNumber, quoteNumber } from '@/common/utils/document-number.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { DEFAULT_STAGE_PROBABILITIES } from '@/projects/project-config.constants';
 import { NumberingExamplesDto, TemplateItemDto } from './dto/response-documents.dto';
@@ -11,7 +11,6 @@ import {
   COMPANY_FIELDS,
   CompanyField,
   FIXED_STAGE_PROBABILITIES,
-  NUMBERING,
   PERCENT_MAX,
   REQUIRED_TEMPLATE_TAGS,
   STAGE_KEYS,
@@ -143,28 +142,11 @@ export function activeTemplates(files: TemplateFileRow[]): TemplateItemDto[] {
 
 // ---- numbering (SPEC-01 §4.3) -----------------------------------------------------------
 
-const pad = (n: number, width: number): string => String(n).padStart(width, '0');
-
-export function dayOfYear(date: Date): number {
-  const startOfYear = Date.UTC(date.getUTCFullYear(), 0, 0);
-  return Math.floor((date.getTime() - startOfYear) / MS_PER_DAY);
-}
-
-/** DEV-{year}-{day of year}-{initials}{daily sequence} — e.g. DEV-2026-241-WB001. */
-export function quoteNumber(date: Date, initials: string, sequence: number): string {
-  return `${NUMBERING.QUOTE_PREFIX}-${date.getUTCFullYear()}-${pad(dayOfYear(date), NUMBERING.DAY_OF_YEAR_WIDTH)}-${initials}${pad(sequence, NUMBERING.DAILY_SEQUENCE_WIDTH)}`;
-}
-
-/** Contract number = quote number with DEV → CTR. */
-export function contractNumber(quoteRef: string): string {
-  return NUMBERING.CONTRACT_PREFIX + quoteRef.slice(NUMBERING.QUOTE_PREFIX.length);
-}
-
-/** FAC-{year}-{yearly sequence on 4} — e.g. FAC-2026-0001. */
-export function invoiceNumber(date: Date, sequence: number): string {
-  return `${NUMBERING.INVOICE_PREFIX}-${date.getUTCFullYear()}-${pad(sequence, NUMBERING.YEARLY_SEQUENCE_WIDTH)}`;
-}
-
+/**
+ * Exemples de numéros montrés au front : produits par le **formateur unique**
+ * (`common/utils/document-number.utils`), pour que l'exemple annoncé dans les réglages soit
+ * exactement ce que l'API émettra.
+ */
 export function numberingExamples(date: Date, initials: string): NumberingExamplesDto {
   const quote = quoteNumber(date, initials, 1);
   return { quote, contract: contractNumber(quote), invoice: invoiceNumber(date, 1) };

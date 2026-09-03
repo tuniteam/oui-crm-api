@@ -6,6 +6,7 @@ import {
   DEFAULT_FREE_MONTHS,
   DEFAULT_PERCENT_DISCOUNT_MONTHS,
   DISCOUNT_MAX,
+  PERCENT_BASE,
   EXTRA_QUANTITY_SUFFIX,
   MONTHS_PER_YEAR,
   MULTI_YEAR_YEARS,
@@ -242,7 +243,7 @@ export class PricingService {
     if (!inPromoPeriod) return mrrList;
     if (discount.mode === 'FREE_MONTHS') return ZERO;
     return money(
-      mrrList.times(new Prisma.Decimal(DISCOUNT_MAX - discount.percent).dividedBy(DISCOUNT_MAX)),
+      mrrList.times(new Prisma.Decimal(PERCENT_BASE - discount.percent).dividedBy(PERCENT_BASE)),
     );
   }
 
@@ -297,7 +298,7 @@ export class PricingService {
   }
 
   private vatOf(amountHt: Prisma.Decimal, vatRate: number): Prisma.Decimal {
-    return money(amountHt.times(new Prisma.Decimal(vatRate ?? 0).dividedBy(DISCOUNT_MAX)));
+    return money(amountHt.times(new Prisma.Decimal(vatRate ?? 0).dividedBy(PERCENT_BASE)));
   }
 
   /** SPEC-04 déc. 1 : la remise déclencheuse tient compte de **toutes** les lignes. */

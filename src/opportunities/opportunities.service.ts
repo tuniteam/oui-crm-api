@@ -5,17 +5,18 @@
 import { Injectable } from '@nestjs/common';
 import { OpportunityStageCode, Organization, Prisma } from '@prisma/client';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
-import { UserWithInitials, loadUsersWithInitials } from '@/audit-log/audit-log-labels';
+import { loadUsersWithInitials } from '@/audit-log/audit-log-labels';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { apiError } from '@/common/api-error';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { formatDateField, parseDayOrThrow } from '@/common/utils/date.utils';
 import { isUniqueViolation } from '@/common/utils/prisma.utils';
-import { fullName } from '@/common/utils/user.utils';
-import { PricingGridContent } from '@/pricing/pricing.types';
+import { userRef } from '@/common/utils/user.utils';
+import { loadActiveGridContent, sumMoney } from '@/pricing/pricing.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ScopeService } from '@/scopes/scope.service';
+import { mergeStageProbabilities } from '@/settings/settings.utils';
 import { loadScopeContext, mergeVisibilityWhere } from '@/scopes/scopes.utils';
 import { assertAssigneesAreMembers, assertFullOrganizationAccess, assertReferencesKnown } from '@/organizations/organizations.utils';
 import {
@@ -28,7 +29,6 @@ import {
   applyOpportunityStage,
   buildOpportunityWhere,
   effectiveProbability,
-  getOpportunityOrThrow,
   quoteValue,
   resolveOpportunityValue,
   weightedTotal,
@@ -117,28 +117,33 @@ export class OpportunitiesService {
       this.loadStageProbabilities(projectId),
     ]);
 
-    const items = await this.mapRows(projectId, rows, settings);
+    const valued = await this.mapValuedRows(projectId, rows, settings);
     const countByStage = new Map(counts.map((c) => [c.stage, c._count._all]));
 
+    // Les totaux se somment en Decimal, à partir des montants déjà arrondis de chaque carte :
+    // une colonne recoupe toujours la somme de ce qu'elle affiche (SPEC-04 déc. 3).
     const columns = OPEN_STAGES.map((stage) => {
-      const all = items.filter((item) => item.stage === stage);
-      const total = all.reduce((sum, item) => sum + item.value, 0);
+      const all = valued.filter((row) => row.item.stage === stage);
       return {
         stage,
         stageProbability: settings[stage] ?? 0,
         count: countByStage.get(stage) ?? 0,
         hasMore: all.length > BOARD_ITEMS_PER_COLUMN,
-        total: this.round2(total),
-        weightedTotal: this.round2(all.reduce((sum, item) => sum + item.weightedValue, 0)),
-        items: all.slice(0, BOARD_ITEMS_PER_COLUMN),
+        total: sumMoney(all.map((row) => row.value)),
+        weightedTotal: sumMoney(all.map((row) => row.weighted)),
+        items: all.slice(0, BOARD_ITEMS_PER_COLUMN).map((row) => row.item),
       };
     });
 
     return {
-      columns,
+      columns: columns.map((column) => ({
+        ...column,
+        total: column.total.toNumber(),
+        weightedTotal: column.weightedTotal.toNumber(),
+      })),
       count: columns.reduce((sum, column) => sum + column.count, 0),
-      total: this.round2(columns.reduce((sum, column) => sum + column.total, 0)),
-      weightedTotal: this.round2(columns.reduce((sum, column) => sum + column.weightedTotal, 0)),
+      total: sumMoney(columns.map((column) => column.total)).toNumber(),
+      weightedTotal: sumMoney(columns.map((column) => column.weightedTotal)).toNumber(),
     };
   }
 
@@ -171,7 +176,7 @@ export class OpportunitiesService {
       stages: stages.map((s) => ({
         stage: s.stage,
         date: s.date,
-        user: s.userId ? this.userRef(authors.get(s.userId), s.userId) : null,
+        user: s.userId ? userRef(authors.get(s.userId), s.userId) : null,
       })),
       quotes: quotes.map((q) => ({
         id: q.id,
@@ -284,7 +289,7 @@ export class OpportunitiesService {
     if (!isOpenStage(opportunity.stage)) throw apiError.conflict('OPPORTUNITY_CLOSED', opportunity.stage);
 
     await this.prisma.$transaction(async (tx) => {
-      const moved = await applyOpportunityStage(tx, opportunity, dto.stage, user.id);
+      const moved = await applyOpportunityStage(tx, projectId, opportunity, dto.stage, user.id);
       if (moved) {
         await this.audit.log(tx, {
           projectId,
@@ -314,7 +319,7 @@ export class OpportunitiesService {
     await assertReferencesKnown(this.prisma, projectId, { lossReason: dto.lossReason });
 
     await this.prisma.$transaction(async (tx) => {
-      const moved = await applyOpportunityStage(tx, opportunity, OpportunityStageCode.LOST, user.id, {
+      const moved = await applyOpportunityStage(tx, projectId, opportunity, OpportunityStageCode.LOST, user.id, {
         lossReason: dto.lossReason,
         lossComment: dto.comment ?? null,
       });
@@ -406,17 +411,18 @@ export class OpportunitiesService {
     return organization;
   }
 
+  /**
+   * Probabilités d'étape du projet, **lues par le lecteur canonique des réglages** : la colonne
+   * ne stocke que le patch des étapes que le projet redéfinit (Périscolia : 25/60/80), et
+   * `mergeStageProbabilities` recouche les défauts sous les clés absentes. Lire la colonne
+   * brute pondérerait à zéro toute étape non redéfinie — silencieusement.
+   */
   private async loadStageProbabilities(projectId: string): Promise<Record<string, number>> {
     const settings = await this.prisma.settings.findUnique({
       where: { projectId },
       select: { stageProbabilities: true },
     });
-    return (settings?.stageProbabilities ?? {}) as Record<string, number>;
-  }
-
-  private async loadActiveGrid(projectId: string): Promise<PricingGridContent | null> {
-    const grid = await this.prisma.pricingGrid.findFirst({ where: { projectId, active: true }, select: { content: true } });
-    return (grid?.content as unknown as PricingGridContent) ?? null;
+    return mergeStageProbabilities(settings?.stageProbabilities ?? {}, {});
   }
 
   private async reload(id: string, projectId: string): Promise<OpportunityDto> {
@@ -438,6 +444,16 @@ export class OpportunitiesService {
     rows: OpportunityRow[],
     knownProbabilities?: Record<string, number>,
   ): Promise<OpportunityDto[]> {
+    return (await this.mapValuedRows(projectId, rows, knownProbabilities)).map((row) => row.item);
+  }
+
+  /** Idem, en conservant les montants en `Decimal` pour que le tableau agrège sans repasser
+   *  par des flottants. */
+  private async mapValuedRows(
+    projectId: string,
+    rows: OpportunityRow[],
+    knownProbabilities?: Record<string, number>,
+  ): Promise<{ item: OpportunityDto; value: Prisma.Decimal; weighted: Prisma.Decimal }[]> {
     if (!rows.length) return [];
     const ids = rows.map((row) => row.id);
 
@@ -447,7 +463,7 @@ export class OpportunitiesService {
         select: { opportunityId: true, arrList: true, oneShotTotal: true },
       }),
       knownProbabilities ? Promise.resolve(knownProbabilities) : this.loadStageProbabilities(projectId),
-      this.loadActiveGrid(projectId),
+      loadActiveGridContent(this.prisma, projectId),
       loadUsersWithInitials(this.prisma, projectId, [...new Set(rows.map((r) => r.ownerId).filter((id): id is string => !!id))]),
     ]);
 
@@ -461,38 +477,35 @@ export class OpportunitiesService {
       const attached = quotesBy.get(row.id) ?? [];
       const { value, source } = resolveOpportunityValue(attached, grid, row.organization);
       const probability = effectiveProbability(row.stage, row.probabilityOverride, stageProbabilities);
+      const weighted = weightedTotal([{ value, probability }]);
       return {
-        id: row.id,
-        label: row.label ?? row.organization.name,
-        organization: {
-          id: row.organization.id,
-          name: row.organization.name,
-          population: row.organization.population,
+        value,
+        weighted,
+        item: {
+          id: row.id,
+          label: row.label ?? row.organization.name,
+          organization: {
+            id: row.organization.id,
+            name: row.organization.name,
+            population: row.organization.population,
+          },
+          owner: row.ownerId ? userRef(owners.get(row.ownerId), row.ownerId) : null,
+          stage: row.stage,
+          stageProbability: stageProbabilities[row.stage] ?? 0,
+          probabilityOverride: row.probabilityOverride,
+          probability,
+          value: value.toNumber(),
+          valueSource: source,
+          weightedValue: weighted.toNumber(),
+          expectedCloseDate: row.expectedCloseDate ? formatDateField(row.expectedCloseDate) : null,
+          source: row.source,
+          lossReason: row.lossReason,
+          quotesCount: attached.length,
+          lastActivityAt: row.organization.lastActivityAt,
+          createdAt: row.createdAt,
+          closedAt: row.closedAt,
         },
-        owner: row.ownerId ? this.userRef(owners.get(row.ownerId), row.ownerId) : null,
-        stage: row.stage,
-        stageProbability: stageProbabilities[row.stage] ?? 0,
-        probabilityOverride: row.probabilityOverride,
-        probability,
-        value: value.toNumber(),
-        valueSource: source,
-        weightedValue: weightedTotal([{ value, probability }]).toNumber(),
-        expectedCloseDate: row.expectedCloseDate ? formatDateField(row.expectedCloseDate) : null,
-        source: row.source,
-        lossReason: row.lossReason,
-        quotesCount: attached.length,
-        lastActivityAt: row.organization.lastActivityAt,
-        createdAt: row.createdAt,
-        closedAt: row.closedAt,
       };
     });
-  }
-
-  private userRef(user: UserWithInitials | undefined, id: string) {
-    return user ? { id: user.id, fullName: fullName(user), initials: user.initials ?? null } : { id, fullName: '', initials: null };
-  }
-
-  private round2(value: number): number {
-    return Math.round(value * 100) / 100;
   }
 }
