@@ -11,9 +11,9 @@
 //   npm run db:restore -- --project=periscolia --with-data
 // ============================================
 
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, RelationshipStatus } from '@prisma/client';
 import { mergeProjectConfig, upsertProjectFeatures } from '../src/projects/project-bootstrap';
-import { PERISCOLIA_CONFIG, PERISCOLIA_PROJECT } from './seed-data/periscolia.config';
+import { PERISCOLIA_CONFIG, PERISCOLIA_PROJECT, PERISCOLIA_USERS } from './seed-data/periscolia.config';
 import { seedDemoOrganizations } from './seedOrganizations';
 
 const prisma = new PrismaClient();
@@ -70,6 +70,23 @@ async function restore(slug: string, withData: boolean): Promise<void> {
 
     await upsertProjectFeatures(tx, projectId, config.features);
 
+    // --- Project assignments of the seed users: reactivated and re-scoped.
+    // A suspended assignment empties the caller project list, which silently breaks unrelated
+    // features (a SUSPENDED admin could no longer read the project files — observed 02/09).
+    // Accounts themselves are never touched: only their link to this project.
+    const scopes = await tx.scope.findMany({ where: { projectId }, select: { id: true, name: true } });
+    const scopeByName = new Map(scopes.map((s) => [s.name, s.id]));
+    let reactivated = 0;
+    for (const seedUser of PERISCOLIA_USERS) {
+      const user = await tx.user.findUnique({ where: { email: seedUser.email }, select: { id: true } });
+      if (!user) continue;
+      const done = await tx.userRoleProject.updateMany({
+        where: { userId: user.id, projectId },
+        data: { status: RelationshipStatus.ACTIVE, scopeId: scopeByName.get(seedUser.scope) ?? null },
+      });
+      reactivated += done.count;
+    }
+
     if (withData) {
       // Commercial data of the project only. Cascades handle contacts, activities and
       // campaign links; campaigns and import batches are removed explicitly.
@@ -80,7 +97,7 @@ async function restore(slug: string, withData: boolean): Promise<void> {
       console.log('  commercial data reset — ' + seeded + ' demo organizations recreated');
     }
 
-    console.log(`✓ ${project.name} (${slug}) restored — settings, ${realigned} reference items, features`);
+    console.log(`✓ ${project.name} (${slug}) restored — settings, ${realigned} reference items, features, ${reactivated} assignments`);
   });
 }
 
