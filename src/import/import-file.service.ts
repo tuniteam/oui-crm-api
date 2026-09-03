@@ -15,6 +15,7 @@ import { ImportFileQueryDto, ImportReportDto } from './dto/import-file.dto';
 import { GenericImportService } from './generic-import.service';
 import { OuicrmImportService } from './ouicrm-import.service';
 import { ProjectConfigImportService } from './project-config-import.service';
+import { stampAppliedAt } from './import.constants';
 import { IMPORT_AUDIT } from './import.constants';
 import {
   GENERIC_CONTACT_HEADERS,
@@ -134,9 +135,11 @@ export class ImportFileService {
     }
 
     const report = prepared.report.build(false, batch.id);
+    // Horodaté APRÈS les écritures : tout ce qui touche une ligne du lot ensuite est une
+    // modification, et l'annulation le verra sans dépendre d'un chronomètre.
     await this.prisma.importBatch.update({
       where: { id: batch.id },
-      data: { totals: { ...report.totals } },
+      data: { totals: stampAppliedAt({ ...report.totals }) },
     });
     await this.audit.log(this.prisma, {
       projectId,
