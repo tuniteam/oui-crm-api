@@ -344,15 +344,11 @@ export class CampaignsService {
       }),
       // Counters of the whole campaign, independent of the page and of the caller scope:
       // they describe what the campaign produced, not what this reader may see.
-      this.prisma.activity.groupBy({
-        by: ['organizationId'],
-        where: { campaignId: id, organization: { deletedAt: null, campaigns: { some: { campaignId: id } } } },
-        _count: { _all: true },
-      }),
+      this.countActivitiesByOrganization(id),
     ]);
 
-    const actsBy = new Map(perOrg.map((a) => [a.organizationId, a._count._all]));
-    const totalActivities = perOrg.reduce((sum, a) => sum + a._count._all, 0);
+    const actsBy = perOrg;
+    const totalActivities = [...perOrg.values()].reduce((sum, n) => sum + n, 0);
 
     return {
       totals: campaignResults(totalActivities),
@@ -385,10 +381,50 @@ export class CampaignsService {
   }
 
   /** Activities of records still targeted and alive — totals always equal the sum of rows. */
-  private countCampaignActivities(campaignId: string): Promise<number> {
-    return this.prisma.activity.count({
-      where: { campaignId, organization: { deletedAt: null, campaigns: { some: { campaignId } } } },
-    });
+  /**
+   * What a campaign produced: the activities **completed on its targeted records, after they
+   * entered the target** (décision D11 du 03/09/2026).
+   *
+   * Two bounds, and each one answers a real failure mode:
+   * - `status = DONE` — the panel is titled « résultats » : an activity merely planned is an
+   *   intention, not a result;
+   * - `completed_at >= added_at` — without it, targeting a record that already has a history
+   *   would credit the campaign with activities that predate it, massively so on a target
+   *   built by the territory import.
+   *
+   * The count deliberately ignores `Activity.campaignId`: a counter whose accuracy depends on
+   * the user having ticked a box, and whose omission cannot be repaired (a closed activity is
+   * immutable), would report wrong figures in production. `campaignId` keeps its own meaning —
+   * an activity deliberately carried out under the campaign — it is simply not what is counted.
+   *
+   * Raw SQL because the time bound differs per record: it lives on the join row.
+   */
+  private async countCampaignActivities(campaignId: string): Promise<number> {
+    const [row] = await this.prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT count(*)::bigint AS count
+      FROM activities a
+      JOIN campaign_organizations co ON co.organization_id = a.organization_id
+      JOIN organizations o ON o.id = a.organization_id
+      WHERE co.campaign_id = ${campaignId}
+        AND o.deleted_at IS NULL
+        AND a.status = 'DONE'
+        AND a.completed_at >= co.added_at`;
+    return Number(row?.count ?? 0);
+  }
+
+  /** Same rule as countCampaignActivities, broken down per record (results panel). */
+  private async countActivitiesByOrganization(campaignId: string): Promise<Map<string, number>> {
+    const rows = await this.prisma.$queryRaw<{ organization_id: string; count: bigint }[]>`
+      SELECT a.organization_id, count(*)::bigint AS count
+      FROM activities a
+      JOIN campaign_organizations co ON co.organization_id = a.organization_id
+      JOIN organizations o ON o.id = a.organization_id
+      WHERE co.campaign_id = ${campaignId}
+        AND o.deleted_at IS NULL
+        AND a.status = 'DONE'
+        AND a.completed_at >= co.added_at
+      GROUP BY a.organization_id`;
+    return new Map(rows.map((r) => [r.organization_id, Number(r.count)]));
   }
 
   private hidesOutOfScope(ctx: ScopeContext): boolean {

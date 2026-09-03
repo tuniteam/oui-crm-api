@@ -5,6 +5,7 @@ import { Prisma } from '@prisma/client';
 import * as ExcelJS from 'exceljs';
 import { APP_ENV, DEFAULT_PLATFORM_NAME } from '@/common/constants/app.constants';
 import { formatDateField } from '@/common/utils/date.utils';
+import { mergeStageProbabilities } from '@/settings/settings.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CONFIG_SHEETS } from './projects.constants';
 
@@ -78,7 +79,9 @@ export function buildConfigWorkbook(project: ProjectConfig, creator: string): Ex
     { header: 'stage', key: 'stage', width: 22 },
     { header: 'probability', key: 'probability', width: 14 },
   ];
-  const stageProbabilities = (project.settings?.stageProbabilities ?? {}) as Record<string, number>;
+  // La colonne ne stocke que le patch des étapes qu'un projet redéfinit : l'export passe par le
+  // lecteur canonique pour sortir les 7 étapes, comme `GET /settings` les sert.
+  const stageProbabilities = mergeStageProbabilities(project.settings?.stageProbabilities ?? {}, {});
   probabilities.addRows(Object.entries(stageProbabilities).map(([stage, probability]) => ({ stage, probability })));
 
   const references = workbook.addWorksheet(CONFIG_SHEETS.referenceItems);

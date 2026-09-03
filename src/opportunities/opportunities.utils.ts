@@ -7,7 +7,7 @@ import { apiError } from '@/common/api-error';
 import { MONTHS_PER_YEAR } from '@/pricing/pricing.constants';
 import { PricingGridContent } from '@/pricing/pricing.types';
 import { money, priceAt, resolveBracketIndex, setupFeePrices, sumMoney } from '@/pricing/pricing.utils';
-import { PROBABILITY_MAX, isOpenStage } from './opportunities.constants';
+import { CLOSED_STAGE_CODES, PROBABILITY_MAX, isOpenStage } from './opportunities.constants';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -125,6 +125,37 @@ export async function applyOpportunityStage(
 
   await tx.opportunityStage.create({ data: { opportunityId: opportunity.id, stage: to, userId } });
   return { from: opportunity.stage, to };
+}
+
+/**
+ * L'opportunité ouverte d'un organisme, créée si elle n'existe pas (US-02-03 : un devis se
+ * rattache toujours à une opportunité). Appelée par la création de devis ; l'index unique
+ * partiel garantit qu'il n'y en aura jamais deux.
+ */
+export async function ensureOpenOpportunity(
+  tx: Db,
+  projectId: string,
+  organization: { id: string; name: string; salesRepId: string | null; leadSource: string | null },
+  userId: string,
+): Promise<{ id: string; created: boolean }> {
+  const open = await tx.opportunity.findFirst({
+    where: { projectId, organizationId: organization.id, stage: { notIn: [...CLOSED_STAGE_CODES] } },
+    select: { id: true },
+  });
+  if (open) return { id: open.id, created: false };
+
+  const created = await tx.opportunity.create({
+    data: {
+      projectId,
+      organizationId: organization.id,
+      label: organization.name,
+      ownerId: organization.salesRepId ?? userId,
+      source: organization.leadSource,
+    },
+    select: { id: true, stage: true },
+  });
+  await tx.opportunityStage.create({ data: { opportunityId: created.id, stage: created.stage, userId } });
+  return { id: created.id, created: true };
 }
 
 // ---------------------------------------------------------------------------- lecture

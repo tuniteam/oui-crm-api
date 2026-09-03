@@ -52,13 +52,14 @@ export interface PricingGridContent {
 export interface QuoteOptionConfig {
   id: number;
   qty: number;
-  /** Remise de ligne en %, bornée à 0-100. */
-  discount: number;
+  /** Remise de ligne en %, bornée à 0-100 ; absente vaut 0. */
+  discount?: number;
 }
 
 export interface QuoteSetupConfig {
   included: boolean;
-  discount: number;
+  /** Remise du poste en % ; absente vaut 0. */
+  discount?: number;
 }
 
 export type GlobalDiscount =

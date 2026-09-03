@@ -30,6 +30,7 @@ import { SettingsModule } from './settings/settings.module';
 import { ReferenceItemsModule } from './reference-items/reference-items.module';
 import { PricingModule } from './pricing/pricing.module';
 import { OpportunitiesModule } from './opportunities/opportunities.module';
+import { QuotesModule } from './quotes/quotes.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { OpportunitiesModule } from './opportunities/opportunities.module';
     ScopesModule,
     PricingModule,
     OpportunitiesModule,
+    QuotesModule,
     OrganizationsModule,
     ContactsModule,
     ActivitiesModule,
