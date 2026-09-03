@@ -168,6 +168,67 @@ enum DocumentType {
   INVOICE
 }
 
+// --------------------------------------------
+// L2 — cycle de vente (SPEC-14 §2.4). Étapes et statuts relevés dans la V8 (SPEC-01 §3.7-3.9).
+// --------------------------------------------
+
+/// Étapes du pipeline — clés de Settings.stageProbabilities (le modèle porte déjà le nom
+/// OpportunityStage, d'où le suffixe Code). WON et LOST ne sont jamais posés à la main.
+enum OpportunityStageCode {
+  QUALIFICATION
+  DEMONSTRATION
+  QUOTE_SENT
+  NEGOTIATING
+  VERBAL_AGREEMENT
+  WON
+  LOST
+}
+
+enum QuoteStatus {
+  DRAFT
+  PENDING_VALIDATION
+  SENT
+  FOLLOWED_UP
+  NEGOTIATING
+  SIGNED
+  REJECTED
+  EXPIRED
+}
+
+enum QuoteType {
+  INITIAL
+  ADDITIONAL
+  RENEWAL
+}
+
+/// IMPORTED = devis repris du classeur (SPEC-05 §2.2) : config nulle, jamais recalculé,
+/// non régénérable en PDF.
+enum QuoteOrigin {
+  CRM
+  IMPORTED
+}
+
+/// Natures de lignes du document, imprimées telles quelles (SPEC-04 §2.2).
+enum QuoteLineNature {
+  ABONNEMENT
+  OPTION
+  SETUP
+  EXTRA
+}
+
+enum BillingMode {
+  MONTHLY
+  YEARLY
+}
+
+/// Seul ACTIVE est écrit au L2 ; le cycle de vie arrive au L3 (SPEC-14 §2.4).
+enum ContractStatus {
+  ACTIVE
+  NOTICE_RECEIVED
+  TERMINATED
+  EXPIRED
+}
+
 // ============================================
 // PROJECT — produit ou service à promouvoir (le « client » de soft-m)
 // ============================================
@@ -255,6 +316,9 @@ model User {
   organizationsAsSalesRep   Organization[]           @relation("OrganizationSalesRep")
   organizationsAsConsultant Organization[]           @relation("OrganizationConsultant")
   organizationsAsTrainer    Organization[]           @relation("OrganizationTrainer")
+  opportunitiesOwned        Opportunity[]            @relation("OpportunityOwner")
+  quotesOwned               Quote[]                  @relation("QuoteOwner")
+  quotesValidated           Quote[]                  @relation("QuoteValidatedBy")
 
   @@index([status])
   @@map("users")
@@ -503,6 +567,7 @@ model PricingGrid {
 
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdBy User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  quotes    Quote[]
 
   @@unique([projectId, version])
   @@index([projectId, active])
@@ -656,14 +721,17 @@ model Organization {
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 
-  project     Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  importBatch ImportBatch?           @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
-  salesRep    User?                  @relation("OrganizationSalesRep", fields: [salesRepId], references: [id], onDelete: SetNull)
-  consultant  User?                  @relation("OrganizationConsultant", fields: [consultantId], references: [id], onDelete: SetNull)
-  trainer     User?                  @relation("OrganizationTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
-  contacts    Contact[]
-  activities  Activity[]
-  campaigns   CampaignOrganization[]
+  project       Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  importBatch   ImportBatch?           @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  salesRep      User?                  @relation("OrganizationSalesRep", fields: [salesRepId], references: [id], onDelete: SetNull)
+  consultant    User?                  @relation("OrganizationConsultant", fields: [consultantId], references: [id], onDelete: SetNull)
+  trainer       User?                  @relation("OrganizationTrainer", fields: [trainerId], references: [id], onDelete: SetNull)
+  contacts      Contact[]
+  activities    Activity[]
+  campaigns     CampaignOrganization[]
+  opportunities Opportunity[]
+  quotes        Quote[]
+  contracts     Contract[]
 
   @@index([projectId, salesStatus])
   @@index([projectId, customerStatus])
@@ -798,4 +866,193 @@ model ImportBatch {
 
   @@index([projectId, createdAt(sort: Desc)])
   @@map("import_batches")
+}
+
+// ============================================
+// L2 — CYCLE DE VENTE (SPEC-14 §2.3)
+// ============================================
+
+/// Une seule opportunité ouverte par organisme, garantie par un index unique partiel
+/// (migration, SQL brut) : WHERE stage NOT IN ('WON','LOST').
+model Opportunity {
+  id             String @id @default(cuid())
+  projectId      String @map("project_id")
+  organizationId String @map("organization_id")
+
+  label   String?              @db.VarChar(200)
+  stage   OpportunityStageCode @default(QUALIFICATION)
+  ownerId String?              @map("owner_id")
+  source  String?              @db.VarChar(60) // clé du référentiel LEAD_SOURCE
+
+  expectedCloseDate DateTime? @map("expected_close_date") @db.Date
+
+  /// Pondération saisie par le commercial (0-100) : remplace la probabilité de l'étape
+  /// pour cette opportunité (SPEC-05 Q4). Effective = override ?? stageProbabilities[stage].
+  probabilityOverride Int? @map("probability_override")
+
+  lossReason  String?   @map("loss_reason") @db.VarChar(60) // clé du référentiel LOSS_REASON
+  lossComment String?   @map("loss_comment") @db.VarChar(1000)
+  closedAt    DateTime? @map("closed_at")
+
+  importBatchId String? @map("import_batch_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User?              @relation("OpportunityOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  stages       OpportunityStage[]
+  quotes       Quote[]
+
+  @@index([projectId, stage])
+  @@index([projectId, ownerId])
+  @@index([organizationId])
+  @@index([importBatchId])
+  @@map("opportunities")
+}
+
+/// Historique des étapes : table et non JSON, c'est la source des statistiques de
+/// conversion et du délai de cycle (SPEC-02 §2.5).
+model OpportunityStage {
+  id            String               @id @default(cuid())
+  opportunityId String               @map("opportunity_id")
+  stage         OpportunityStageCode
+  date          DateTime             @default(now())
+  userId        String?              @map("user_id")
+
+  opportunity Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId, date])
+  @@map("opportunity_stages")
+}
+
+/// Devis. Tant qu'il est DRAFT, il est recalculé depuis `config` et la grille active ;
+/// à la soumission ses lignes sont matérialisées et `pricingGridId` fige la version
+/// — il n'est plus jamais recalculé (SPEC-04 §3.1, SPEC-14 §2.5).
+model Quote {
+  id             String  @id @default(cuid())
+  projectId      String  @map("project_id")
+  organizationId String  @map("organization_id")
+  opportunityId  String? @map("opportunity_id")
+  pricingGridId  String  @map("pricing_grid_id")
+
+  number       String      @db.VarChar(30)
+  /// Numéro d'origine d'un devis repris du classeur, conservé tel quel (SPEC-05 §2.2).
+  legacyNumber String?     @map("legacy_number") @db.VarChar(30)
+  origin       QuoteOrigin @default(CRM)
+  type         QuoteType   @default(INITIAL)
+  status       QuoteStatus @default(DRAFT)
+  ownerId      String?     @map("owner_id")
+
+  issueDate  DateTime  @map("issue_date") @db.Date
+  validUntil DateTime  @map("valid_until") @db.Date
+  startDate  DateTime  @map("start_date") @db.Date
+  signedAt   DateTime? @map("signed_at") @db.Date
+
+  validatedById   String?   @map("validated_by_id")
+  validatedAt     DateTime? @map("validated_at")
+  rejectionReason String?   @map("rejection_reason") @db.VarChar(1000)
+  declineReason   String?   @map("decline_reason") @db.VarChar(1000)
+
+  /// QuoteConfig (SPEC-04 §2.1) ; nulle pour un devis IMPORTED.
+  config Json?
+
+  // Montants du QuoteResult, dénormalisés : la liste trie et filtre en SQL (SPEC-14 §2.5).
+  mrrList      Decimal @default(0) @map("mrr_list") @db.Decimal(12, 2)
+  mrrNet       Decimal @default(0) @map("mrr_net") @db.Decimal(12, 2)
+  arrList      Decimal @default(0) @map("arr_list") @db.Decimal(12, 2)
+  arrNet       Decimal @default(0) @map("arr_net") @db.Decimal(12, 2)
+  oneShotTotal Decimal @default(0) @map("one_shot_total") @db.Decimal(12, 2)
+  firstYearHt  Decimal @default(0) @map("first_year_ht") @db.Decimal(12, 2)
+  firstYearVat Decimal @default(0) @map("first_year_vat") @db.Decimal(12, 2)
+  firstYearTtc Decimal @default(0) @map("first_year_ttc") @db.Decimal(12, 2)
+  /// Remise la plus forte du devis, toutes lignes confondues (SPEC-04 déc. 1) :
+  /// c'est elle qui déclenche le circuit de validation.
+  maxDiscount  Int     @default(0) @map("max_discount")
+
+  /// Devis d'origine d'un renouvellement ou d'une réouverture après expiration.
+  sourceQuoteId String? @map("source_quote_id")
+  importBatchId String? @map("import_batch_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  opportunity  Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  pricingGrid  PricingGrid  @relation(fields: [pricingGridId], references: [id])
+  owner        User?        @relation("QuoteOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  validatedBy  User?        @relation("QuoteValidatedBy", fields: [validatedById], references: [id], onDelete: SetNull)
+  lines        QuoteLine[]
+  contract     Contract?
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+  @@index([organizationId, status])
+  @@index([opportunityId])
+  @@index([projectId, validUntil])
+  @@index([importBatchId])
+  @@map("quotes")
+}
+
+/// Lignes figées à la soumission — après elle, le devis n'est plus recalculé.
+model QuoteLine {
+  id       String          @id @default(cuid())
+  quoteId  String          @map("quote_id")
+  nature   QuoteLineNature
+  order    Int             @default(0)
+  label    String          @db.VarChar(200)
+  sublabel String?         @db.VarChar(200)
+
+  qty       Decimal @default(1) @db.Decimal(10, 2)
+  unitPrice Decimal @default(0) @map("unit_price") @db.Decimal(12, 2)
+  discount  Int     @default(0)
+  total     Decimal @default(0) @db.Decimal(12, 2)
+
+  quote Quote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+
+  @@index([quoteId, order])
+  @@map("quote_lines")
+}
+
+/// Créé à la signature d'un devis, jamais saisi à la main (SPEC-01 §3.9). Lecture seule
+/// au L2 : le cycle de vie (préavis, résiliation, renouvellement) arrive au L3.
+model Contract {
+  id             String @id @default(cuid())
+  projectId      String @map("project_id")
+  quoteId        String @unique @map("quote_id")
+  organizationId String @map("organization_id")
+
+  number   String   @db.VarChar(30)
+  signedAt DateTime @map("signed_at") @db.Date
+
+  startDate        DateTime    @map("start_date") @db.Date
+  commitmentMonths Int         @map("commitment_months")
+  endDate          DateTime    @map("end_date") @db.Date
+  autoRenew        Boolean     @default(true) @map("auto_renew")
+  noticeMonths     Int         @map("notice_months")
+  billing          BillingMode @default(MONTHLY)
+  plan             String      @db.VarChar(60) // clé de PricingGridContent.plans
+
+  // Montants copiés du devis signé (SPEC-04 déc. 2 : catalogue et net, tous les deux).
+  mrrList      Decimal @default(0) @map("mrr_list") @db.Decimal(12, 2)
+  mrrNet       Decimal @default(0) @map("mrr_net") @db.Decimal(12, 2)
+  arrList      Decimal @default(0) @map("arr_list") @db.Decimal(12, 2)
+  arrNet       Decimal @default(0) @map("arr_net") @db.Decimal(12, 2)
+  oneShotTotal Decimal @default(0) @map("one_shot_total") @db.Decimal(12, 2)
+
+  trialClause Boolean        @default(false) @map("trial_clause")
+  status      ContractStatus @default(ACTIVE)
+  notes       String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  quote        Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+  @@index([organizationId])
+  @@index([projectId, endDate])
+  @@map("contracts")
 }

@@ -148,6 +148,9 @@ const errorDefinitions = {
   EXPORT_TOO_LARGE: (max: number) =>
     `Export exceeds the maximum of ${max} rows; narrow the filters`,
 
+  // Document numbering (L2 phase A — SPEC-01 §4.3)
+  DOCUMENT_NUMBER_INITIALS_REQUIRED: 'Quote numbering requires the initials of its owner',
+
 } as const;
 
 type ErrorKey = keyof typeof errorDefinitions;
