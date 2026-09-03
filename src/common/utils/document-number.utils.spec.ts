@@ -1,5 +1,13 @@
 import { DocumentType, Prisma } from '@prisma/client';
-import { dayOfYear, formatDocumentNumber, nextDocumentNumbers, periodKeyOf } from './document-number.utils';
+import {
+  contractNumber,
+  dayOfYear,
+  formatDocumentNumber,
+  invoiceNumber,
+  nextDocumentNumbers,
+  periodKeyOf,
+  quoteNumber,
+} from './document-number.utils';
 import { toDate } from './date.utils';
 
 /** Séquence en mémoire : un `upsert` qui incrémente, comme la table (SPEC-01 §4.3). */
@@ -71,6 +79,30 @@ describe('document-number.utils — format', () => {
   });
 });
 
+describe('document-number.utils — numéro de contrat (SPEC-01 §3.9)', () => {
+  it('derives the contract number from the signed quote, DEV → CTR', () => {
+    expect(contractNumber('DEV-2026-241-WB001')).toBe('CTR-2026-241-WB001');
+  });
+
+  it('keeps the rest of the reference untouched, whatever its length', () => {
+    expect(contractNumber('DEV-2026-001-ABC999')).toBe('CTR-2026-001-ABC999');
+  });
+});
+
+describe('document-number.utils — formateurs directs', () => {
+  const aug29 = new Date(Date.UTC(2026, 7, 29, 12));
+
+  it('formats a quote from a day, initials and a rank', () => {
+    expect(dayOfYear(aug29)).toBe(241);
+    expect(quoteNumber(aug29, 'WB', 1)).toBe('DEV-2026-241-WB001');
+    expect(quoteNumber(new Date(Date.UTC(2026, 0, 1)), 'FY', 12)).toBe('DEV-2026-001-FY012');
+  });
+
+  it('formats an invoice on a yearly sequence', () => {
+    expect(invoiceNumber(aug29, 7)).toBe('FAC-2026-0007');
+  });
+});
+
 describe('document-number.utils — attribution', () => {
   const base = { projectId: 'p1', type: DocumentType.QUOTE, initials: 'WB', day: toDate('2026-08-31') };
 
@@ -114,20 +146,56 @@ describe('document-number.utils — attribution', () => {
     expect(await nextDocumentNumbers(db, base)).toEqual(['DEV-2026-243-WB001']);
   });
 
-  it('survives the race on the first reservation of the day: the loser increments the winner row', async () => {
-    const db = fakeDb({ 'p1|QUOTE|2026-243': 1 });
-    let firstCall = true;
-    db.documentNumberSequence.upsert = () => {
-      if (!firstCall) throw new Error('upsert should be tried once');
-      firstCall = false;
-      return Promise.reject(
+  it('propagates a duplicate to the caller instead of retrying inside an aborted transaction', async () => {
+    const db = fakeDb();
+    db.documentNumberSequence.upsert = () =>
+      Promise.reject(new Prisma.PrismaClientKnownRequestError('duplicate key', { code: 'P2002', clientVersion: 'test' }));
+    await expect(nextDocumentNumbers(db, base)).rejects.toThrow('duplicate key');
+  });
+
+  it('reserves several consecutive numbers in one write (import)', async () => {
+    const db = fakeDb();
+    expect(await nextDocumentNumbers(db, { ...base, count: 3 })).toEqual([
+      'DEV-2026-243-WB001',
+      'DEV-2026-243-WB002',
+      'DEV-2026-243-WB003',
+    ]);
+    expect(await nextDocumentNumbers(db, base)).toEqual(['DEV-2026-243-WB004']);
+  });
+
+  it('shares the daily sequence between owners — the initials do not split the counter', async () => {
+    const db = fakeDb();
+    expect(await nextDocumentNumbers(db, base)).toEqual(['DEV-2026-243-WB001']);
+    expect(await nextDocumentNumbers(db, { ...base, initials: 'FY' })).toEqual(['DEV-2026-243-FY002']);
+  });
+
+  it('restarts at 001 the next day', async () => {
+    const db = fakeDb();
+    await nextDocumentNumbers(db, base);
+    expect(await nextDocumentNumbers(db, { ...base, day: toDate('2026-09-01') })).toEqual(['DEV-2026-244-WB001']);
+  });
+
+  it('keeps one sequence per project', async () => {
+    const db = fakeDb();
+    await nextDocumentNumbers(db, base);
+    expect(await nextDocumentNumbers(db, { ...base, projectId: 'p2' })).toEqual(['DEV-2026-243-WB001']);
+  });
+
+  it('does not consume a rank when the initials are missing', async () => {
+    const db = fakeDb();
+    await expect(nextDocumentNumbers(db, { ...base, initials: null })).rejects.toThrow();
+    expect(await nextDocumentNumbers(db, base)).toEqual(['DEV-2026-243-WB001']);
+  });
+
+  it('propagates a duplicate instead of retrying inside a transaction the failure already aborted', async () => {
+    // L'upsert porte sur une clé unique : Postgres l'exécute en INSERT … ON CONFLICT, donc le
+    // doublon ne devrait pas survenir. S'il survient, le rattraper ici serait vain — dans une
+    // transaction avortée toute requête suivante échoue — c'est à l'appelant de rejouer.
+    const db = fakeDb();
+    db.documentNumberSequence.upsert = () =>
+      Promise.reject(
         new Prisma.PrismaClientKnownRequestError('duplicate key', { code: 'P2002', clientVersion: 'test' }),
       );
-    };
-    db.documentNumberSequence.update = ({ data }: any) => {
-      db.rows['p1|QUOTE|2026-243'] += data.lastNumber.increment;
-      return Promise.resolve({ lastNumber: db.rows['p1|QUOTE|2026-243'] });
-    };
-    expect(await nextDocumentNumbers(db, base)).toEqual(['DEV-2026-243-WB002']);
+    await expect(nextDocumentNumbers(db, base)).rejects.toThrow('duplicate key');
   });
 });

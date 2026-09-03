@@ -5,6 +5,7 @@
 import { CustomerStatus, Organization, Prisma, PrismaClient, Priority, RelationshipStatus, SalesStatus } from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { PopulationBracket } from '@/pricing/pricing.types';
+import { loadActiveGridContent } from '@/pricing/pricing.utils';
 import { resolveDepartments } from '@/scopes/geo.constants';
 import { ScopeContext, ScopeService } from '@/scopes/scope.service';
 import { hydrateCampaignMembership } from '@/scopes/scopes.utils';
@@ -343,7 +344,5 @@ export async function loadActiveBrackets(
   db: Pick<PrismaClient, 'pricingGrid'>,
   projectId: string,
 ): Promise<PopulationBracket[]> {
-  const grid = await db.pricingGrid.findFirst({ where: { projectId, active: true }, select: { content: true } });
-  const content = grid?.content as { brackets?: PopulationBracket[] } | null;
-  return content?.brackets ?? [];
+  return (await loadActiveGridContent(db, projectId))?.brackets ?? [];
 }

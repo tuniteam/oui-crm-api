@@ -11,9 +11,8 @@ import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interfac
 import { apiError, withDetails } from '@/common/api-error';
 import { PaginationQueryDto, buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { formatDateField, parseDayOrThrow } from '@/common/utils/date.utils';
-import { fullName } from '@/common/utils/user.utils';
+import { userRef } from '@/common/utils/user.utils';
 import { PrismaService } from '@/prisma/prisma.service';
-import { UserRefDto } from '@/organizations/dto';
 import { PRICING_AUDIT } from './pricing.constants';
 import { PricingGridContent } from './pricing.types';
 import { validateGridContent } from './pricing.utils';
@@ -95,14 +94,17 @@ export class PricingGridsService {
     const issues = validateGridContent(content);
     if (issues.length) throw withDetails(apiError.badRequest('PRICING_GRID_INVALID', issues.join('; ')), issues);
 
-    const last = await this.prisma.pricingGrid.findFirst({
-      where: { projectId },
-      orderBy: { version: 'desc' },
-      select: { version: true },
-    });
-    const version = (last?.version ?? 0) + 1;
-
     const grid = await this.prisma.$transaction(async (tx) => {
+      // Le numéro suit la dernière version DU PROJET, lu dans la transaction : deux
+      // préparations simultanées ne peuvent pas viser le même numéro sans que l'unicité
+      // (projectId, version) ne tranche.
+      const last = await tx.pricingGrid.findFirst({
+        where: { projectId },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+      const version = (last?.version ?? 0) + 1;
+
       const created = await tx.pricingGrid.create({
         data: {
           projectId,
@@ -185,7 +187,7 @@ export class PricingGridsService {
       version: row.version,
       effectiveDate: formatDateField(row.effectiveDate),
       active: row.active,
-      createdBy: author ? { id: author.id, fullName: fullName(author), initials: author.initials ?? null } : null,
+      createdBy: author ? userRef(author, author.id) : null,
       createdAt: row.createdAt.toISOString(),
       quotesCount,
     };

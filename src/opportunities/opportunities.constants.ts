@@ -26,11 +26,6 @@ export const OPEN_STAGES: readonly OpportunityStageCode[] = [
   OpportunityStageCode.VERBAL_AGREEMENT,
 ];
 
-export const CLOSED_STAGES: readonly OpportunityStageCode[] = [
-  OpportunityStageCode.WON,
-  OpportunityStageCode.LOST,
-];
-
 export function isOpenStage(stage: OpportunityStageCode): boolean {
   return OPEN_STAGES.includes(stage);
 }

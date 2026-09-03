@@ -3,7 +3,7 @@ import { apiError } from '@/common/api-error';
 import { REFERENCE_CATEGORIES } from '@/common/messages';
 import { endOfDayUtc,
   parseDayOrThrow, formatDateField, toDate } from '@/common/utils/date.utils';
-import { fullName } from '@/common/utils/user.utils';
+import { fullName, userRef } from '@/common/utils/user.utils';
 import { UserWithInitials } from '@/audit-log/audit-log-labels';
 import { ReferenceRefDto, UserRefDto } from '@/organizations/dto';
 import { ICS } from './activities.constants';
@@ -131,9 +131,7 @@ export function mapToActivity(
   };
 }
 
-export function userRef(user: UserWithInitials | undefined, id: string): UserRefDto {
-  return user ? { id: user.id, fullName: fullName(user), initials: user.initials ?? null } : { id, fullName: '', initials: null };
-}
+export { userRef };
 
 /**
  * lastActivityAt = latest DONE, nextActivityAt = earliest PLANNED (an overdue planned

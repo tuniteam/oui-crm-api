@@ -7,7 +7,7 @@ import { apiError } from '@/common/api-error';
 import { MONTHS_PER_YEAR } from '@/pricing/pricing.constants';
 import { PricingGridContent } from '@/pricing/pricing.types';
 import { money, priceAt, resolveBracketIndex, setupFeePrices, sumMoney } from '@/pricing/pricing.utils';
-import { isOpenStage } from './opportunities.constants';
+import { PROBABILITY_MAX, isOpenStage } from './opportunities.constants';
 
 type Db = PrismaClient | Prisma.TransactionClient;
 
@@ -84,7 +84,9 @@ export function resolveOpportunityValue(
 /** Total pondéré d'un ensemble : Σ valeur × probabilité (le total d'une colonne du tableau). */
 export function weightedTotal(items: { value: Prisma.Decimal; probability: number }[]): Prisma.Decimal {
   return money(
-    sumMoney(items.map((item) => money(item.value.times(new Prisma.Decimal(item.probability).dividedBy(100))))),
+    sumMoney(
+      items.map((item) => money(item.value.times(new Prisma.Decimal(item.probability).dividedBy(PROBABILITY_MAX)))),
+    ),
   );
 }
 
@@ -100,6 +102,7 @@ export function weightedTotal(items: { value: Prisma.Decimal; probability: numbe
  */
 export async function applyOpportunityStage(
   tx: Db,
+  projectId: string,
   opportunity: { id: string; stage: OpportunityStageCode },
   to: OpportunityStageCode,
   userId: string,
@@ -107,8 +110,10 @@ export async function applyOpportunityStage(
 ): Promise<{ from: OpportunityStageCode; to: OpportunityStageCode } | null> {
   if (opportunity.stage === to) return null;
 
-  await tx.opportunity.update({
-    where: { id: opportunity.id },
+  // `updateMany` plutôt qu'`update` : le projet reste dans le `where`, y compris pour les
+  // appelants des phases F et G qui partiront d'un devis et non d'une lecture scopée.
+  const { count } = await tx.opportunity.updateMany({
+    where: { id: opportunity.id, projectId },
     data: {
       stage: to,
       closedAt: isOpenStage(to) ? null : new Date(),
@@ -116,22 +121,13 @@ export async function applyOpportunityStage(
       lossComment: to === OpportunityStageCode.LOST ? (loss?.lossComment ?? null) : null,
     },
   });
+  if (count === 0) throw apiError.notFound('OPPORTUNITY_NOT_FOUND', opportunity.id);
+
   await tx.opportunityStage.create({ data: { opportunityId: opportunity.id, stage: to, userId } });
   return { from: opportunity.stage, to };
 }
 
 // ---------------------------------------------------------------------------- lecture
-
-export async function getOpportunityOrThrow(
-  db: Db,
-  id: string,
-  projectId: string,
-  scopeWhere: Record<string, unknown> = {},
-) {
-  const opportunity = await db.opportunity.findFirst({ where: { id, projectId, ...scopeWhere } });
-  if (!opportunity) throw apiError.notFound('OPPORTUNITY_NOT_FOUND', id);
-  return opportunity;
-}
 
 /**
  * Filtres de la liste (US-02-09) ; `from`/`to` portent sur la date de clôture prévue.

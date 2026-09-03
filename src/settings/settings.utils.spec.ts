@@ -3,13 +3,9 @@ import { REQUIRED_TEMPLATE_TAGS } from './settings.constants';
 import {
   activeTemplates,
   collectTemplateTags,
-  contractNumber,
-  dayOfYear,
-  invoiceNumber,
   mergeCompany,
   mergeStageProbabilities,
   numberingExamples,
-  quoteNumber,
   validateTemplate,
 } from './settings.utils';
 
@@ -96,19 +92,12 @@ describe('settings.utils — stage probabilities and company', () => {
   });
 });
 
-describe('settings.utils — numbering (SPEC-01 §4.3)', () => {
-  const aug29 = new Date(Date.UTC(2026, 7, 29, 12));
-
-  it('quote = DEV-year-dayOfYear-initials+daily sequence', () => {
-    expect(dayOfYear(aug29)).toBe(241);
-    expect(quoteNumber(aug29, 'WB', 1)).toBe('DEV-2026-241-WB001');
-    expect(quoteNumber(new Date(Date.UTC(2026, 0, 1)), 'FY', 12)).toBe('DEV-2026-001-FY012');
-  });
-
-  it('contract = quote with DEV → CTR; invoice = FAC-year-sequence on 4', () => {
-    expect(contractNumber('DEV-2026-241-WB001')).toBe('CTR-2026-241-WB001');
-    expect(invoiceNumber(aug29, 7)).toBe('FAC-2026-0007');
-    expect(numberingExamples(aug29, 'WB')).toEqual({
+describe('settings.utils — numbering examples (SPEC-01 §4.3)', () => {
+  // Le format lui-même est testé une seule fois, avec son formateur
+  // (common/utils/document-number.utils.spec.ts) : ici on vérifie seulement que les exemples
+  // servis au front sortent bien de ce formateur.
+  it('shows the three documents of a project, built by the single formatter', () => {
+    expect(numberingExamples(new Date(Date.UTC(2026, 7, 29, 12)), 'WB')).toEqual({
       quote: 'DEV-2026-241-WB001',
       contract: 'CTR-2026-241-WB001',
       invoice: 'FAC-2026-0001',
