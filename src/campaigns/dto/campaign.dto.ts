@@ -237,17 +237,34 @@ export class CampaignResultRowDto {
   @ApiProperty({ example: 'IN_PROGRESS' })
   salesStatus: string;
 
+  @ApiProperty({
+    enum: ['FULL', 'RESTRICTED'],
+    example: 'FULL',
+    description: 'Geographic access of the caller to this record; RESTRICTED hides lastActivityAt',
+  })
+  access: 'FULL' | 'RESTRICTED';
+
   @ApiProperty({ example: 3, description: 'Activities of the campaign on this record' })
   activities: number;
 
-  @ApiPropertyOptional({ example: '2026-09-02T00:00:00.000Z', nullable: true })
-  lastActivityAt: Date | null;
+  @ApiPropertyOptional({
+    example: '2026-09-02T00:00:00.000Z',
+    nullable: true,
+    description: 'Absent from the payload when access is RESTRICTED',
+  })
+  lastActivityAt?: Date | null;
 }
 
 export class CampaignResultsResponseDto {
-  @ApiProperty({ type: CampaignResultsDto })
+  @ApiProperty({
+    type: CampaignResultsDto,
+    description: 'Computed over the WHOLE campaign, never over the current page',
+  })
   totals: CampaignResultsDto;
 
   @ApiProperty({ type: [CampaignResultRowDto], description: 'One row per targeted record' })
   data: CampaignResultRowDto[];
+
+  @ApiProperty({ type: PaginationMetaDto })
+  meta: PaginationMetaDto;
 }

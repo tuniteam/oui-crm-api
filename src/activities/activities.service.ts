@@ -235,23 +235,31 @@ export class ActivitiesService {
    */
   async agenda(projectId: string, query: AgendaQueryDto, scopeWhere: Record<string, unknown>, user: AuthenticatedUser): Promise<AgendaResponseDto> {
     const kinds = this.parseKinds(query.kinds);
-    if (!kinds.includes('ACTIVITY')) return { data: [] };
+    const { page, limit } = query;
+    if (!kinds.includes('ACTIVITY')) return { data: [], meta: buildPaginationMeta(0, page, limit) };
 
     // An OWN-scoped caller always gets their own agenda, whatever userId says
     const own = (scopeWhere as { userId?: string }).userId;
     const targetUserId = own ?? query.userId;
 
-    const rows = (await this.prisma.activity.findMany({
-      where: {
-        projectId,
-        ...(scopeWhere as Prisma.ActivityWhereInput),
-        ...(targetUserId ? { userId: targetUserId } : {}),
-        date: { gte: parseDayOrThrow(query.from), lte: parseDayOrThrow(query.to) },
-        status: { not: ActivityStatus.CANCELLED },
-      },
-      orderBy: [{ date: 'asc' }, { time: 'asc' }],
-      include: ACTIVITY_REFS,
-    })) as ActivityWithRefs[];
+    const where: Prisma.ActivityWhereInput = {
+      projectId,
+      ...(scopeWhere as Prisma.ActivityWhereInput),
+      ...(targetUserId ? { userId: targetUserId } : {}),
+      date: { gte: parseDayOrThrow(query.from), lte: parseDayOrThrow(query.to) },
+      status: { not: ActivityStatus.CANCELLED },
+    };
+
+    const [total, rows] = (await Promise.all([
+      this.prisma.activity.count({ where }),
+      this.prisma.activity.findMany({
+        where,
+        skip: paginationSkip(page, limit),
+        take: limit,
+        orderBy: [{ date: 'asc' }, { time: 'asc' }],
+        include: ACTIVITY_REFS,
+      }),
+    ])) as [number, ActivityWithRefs[]];
 
     const [labels, users] = await Promise.all([
       loadActivityLabels(this.prisma, projectId, rows),
@@ -271,6 +279,7 @@ export class ActivitiesService {
         status: row.status,
         isLate: row.status === ActivityStatus.PLANNED && row.date < today,
       })),
+      meta: buildPaginationMeta(total, page, limit),
     };
   }
 

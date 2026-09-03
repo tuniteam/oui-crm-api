@@ -293,32 +293,82 @@ export class CampaignsService {
     };
   }
 
-  /** Computed on demand, never stored: activities per record (L2 adds the sales counters). */
-  async results(id: string, projectId: string): Promise<CampaignResultsResponseDto> {
+  /**
+   * Computed on demand, never stored: activities per record (L2 adds the sales counters).
+   *
+   * Same visibility rules as listOrganizations — a NONE role must not discover a record
+   * through this route that the organization list hides from it, and a RESTRICTED role gets
+   * the projected columns only.
+   *
+   * `totals` is deliberately computed over the WHOLE campaign, outside the pagination: a
+   * counter that changes when the reader turns the page would be worse than no counter.
+   */
+  async results(
+    id: string,
+    projectId: string,
+    query: CampaignListQueryDto,
+    user: AuthenticatedUser,
+  ): Promise<CampaignResultsResponseDto> {
     await getCampaignOrThrow(this.prisma, id, projectId);
-    const [links, perOrg] = await Promise.all([
+    const ctx = await loadScopeContext(this.prisma, user, projectId);
+    const { page, limit } = query;
+
+    const where: Prisma.CampaignOrganizationWhereInput = { campaignId: id, organization: { deletedAt: null } };
+    if (this.hidesOutOfScope(ctx)) {
+      const scopeWhere = this.scopeService.whereVisible(ctx) as Prisma.OrganizationWhereInput;
+      if (Object.keys(scopeWhere).length) where.organization = { deletedAt: null, AND: [scopeWhere] };
+    }
+
+    const [total, links, perOrg] = await Promise.all([
+      this.prisma.campaignOrganization.count({ where }),
       this.prisma.campaignOrganization.findMany({
-        where: { campaignId: id, organization: { deletedAt: null } },
-        include: { organization: { select: { id: true, name: true, salesStatus: true, lastActivityAt: true } } },
+        where,
+        skip: paginationSkip(page, limit),
+        take: limit,
         orderBy: { addedAt: 'asc' },
+        include: {
+          organization: {
+            select: {
+              id: true,
+              name: true,
+              salesStatus: true,
+              lastActivityAt: true,
+              department: true,
+              salesRepId: true,
+              consultantId: true,
+              trainerId: true,
+              customerStatus: true,
+            },
+          },
+        },
       }),
+      // Counters of the whole campaign, independent of the page and of the caller scope:
+      // they describe what the campaign produced, not what this reader may see.
       this.prisma.activity.groupBy({
         by: ['organizationId'],
         where: { campaignId: id, organization: { deletedAt: null, campaigns: { some: { campaignId: id } } } },
         _count: { _all: true },
       }),
     ]);
+
     const actsBy = new Map(perOrg.map((a) => [a.organizationId, a._count._all]));
     const totalActivities = perOrg.reduce((sum, a) => sum + a._count._all, 0);
+
     return {
       totals: campaignResults(totalActivities),
-      data: links.map((l) => ({
-        organizationId: l.organization.id,
-        name: l.organization.name,
-        salesStatus: l.organization.salesStatus,
-        activities: actsBy.get(l.organization.id) ?? 0,
-        lastActivityAt: l.organization.lastActivityAt,
-      })),
+      data: links.map((l) => {
+        const access = this.scopeService.access(ctx, l.organization) === 'FULL' ? 'FULL' : 'RESTRICTED';
+        const row = {
+          organizationId: l.organization.id,
+          name: l.organization.name,
+          salesStatus: l.organization.salesStatus,
+          access: access as 'FULL' | 'RESTRICTED',
+          activities: actsBy.get(l.organization.id) ?? 0,
+        };
+        // lastActivityAt is not part of the restricted projection (SPEC-07 US-01-01).
+        return access === 'FULL' ? { ...row, lastActivityAt: l.organization.lastActivityAt } : row;
+      }),
+      meta: buildPaginationMeta(total, page, limit),
     };
   }
 

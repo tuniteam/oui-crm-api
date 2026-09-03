@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { PaginationMetaDto } from '@/common/dto/pagination.dto';
 import { REFERENCE_CATEGORIES } from '@/projects/project-config.constants';
 
 export class ReferenceItemResponseDto {
@@ -30,4 +31,10 @@ export class ReferenceItemResponseDto {
 export class ReferenceItemsListResponseDto {
   @ApiProperty({ type: [ReferenceItemResponseDto], description: 'Sorted by category, order, label' })
   data: ReferenceItemResponseDto[];
+
+  @ApiProperty({
+    type: PaginationMetaDto,
+    description: 'Present even unpaged: total then equals the number of returned rows',
+  })
+  meta: PaginationMetaDto;
 }
