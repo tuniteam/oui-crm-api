@@ -234,6 +234,24 @@ export const ApiMessages = {
       delete: { summary: 'Delete a campaign', description: 'Refused while a geographic scope cites the campaign (D7): detach it first' },
     },
 
+    exports: {
+      tag: 'Exports',
+      organizationsList: {
+        summary: 'Export the organization list',
+        description:
+          'The list filters replayed server-side, CSV or XLSX, synchronous with a hard cap (413 beyond it - narrow the filters); RESTRICTED rows only carry their restricted columns; journalled with the volume',
+      },
+    },
+
+    search: {
+      tag: 'Search',
+      global: {
+        summary: 'Global search',
+        description:
+          'One query, 10 results per type; a type is present only with its read permission - quotes and contracts stay empty until their lots',
+      },
+    },
+
     imports: {
       tag: 'Import',
       territory: {
