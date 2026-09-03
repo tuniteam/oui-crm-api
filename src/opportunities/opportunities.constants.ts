@@ -26,6 +26,12 @@ export const OPEN_STAGES: readonly OpportunityStageCode[] = [
   OpportunityStageCode.VERBAL_AGREEMENT,
 ];
 
+/** Étapes fermées : une opportunité qui les porte a libéré le créneau de sa fiche. */
+export const CLOSED_STAGE_CODES: readonly OpportunityStageCode[] = [
+  OpportunityStageCode.WON,
+  OpportunityStageCode.LOST,
+];
+
 export function isOpenStage(stage: OpportunityStageCode): boolean {
   return OPEN_STAGES.includes(stage);
 }

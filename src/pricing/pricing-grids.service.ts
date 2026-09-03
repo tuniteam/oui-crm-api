@@ -13,7 +13,9 @@ import { PaginationQueryDto, buildPaginationMeta, paginationSkip } from '@/commo
 import { formatDateField, parseDayOrThrow } from '@/common/utils/date.utils';
 import { userRef } from '@/common/utils/user.utils';
 import { PrismaService } from '@/prisma/prisma.service';
+import { recomputeDraftQuotes } from '@/quotes/quotes.utils';
 import { PRICING_AUDIT } from './pricing.constants';
+import { PricingService } from './pricing.service';
 import { PricingGridContent } from './pricing.types';
 import { validateGridContent } from './pricing.utils';
 import {
@@ -37,6 +39,7 @@ type GridRow = {
 export class PricingGridsService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly pricing: PricingService,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -145,16 +148,34 @@ export class PricingGridsService {
 
     if (grid.active) return this.toDetail(projectId, grid, grid.content);
 
+    const settings = await this.prisma.settings.findUnique({
+      where: { projectId },
+      select: { vatRate: true },
+    });
+
     await this.prisma.$transaction(async (tx) => {
       await tx.pricingGrid.updateMany({ where: { projectId, active: true }, data: { active: false } });
       await tx.pricingGrid.update({ where: { id }, data: { active: true } });
+
+      // Les brouillons suivent la nouvelle grille : leur détail était déjà recalculé à la
+      // lecture, ce sont leurs montants de liste — ceux qui se trient et se filtrent — qu'on
+      // remet d'aplomb ici. Les devis soumis gardent leur version figée.
+      const recomputed = await recomputeDraftQuotes(
+        tx,
+        this.pricing,
+        projectId,
+        grid.content as unknown as PricingGridContent,
+        id,
+        Number(settings?.vatRate ?? 0),
+      );
+
       await this.audit.log(tx, {
         projectId,
         userId: user.id,
         action: PRICING_AUDIT.GRID_ACTIVATE,
         objectType: AUDIT_OBJECTS.PRICING_GRID,
         objectId: id,
-        metadata: { version: grid.version },
+        metadata: { version: grid.version, draftsRecomputed: recomputed },
       });
     });
 

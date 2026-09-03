@@ -171,6 +171,13 @@ const errorDefinitions = {
     `${stage} is set by a quote being signed or refused, or by the lose route — never by a stage change`,
   OPPORTUNITY_HAS_QUOTES: (count: string) => `Opportunity carries ${count} quote(s) and cannot be deleted`,
 
+  // Quotes (L2 phase E — US-02-02, US-02-03)
+  QUOTE_NOT_FOUND: (id: string) => `Quote ${id} not found`,
+  QUOTE_NOT_EDITABLE: (status: string) => `Quote is ${status}: only a draft can be edited`,
+  QUOTE_NOT_DELETABLE: (status: string) => `Quote is ${status}: only a draft can be deleted`,
+  QUOTE_SETUP_INVALID: (key: string) => `Setup entry ${key} must carry a boolean "included"`,
+  QUOTE_OPPORTUNITY_MISMATCH: (id: string) => `Opportunity ${id} does not belong to that organization`,
+
 } as const;
 
 type ErrorKey = keyof typeof errorDefinitions;
@@ -252,6 +259,34 @@ export const ApiMessages = {
       listOrganizations: { summary: 'List the frozen target', description: 'Same visibility rules as the organization list' },
       results: { summary: 'Campaign results', description: 'Computed on demand, never stored; only activities are counted at L1' },
       delete: { summary: 'Delete a campaign', description: 'Refused while a geographic scope cites the campaign (D7): detach it first' },
+    },
+
+    quotes: {
+      tag: 'Quotes',
+      simulate: {
+        summary: 'Simulate a quote',
+        description:
+          'The configurator call: lines, MRR, one-shot fees, first year and the four-year projection, computed server-side and nothing stored. The only implementation of the pricing rules — never replay them in the browser',
+      },
+      list: {
+        summary: 'List quotes',
+        description: 'Newest issue date first, with the cached amounts; a sales rep granted OWN only sees their own',
+      },
+      get: {
+        summary: 'Get a quote',
+        description:
+          'Detail with its configuration, the full result, its lines, its documents and the status history rebuilt from the journal. A draft is recomputed from the active grid; a submitted quote is served from its frozen lines',
+      },
+      create: {
+        summary: 'Create a draft',
+        description:
+          'The number is assigned here and never reused; the quote attaches to the open opportunity of the record, created if there is none. Refused before numbering when the record cannot be quoted',
+      },
+      update: {
+        summary: 'Update a draft',
+        description: 'Configuration, start date and type; the amounts are recomputed. A submitted quote is refused (409)',
+      },
+      delete: { summary: 'Delete a draft', description: 'Only a draft; a submitted quote stays (409)' },
     },
 
     opportunities: {
@@ -426,6 +461,7 @@ export const ApiMessages = {
       campaignId: 'Campaign unique identifier (CUID)',
       pricingGridId: 'Pricing grid version unique identifier (CUID)',
       opportunityId: 'Opportunity unique identifier (CUID)',
+      quoteId: 'Quote unique identifier (CUID)',
       importBatchId: 'Import batch unique identifier (CUID)',
     },
 
