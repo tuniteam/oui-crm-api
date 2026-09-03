@@ -24,6 +24,8 @@ import { ContactsModule } from './contacts/contacts.module';
 import { ActivitiesModule } from './activities/activities.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { ImportModule } from './import/import.module';
+import { ExportsModule } from './exports/exports.module';
+import { SearchModule } from './search/search.module';
 import { SettingsModule } from './settings/settings.module';
 import { ReferenceItemsModule } from './reference-items/reference-items.module';
 
@@ -48,6 +50,8 @@ import { ReferenceItemsModule } from './reference-items/reference-items.module';
     ActivitiesModule,
     CampaignsModule,
     ImportModule,
+    ExportsModule,
+    SearchModule,
     SettingsModule,
     ReferenceItemsModule,
     HealthModule,
