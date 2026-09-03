@@ -117,6 +117,13 @@ export class AgendaResponseDto {
   data: AgendaItemDto[];
 
   @ApiProperty({
+    example: { ACTIVITY: 14, TRAINING: 0, CONTRACT_END: 0, QUOTE_EXPIRY: 3 },
+    description:
+      'How many slots each kind holds over the window and its filters, computed BEFORE the kinds filter: a badge that falls to zero when its layer is switched off would say nothing about what lies behind it. Kinds whose source arrives with a later lot are served at 0',
+  })
+  counts: Record<AgendaKind, number>;
+
+  @ApiProperty({
     type: PaginationMetaDto,
     description: 'The default limit covers a whole month; a heavier month is paged, never truncated',
   })
