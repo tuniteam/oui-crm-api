@@ -3,7 +3,8 @@ import { Prisma } from '@prisma/client';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { findPermission } from '@/auth/utils/permissions.util';
 import { ScopeService } from '@/scopes/scope.service';
-import { loadScopeContext } from '@/scopes/scopes.utils';
+import { hydrateCampaignMembership, loadScopeContext, mergeVisibilityWhere } from '@/scopes/scopes.utils';
+import { organizationSearchOr } from '@/organizations/organizations.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { SearchContactDto, SearchOrgDto, SearchResponseDto } from './dto/search.dto';
 import { SEARCH_LIMIT } from './search.constants';
@@ -43,24 +44,15 @@ export class SearchService {
     term: string,
     ctx: Awaited<ReturnType<typeof loadScopeContext>>,
   ): Promise<SearchOrgDto[]> {
-    const where: Prisma.OrganizationWhereInput = {
-      projectId,
-      deletedAt: null,
-      OR: [
-        { name: { contains: term, mode: 'insensitive' } },
-        { city: { contains: term, mode: 'insensitive' } },
-        { siret: { contains: term.replace(/\s/g, '') } },
-      ],
-    };
-    if (ctx.outOfScopeAccess === 'NONE') {
-      const scopeWhere = this.scopeService.whereVisible(ctx);
-      if (Object.keys(scopeWhere).length) where.AND = [scopeWhere];
-    }
+    // The one search fragment, shared with the list (US-01-01) — same fields, same SIRET rule
+    const where: Prisma.OrganizationWhereInput = { projectId, deletedAt: null, OR: organizationSearchOr(term) };
+    mergeVisibilityWhere(where, ctx, this.scopeService);
     const rows = await this.prisma.organization.findMany({
       where,
       orderBy: { name: 'asc' },
       take: SEARCH_LIMIT,
     });
+    await hydrateCampaignMembership(this.prisma, ctx, rows);
     return rows.map((row) => this.toOrgRef(row, this.scopeService.access(ctx, row) as 'FULL' | 'RESTRICTED'));
   }
 
@@ -73,7 +65,9 @@ export class SearchService {
       where: {
         projectId,
         deletedAt: null,
-        organization: { deletedAt: null },
+        // A contact lives behind FULL access only (US-01-04): pushed into SQL so the limit
+        // never eats in-scope results (closure review L1)
+        organization: { deletedAt: null, ...(this.scopeService.whereFullAccess(ctx) as Prisma.OrganizationWhereInput) },
         OR: [
           { firstName: { contains: term, mode: 'insensitive' } },
           { lastName: { contains: term, mode: 'insensitive' } },
@@ -82,13 +76,9 @@ export class SearchService {
       },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
       include: { organization: true },
-      // A contact lives behind FULL access only: fetch wider, filter by scope, then cut
-      take: SEARCH_LIMIT * 3,
+      take: SEARCH_LIMIT,
     });
-    return rows
-      .filter((c) => this.scopeService.access(ctx, c.organization) === 'FULL')
-      .slice(0, SEARCH_LIMIT)
-      .map((c) => ({
+    return rows.map((c) => ({
         id: c.id,
         firstName: c.firstName,
         lastName: c.lastName,

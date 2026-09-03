@@ -6,6 +6,7 @@ import { CustomerStatus, Organization, Prisma, PrismaClient, Priority, Relations
 import { apiError } from '@/common/api-error';
 import { resolveDepartments } from '@/scopes/geo.constants';
 import { ScopeContext, ScopeService } from '@/scopes/scope.service';
+import { hydrateCampaignMembership } from '@/scopes/scopes.utils';
 import {
   COMPLETENESS_FIELDS,
   CONTRACT_BLOCKING_FIELDS,
@@ -140,7 +141,7 @@ export async function findPossibleDuplicates(
       projectId,
       deletedAt: null,
       postalCode,
-      name: { equals: name, mode: 'insensitive' },
+      name: { equals: name.trim(), mode: 'insensitive' },
     },
     select: { id: true, name: true, city: true },
     take: DUPLICATE_CHECK_LIMIT,
@@ -165,6 +166,22 @@ export interface OrganizationFilters {
 }
 
 /**
+ * The one definition of "search an organization by text" (US-01-01 list AND US-01-12 global
+ * search — closure review L1): name, city, and SIRET when the input is numeric.
+ */
+export function organizationSearchOr(rawSearch: string): Prisma.OrganizationWhereInput[] {
+  const search = rawSearch.trim();
+  const digits = search.replace(/\s/g, '');
+  const or: Prisma.OrganizationWhereInput[] = [
+    { name: { contains: search, mode: 'insensitive' } },
+    { city: { contains: search, mode: 'insensitive' } },
+  ];
+  // A SIRET is 14 digits: only a numeric input can match one.
+  if (/^[0-9]+$/.test(digits)) or.push({ siret: { startsWith: digits } });
+  return or;
+}
+
+/**
  * Filters of the list, ANDed with the scope fragment by the service. The search covers name,
  * city and SIRET — trigram indexes back the first two (US-01-01).
  */
@@ -176,15 +193,7 @@ export function buildOrganizationWhere(
   const and: Prisma.OrganizationWhereInput[] = [];
 
   if (filters.search) {
-    const search = filters.search.trim();
-    const digits = search.replace(/\s/g, '');
-    const or: Prisma.OrganizationWhereInput[] = [
-      { name: { contains: search, mode: 'insensitive' } },
-      { city: { contains: search, mode: 'insensitive' } },
-    ];
-    // A SIRET is 14 digits: only a numeric input can match one.
-    if (/^[0-9]+$/.test(digits)) or.push({ siret: { startsWith: digits } });
-    and.push({ OR: or });
+    and.push({ OR: organizationSearchOr(filters.search) });
   }
 
   // A region is a set of departments: pushed down to SQL, never filtered in memory.
@@ -288,13 +297,17 @@ export async function assertAssigneesAreMembers(db: ValidatorDb, projectId: stri
  * purpose: a NONE caller must not learn that the record exists (404), while a RESTRICTED
  * caller already sees it in its list and deserves a real answer (403). Shared with contacts.
  */
-export function assertFullOrganizationAccess(
+export async function assertFullOrganizationAccess(
+  db: Db,
   scopeService: ScopeService,
   ctx: ScopeContext,
   organization: Organization,
   id: string,
-): void {
-  const access = scopeService.access(ctx, organization);
+): Promise<void> {
+  // Campaign-scoped contexts judge membership the row does not carry (closure review L1)
+  const scoped = organization as Organization & { campaignIds?: string[] };
+  await hydrateCampaignMembership(db as never, ctx, [scoped]);
+  const access = scopeService.access(ctx, scoped);
   if (access === 'FULL') return;
   if (access === 'RESTRICTED') throw apiError.forbidden('ACCESS_DENIED');
   throw apiError.notFound('ORGANIZATION_NOT_FOUND', id);

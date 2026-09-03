@@ -1,9 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import { IsString, MinLength } from 'class-validator';
 import { SEARCH_MIN_LENGTH } from '../search.constants';
 
 export class SearchQueryDto {
   @ApiProperty({ example: 'joigny', description: `At least ${SEARCH_MIN_LENGTH} characters` })
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @MinLength(SEARCH_MIN_LENGTH)
   q: string;

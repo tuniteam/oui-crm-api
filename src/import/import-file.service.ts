@@ -125,7 +125,13 @@ export class ImportFileService {
       data: { projectId, profile, status: 'APPLIED', totals: {}, createdBy: user.id },
       select: { id: true },
     });
-    await prepared.apply(batch.id, user);
+    try {
+      await prepared.apply(batch.id, user);
+    } catch (err) {
+      // Never strand an APPLIED batch that owns nothing (closure review L1)
+      await this.prisma.importBatch.delete({ where: { id: batch.id } }).catch(() => undefined);
+      throw err;
+    }
 
     const report = prepared.report.build(false, batch.id);
     await this.prisma.importBatch.update({
@@ -200,10 +206,14 @@ export class ImportFileService {
 
   /** GENERIC = commercial base; PROJECT_CONFIG = configuration (all three permissions). */
   private assertProfileAllowed(projectId: string, profile: ImportProfile, user: AuthenticatedUser): void {
-    const required =
-      profile === ImportProfile.PROJECT_CONFIG
-        ? ['settings:update', 'references:update', 'scopes:update']
-        : ['organizations:import']; // GENERIC and the OUICRM_V2_1 takeover write the commercial base
+    // Exhaustive on purpose: an unlisted profile must fail loudly, never inherit a permission
+    const PROFILE_PERMISSIONS: Record<string, string[]> = {
+      [ImportProfile.GENERIC]: ['organizations:import'],
+      [ImportProfile.OUICRM_V2_1]: ['organizations:import'],
+      [ImportProfile.PROJECT_CONFIG]: ['settings:update', 'references:update', 'scopes:update'],
+    };
+    const required = PROFILE_PERMISSIONS[profile];
+    if (!required) throw apiError.badRequest('IMPORT_PROFILE_UNSUPPORTED', profile);
     for (const code of required) {
       if (!findPermission(user, projectId, code)) throw apiError.forbidden('ACCESS_DENIED');
     }

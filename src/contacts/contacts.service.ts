@@ -115,9 +115,9 @@ export class ContactsService {
     return organization;
   }
 
-  private async assertFullAccess(organization: Parameters<typeof assertFullOrganizationAccess>[2], projectId: string, user: AuthenticatedUser): Promise<void> {
+  private async assertFullAccess(organization: Parameters<typeof assertFullOrganizationAccess>[3], projectId: string, user: AuthenticatedUser): Promise<void> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
-    assertFullOrganizationAccess(this.scopeService, ctx, organization, organization.id);
+    await assertFullOrganizationAccess(this.prisma, this.scopeService, ctx, organization, organization.id);
   }
 
   /** "The new one replaces the previous one" (SPEC-07): demotion and promotion share the transaction. */

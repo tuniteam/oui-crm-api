@@ -82,7 +82,7 @@ export class ActivitiesService {
   async create(projectId: string, dto: CreateActivityDto, user: AuthenticatedUser): Promise<ActivityDto> {
     const organization = await getOrganizationOrThrow(this.prisma, dto.organizationId, projectId);
     const ctx = await loadScopeContext(this.prisma, user, projectId);
-    assertFullOrganizationAccess(this.scopeService, ctx, organization, organization.id);
+    await assertFullOrganizationAccess(this.prisma, this.scopeService, ctx, organization, organization.id);
     const type = await getActivityTypeOrThrow(this.prisma, projectId, dto.type);
     await this.assertContactOfOrganization(dto.contactId, dto.organizationId);
     await this.assertCampaignOfProject(dto.campaignId, projectId);

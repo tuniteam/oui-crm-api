@@ -20,9 +20,10 @@ describe('departmentOfInsee', () => {
     expect(departmentOfInsee('2B033')).toBe('2B');
   });
 
-  it('uses three characters overseas', () => {
+  it('uses three characters overseas, 98x collectivities included (one shared rule)', () => {
     expect(departmentOfInsee('97105')).toBe('971');
     expect(departmentOfInsee('97613')).toBe('976');
+    expect(departmentOfInsee('98735')).toBe('987');
   });
 });
 

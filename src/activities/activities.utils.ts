@@ -1,7 +1,8 @@
 import { Activity, ActivityStatus, Campaign, Contact, Organization, Prisma, PrismaClient } from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { REFERENCE_CATEGORIES } from '@/common/messages';
-import { endOfDayUtc, formatDateField, toDate } from '@/common/utils/date.utils';
+import { endOfDayUtc,
+  parseDayOrThrow, formatDateField, toDate } from '@/common/utils/date.utils';
 import { fullName } from '@/common/utils/user.utils';
 import { UserWithInitials } from '@/audit-log/audit-log-labels';
 import { ReferenceRefDto, UserRefDto } from '@/organizations/dto';
@@ -53,8 +54,9 @@ export function buildActivityWhere(
   scopeWhere: Record<string, unknown>,
 ): Prisma.ActivityWhereInput {
   const date: Prisma.DateTimeFilter = {};
-  if (filters.from) date.gte = toDate(filters.from);
-  if (filters.to) date.lte = endOfDayUtc(toDate(filters.to));
+  // Strict calendar days, like the agenda: 2026-02-30 is a 400, never an Invalid Date 500
+  if (filters.from) date.gte = parseDayOrThrow(filters.from);
+  if (filters.to) date.lte = endOfDayUtc(parseDayOrThrow(filters.to));
   return {
     projectId,
     ...(scopeWhere as Prisma.ActivityWhereInput),

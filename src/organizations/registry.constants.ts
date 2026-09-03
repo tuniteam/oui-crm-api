@@ -1,3 +1,4 @@
+import { SIRET_PATTERN } from './organizations.constants';
 // ============================================
 // OUI-CRM - Official company registry (US-01-02, SPEC-13 D1)
 // Two sources behind one endpoint: full-text name search on the open
@@ -16,7 +17,7 @@ export const REGISTRY = {
   /** Same timeout as soft-m insee-api. */
   TIMEOUT_MS: 5_000,
   MAX_RESULTS: 10,
-  SIRET_PATTERN: /^\d{14}$/,
+  SIRET_PATTERN,
   /** Below this length a name search is noise. */
   MIN_QUERY_LENGTH: 3,
   SIRENE_KEY_HEADER: 'X-INSEE-Api-Key-Integration',

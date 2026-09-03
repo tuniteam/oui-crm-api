@@ -51,8 +51,9 @@ export class CampaignsService {
     ]);
     const ids = rows.map((c) => c.id);
     const [orgCounts, activityCounts, owners] = await Promise.all([
-      this.prisma.campaignOrganization.groupBy({ by: ['campaignId'], where: { campaignId: { in: ids } }, _count: { _all: true } }),
-      this.prisma.activity.groupBy({ by: ['campaignId'], where: { campaignId: { in: ids } }, _count: { _all: true } }),
+      this.prisma.campaignOrganization.groupBy({ by: ['campaignId'], where: { campaignId: { in: ids }, organization: { deletedAt: null } }, _count: { _all: true } }),
+      // Correlated per campaign: only activities of records still targeted and alive count
+      Promise.all(ids.map((cid) => this.countCampaignActivities(cid).then((n) => ({ campaignId: cid, _count: { _all: n } })))),
       loadUsersWithInitials(this.prisma, projectId, [...new Set(rows.map((c) => c.ownerId).filter((id): id is string => !!id))]),
     ]);
     const orgsBy = new Map(orgCounts.map((c) => [c.campaignId, c._count._all]));
@@ -107,7 +108,11 @@ export class CampaignsService {
     const existing = await getCampaignOrThrow(this.prisma, id, projectId);
     if (dto.ownerId) await assertAssigneesAreMembers(this.prisma, projectId, { salesRepId: dto.ownerId });
     const period = parseCampaignPeriod(dto.startDate, dto.endDate);
-    assertPeriodValid(period.startDate ?? existing.startDate, period.endDate ?? existing.endDate);
+    // Validate the FINAL state: an explicit null clears a bound (closure review L1)
+    assertPeriodValid(
+      'startDate' in period ? (period.startDate ?? null) : existing.startDate,
+      'endDate' in period ? (period.endDate ?? null) : existing.endDate,
+    );
 
     try {
       await this.prisma.$transaction(async (tx) => {
@@ -297,7 +302,11 @@ export class CampaignsService {
         include: { organization: { select: { id: true, name: true, salesStatus: true, lastActivityAt: true } } },
         orderBy: { addedAt: 'asc' },
       }),
-      this.prisma.activity.groupBy({ by: ['organizationId'], where: { campaignId: id }, _count: { _all: true } }),
+      this.prisma.activity.groupBy({
+        by: ['organizationId'],
+        where: { campaignId: id, organization: { deletedAt: null, campaigns: { some: { campaignId: id } } } },
+        _count: { _all: true },
+      }),
     ]);
     const actsBy = new Map(perOrg.map((a) => [a.organizationId, a._count._all]));
     const totalActivities = perOrg.reduce((sum, a) => sum + a._count._all, 0);
@@ -319,10 +328,17 @@ export class CampaignsService {
     const campaign = await getCampaignOrThrow(this.prisma, id, projectId);
     const [orgCount, activities, owners] = await Promise.all([
       this.prisma.campaignOrganization.count({ where: { campaignId: id } }),
-      this.prisma.activity.count({ where: { campaignId: id } }),
+      this.countCampaignActivities(id),
       campaign.ownerId ? loadUsersWithInitials(this.prisma, projectId, [campaign.ownerId]) : new Map(),
     ]);
     return mapToCampaign(campaign, campaign.ownerId ? owners.get(campaign.ownerId) : undefined, orgCount, activities);
+  }
+
+  /** Activities of records still targeted and alive — totals always equal the sum of rows. */
+  private countCampaignActivities(campaignId: string): Promise<number> {
+    return this.prisma.activity.count({
+      where: { campaignId, organization: { deletedAt: null, campaigns: { some: { campaignId } } } },
+    });
   }
 
   private hidesOutOfScope(ctx: ScopeContext): boolean {

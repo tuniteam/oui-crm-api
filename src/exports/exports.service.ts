@@ -11,7 +11,7 @@ import { ORGANIZATION_REFS } from '@/organizations/organizations.mapper';
 import { buildOrganizationWhere, loadActiveBrackets } from '@/organizations/organizations.utils';
 import { BulkFiltersDto } from '@/organizations/dto';
 import { ScopeService } from '@/scopes/scope.service';
-import { loadScopeContext } from '@/scopes/scopes.utils';
+import { hydrateCampaignMembership, loadScopeContext, mergeVisibilityWhere } from '@/scopes/scopes.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ExportOrganizationsDto } from './dto/export-organizations.dto';
 import { EXPORT_AUDIT, EXPORT_COLUMNS, EXPORT_MAX_ROWS, ExportColumnKey } from './exports.constants';
@@ -40,12 +40,7 @@ export class ExportsService {
   ): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const where: Prisma.OrganizationWhereInput = buildOrganizationWhere(projectId, (dto.filters ?? {}) as BulkFiltersDto);
-    if (ctx.outOfScopeAccess === 'NONE') {
-      const scopeWhere = this.scopeService.whereVisible(ctx);
-      if (Object.keys(scopeWhere).length) {
-        where.AND = [...(Array.isArray(where.AND) ? where.AND : []), scopeWhere];
-      }
-    }
+    mergeVisibilityWhere(where, ctx, this.scopeService);
 
     const total = await this.prisma.organization.count({ where });
     if (total > EXPORT_MAX_ROWS) throw apiError.payloadTooLarge('EXPORT_TOO_LARGE', EXPORT_MAX_ROWS);
@@ -54,6 +49,7 @@ export class ExportsService {
       this.prisma.organization.findMany({ where, orderBy: { name: 'asc' }, include: ORGANIZATION_REFS }),
       loadActiveBrackets(this.prisma, projectId),
     ]);
+    await hydrateCampaignMembership(this.prisma, ctx, rows);
 
     const keys: readonly ExportColumnKey[] = dto.columns?.length
       ? dto.columns

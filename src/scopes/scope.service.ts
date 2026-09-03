@@ -60,6 +60,17 @@ export class ScopeService {
   }
 
   /**
+   * Closure review L1 — the FULL-access predicate as a where fragment (inside the scope, or
+   * unrestricted): lets contact-level reads (search) push the US-01-04 rule into SQL instead
+   * of over-fetching and filtering in memory.
+   */
+  whereFullAccess(ctx: ScopeContext): Record<string, unknown> {
+    if (this.isUnrestricted(ctx)) return {};
+    const criteria = this.criteria(ctx);
+    return criteria.length === 1 ? criteria[0] : { AND: criteria };
+  }
+
+  /**
    * FULL: inside the scope (or unrestricted); RESTRICTED / NONE: outside the scope, per the
    * role's outOfScopeAccess. Evaluated BEFORE loading the full entity (NONE → 404).
    */

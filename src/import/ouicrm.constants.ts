@@ -9,7 +9,6 @@ export const OUICRM = {
   /** Sheet names are matched after stripping emojis and trimming. */
   LEADS_SHEET: 'LEADS',
   PIPELINE_SHEET: 'PIPELINE OPPORTUNITÉS',
-  PARAMS_SHEET: 'PARAMÈTRES',
   /** Row 5 = headers, row 6 = field-type row, data starts at row 7 (SPEC-05 §1). */
   LEADS_DATA_START: 7,
   /** Q1 (31/08/2026): default sales rep of the Leads = Wiem Bousaid, matched by initials. */

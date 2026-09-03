@@ -86,6 +86,15 @@ describe('toCsv', () => {
     expect(csv).toContain('Nom;Ville\r\nJoigny;Joigny\r\n');
   });
 
+  it('neutralizes formula-leading cells — CSV injection (closure review L1)', () => {
+    const csv = toCsv(['A'], [['=HYPERLINK("http://evil")'], ['+33 1 00'], ['-2'], ['@x'], ['safe']]);
+    expect(csv).toContain("'=HYPERLINK");
+    expect(csv).toContain("'+33 1 00");
+    expect(csv).toContain("'-2");
+    expect(csv).toContain("'@x");
+    expect(csv).toContain('safe');
+  });
+
   it('quotes cells holding separators, quotes or line breaks', () => {
     const csv = toCsv(['A'], [['a;b'], ['dit "oui"'], ['ligne\nsuite']]);
     expect(csv).toContain('"a;b"');

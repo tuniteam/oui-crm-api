@@ -65,45 +65,65 @@ export function cellText(value: ExcelJS.CellValue): string {
   return '';
 }
 
-/** Minimal CSV reader (comma or semicolon, double-quote escaping) for the single-sheet GENERIC case. */
+/**
+ * CSV reader for the single-sheet GENERIC case — comma or semicolon, double-quote escaping,
+ * and RFC 4180 line breaks INSIDE quoted cells (closure review L1: our own exports produce
+ * them). Row numbers count physical lines, like Excel shows them.
+ */
 export function csvToRows(content: string): SheetRow[] {
-  const lines = content.replace(/^﻿/, '').split(/\r?\n/);
-  const first = lines[0] ?? '';
-  const sep = (first.match(/;/g)?.length ?? 0) > (first.match(/,/g)?.length ?? 0) ? ';' : ',';
-  const parse = (line: string): string[] => {
-    const out: string[] = [];
-    let cur = '';
-    let quoted = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (quoted) {
-        if (c === '"' && line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else if (c === '"') quoted = false;
-        else cur += c;
-      } else if (c === '"') quoted = true;
-      else if (c === sep) {
-        out.push(cur);
-        cur = '';
-      } else cur += c;
-    }
-    out.push(cur);
-    return out;
-  };
+  const text = content.replace(/^﻿/, '');
+  const firstLine = text.split(/\r?\n/, 1)[0] ?? '';
+  const sep = (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ';' : ',';
 
-  const headers = parse(first).map((h) => h.trim());
-  const rows: SheetRow[] = [];
-  lines.forEach((line, index) => {
-    if (index === 0 || !line.trim()) return;
-    const values = parse(line);
-    const cells: Record<string, string> = {};
+  // One stateful pass over the whole text: quotes survive line breaks
+  const records: { line: number; cells: string[] }[] = [];
+  let cells: string[] = [];
+  let cur = '';
+  let quoted = false;
+  let line = 1;
+  let recordLine = 1;
+  const endCell = (): void => {
+    cells.push(cur);
+    cur = '';
+  };
+  const endRecord = (): void => {
+    endCell();
+    if (cells.some((c) => c.trim() !== '')) records.push({ line: recordLine, cells });
+    cells = [];
+    recordLine = line;
+  };
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quoted) {
+      if (c === '"' && text[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (c === '"') quoted = false;
+      else {
+        if (c === '\n') line++;
+        cur += c;
+      }
+    } else if (c === '"') quoted = true;
+    else if (c === sep) endCell();
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && text[i + 1] === '\n') i++;
+      line++;
+      endRecord();
+      recordLine = line;
+    } else cur += c;
+  }
+  if (cur !== '' || cells.length) endRecord();
+
+  const header = records.shift();
+  if (!header) return [];
+  const headers = header.cells.map((h) => h.trim());
+  return records.map((record) => {
+    const out: Record<string, string> = {};
     headers.forEach((h, i) => {
-      if (h) cells[h] = (values[i] ?? '').trim();
+      if (h) out[h] = (record.cells[i] ?? '').trim();
     });
-    rows.push({ row: index + 1, cells });
+    return { row: record.line, cells: out };
   });
-  return rows;
 }
 
 /** `tags` / `services` / `regions` / `departments` cells: pipe-separated, blanks dropped. */
@@ -133,6 +153,24 @@ export function normalizeOrgKey(department: string, name: string): string {
     .replace(/\s+/g, ' ')
     .trim();
   return `${department}::${flat}`;
+}
+
+/** Active referential keys by category — the ONE loader every import profile validates against. */
+export async function loadReferenceKeys(
+  db: { referenceItem: { findMany: (args: unknown) => Promise<{ category: string; key: string }[]> } },
+  projectId: string,
+  categories?: readonly string[],
+): Promise<Map<string, Set<string>>> {
+  const rows = await db.referenceItem.findMany({
+    where: { projectId, active: true, ...(categories?.length ? { category: { in: [...categories] } } : {}) },
+    select: { category: true, key: true },
+  });
+  const map = new Map<string, Set<string>>();
+  for (const r of rows) {
+    if (!map.has(r.category)) map.set(r.category, new Set());
+    map.get(r.category)!.add(r.key);
+  }
+  return map;
 }
 
 /** Accumulates rows into the report shape; totals are derived, never counted twice. */

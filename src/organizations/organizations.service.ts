@@ -12,8 +12,9 @@ import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto
 import { parseDayOrThrow } from '@/common/utils/date.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { findPermission } from '@/auth/utils/permissions.util';
+import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { ScopeAccess, ScopeContext, ScopeService } from '@/scopes/scope.service';
-import { loadScopeContext } from '@/scopes/scopes.utils';
+import { hydrateCampaignMembership, loadScopeContext, mergeVisibilityWhere } from '@/scopes/scopes.utils';
 import {
   BoardItemDto,
   BulkActionDto,
@@ -73,12 +74,7 @@ export class OrganizationsService {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
 
     const where: Prisma.OrganizationWhereInput = buildOrganizationWhere(projectId, filters);
-    if (this.hidesOutOfScope(ctx)) {
-      const scopeWhere = this.scopeService.whereVisible(ctx);
-      if (Object.keys(scopeWhere).length) {
-        where.AND = [...(Array.isArray(where.AND) ? where.AND : []), scopeWhere];
-      }
-    }
+    mergeVisibilityWhere(where, ctx, this.scopeService);
 
     const [total, rows, brackets] = await Promise.all([
       this.prisma.organization.count({ where }),
@@ -91,6 +87,7 @@ export class OrganizationsService {
       }),
       loadActiveBrackets(this.prisma, projectId),
     ]);
+    await hydrateCampaignMembership(this.prisma, ctx, rows);
 
     // One extra query for the whole page rather than one per row: which records have a
     // primary contact, the only completeness criterion that does not live on the row.
@@ -143,7 +140,21 @@ export class OrganizationsService {
     const where: Prisma.OrganizationWhereInput = dto.selectAll
       ? buildOrganizationWhere(projectId, dto.filters ?? {})
       : { projectId, deletedAt: null, id: { in: dto.ids } };
-    const candidates = await this.prisma.organization.findMany({ where });
+    const candidates = await this.prisma.organization.findMany({
+      where,
+      // Only what access classification, the actions and their audits read — never the wide row
+      select: {
+        id: true,
+        name: true,
+        department: true,
+        salesStatus: true,
+        customerStatus: true,
+        salesRepId: true,
+        consultantId: true,
+        trainerId: true,
+      },
+    });
+    await hydrateCampaignMembership(this.prisma, ctx, candidates);
 
     // Mass actions are granted OWN to sales reps (SPEC-06): unit updates reach the whole
     // geographic scope, bulk only the caller's own portfolio.
@@ -192,7 +203,7 @@ export class OrganizationsService {
     tx: Prisma.TransactionClient,
     projectId: string,
     dto: BulkActionDto,
-    eligible: Organization[],
+    eligible: Pick<Organization, 'id' | 'name' | 'salesStatus'>[],
     user: AuthenticatedUser,
   ): Promise<number> {
     const ids = eligible.map((o) => o.id);
@@ -270,10 +281,7 @@ export class OrganizationsService {
   async board(projectId: string, user: AuthenticatedUser): Promise<BoardResponseDto> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const base: Prisma.OrganizationWhereInput = { projectId, deletedAt: null };
-    if (this.hidesOutOfScope(ctx)) {
-      const scopeWhere = this.scopeService.whereVisible(ctx);
-      if (Object.keys(scopeWhere).length) base.AND = [scopeWhere];
-    }
+    mergeVisibilityWhere(base, ctx, this.scopeService);
 
     const columns = await Promise.all(
       BOARD_COLUMNS.map(async (salesStatus) => {
@@ -287,6 +295,7 @@ export class OrganizationsService {
             include: ORGANIZATION_REFS,
           }),
         ]);
+        await hydrateCampaignMembership(this.prisma, ctx, rows);
         return {
           salesStatus,
           count,
@@ -311,7 +320,7 @@ export class OrganizationsService {
   ): Promise<ChangeSalesStatusResponseDto> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const organization = await getOrganizationOrThrow(this.prisma, id, projectId);
-    this.assertWritable(ctx, organization, id);
+    await this.assertWritable(ctx, organization, id);
     if (organization.salesStatus === dto.salesStatus) {
       throw apiError.conflict('ORGANIZATION_INVALID_TRANSITION', organization.salesStatus);
     }
@@ -364,11 +373,18 @@ export class OrganizationsService {
       include: ORGANIZATION_REFS,
     });
     if (!organization) throw apiError.notFound('ORGANIZATION_NOT_FOUND', id);
+    await hydrateCampaignMembership(this.prisma, ctx, [organization]);
 
     const access = this.accessOf(ctx, organization);
     if (access === 'NONE') throw apiError.notFound('ORGANIZATION_NOT_FOUND', id);
     if (access === 'RESTRICTED') return mapToListItem(organization, access);
 
+    return this.fullDetail(organization, projectId);
+  }
+
+  /** The FULL-access detail payload, shared by findOne and the update echo. */
+  private async fullDetail(organization: OrganizationWithRefs, projectId: string): Promise<OrganizationDetailDto> {
+    const id = organization.id;
     const [contacts, activities, hasPrimaryContact] = await Promise.all([
       this.prisma.contact.count({ where: { organizationId: id, deletedAt: null } }),
       this.prisma.activity.count({ where: { organizationId: id } }),
@@ -410,7 +426,8 @@ export class OrganizationsService {
       }
     }
 
-    const organization = await this.prisma.$transaction(async (tx) => {
+    const organization = await this.runMappingUniqueRaces(() =>
+      this.prisma.$transaction(async (tx) => {
       const created = await tx.organization.create({
         data: {
           ...data,
@@ -430,7 +447,8 @@ export class OrganizationsService {
         metadata: { name: created.name, type: created.type, department: created.department },
       });
       return created;
-    });
+      }),
+    );
 
     const refreshed = await this.prisma.organization.findUniqueOrThrow({
       where: { id: organization.id },
@@ -451,17 +469,19 @@ export class OrganizationsService {
     if (Object.keys(dto).length === 0) throw apiError.badRequest('EMPTY_UPDATE_PAYLOAD');
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const existing = await getOrganizationOrThrow(this.prisma, id, projectId);
-    this.assertWritable(ctx, existing, id);
+    await this.assertWritable(ctx, existing, id);
 
     const { goLiveTarget, ...data } = dto;
     await assertReferencesKnown(this.prisma, projectId, data);
     await assertAssigneesAreMembers(this.prisma, projectId, data);
     await assertIdentifiersAvailable(this.prisma, projectId, data, id);
 
-    await this.prisma.$transaction(async (tx) => {
+    await this.runMappingUniqueRaces(() =>
+      this.prisma.$transaction(async (tx) => {
       await tx.organization.update({
         where: { id },
-        data: { ...data, ...(goLiveTarget !== undefined && { goLiveTarget: parseDayOrThrow(goLiveTarget) }) },
+        // null clears the go-live date, like every other nullable field (closure review L1)
+        data: { ...data, ...(goLiveTarget !== undefined && { goLiveTarget: goLiveTarget === null ? null : parseDayOrThrow(goLiveTarget) }) },
       });
       await recomputeCompleteness(tx, id);
       await this.audit.log(tx, {
@@ -472,9 +492,30 @@ export class OrganizationsService {
         objectId: id,
         metadata: { fields: Object.keys(dto) },
       });
-    });
+      }),
+    );
 
-    return this.findOne(id, projectId, user);
+    // Echo the record the caller just wrote, even when the write moved it out of their scope
+    // (a department change): the next read applies the normal visibility again.
+    const updated = await this.prisma.organization.findFirstOrThrow({
+      where: { id, projectId },
+      include: ORGANIZATION_REFS,
+    });
+    await hydrateCampaignMembership(this.prisma, ctx, [updated]);
+    const access = this.accessOf(ctx, updated);
+    if (access !== 'FULL') return mapToListItem(updated, 'RESTRICTED');
+    return this.fullDetail(updated, projectId);
+  }
+
+  /** Check-then-act on SIRET/INSEE can race the partial unique indexes: answer 409, not 500. */
+  private async runMappingUniqueRaces<T>(work: () => Promise<T>): Promise<T> {
+    try {
+      return await work();
+    } catch (err) {
+      if (isUniqueViolation(err, 'siret')) throw apiError.conflict('ORGANIZATION_SIRET_EXISTS');
+      if (isUniqueViolation(err, 'insee_code')) throw apiError.conflict('ORGANIZATION_INSEE_CODE_EXISTS');
+      throw err;
+    }
   }
 
   // -------------------------------------------------------------------------------- delete
@@ -483,7 +524,7 @@ export class OrganizationsService {
   async remove(id: string, projectId: string, user: AuthenticatedUser): Promise<void> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const existing = await getOrganizationOrThrow(this.prisma, id, projectId);
-    this.assertWritable(ctx, existing, id);
+    await this.assertWritable(ctx, existing, id);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.organization.update({ where: { id }, data: { deletedAt: new Date() } });
@@ -505,7 +546,7 @@ export class OrganizationsService {
     return ctx.outOfScopeAccess === 'NONE';
   }
 
-  private accessOf(ctx: ScopeContext, organization: Organization): ScopeAccess {
+  private accessOf(ctx: ScopeContext, organization: Parameters<ScopeService['access']>[1]): ScopeAccess {
     return this.scopeService.access(ctx, organization);
   }
 
@@ -514,7 +555,7 @@ export class OrganizationsService {
    * learn that the record exists (404), while a RESTRICTED caller already sees it in the list
    * and deserves a real answer (403).
    */
-  private assertWritable(ctx: ScopeContext, organization: Organization, id: string): void {
-    assertFullOrganizationAccess(this.scopeService, ctx, organization, id);
+  private async assertWritable(ctx: ScopeContext, organization: Organization, id: string): Promise<void> {
+    await assertFullOrganizationAccess(this.prisma, this.scopeService, ctx, organization, id);
   }
 }

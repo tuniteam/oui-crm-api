@@ -88,6 +88,11 @@ export const BOARD_COLUMN_LIMIT = 200;
 export const SALES_STATUS_REASON_MAX_LENGTH = 500;
 
 /** Bulk operations (US-01-05). DELETE additionally requires organizations:delete. */
+/** One business invariant, one pattern: the API create path and the imports share it. */
+export const SIRET_PATTERN = /^\d{14}$/;
+/** 5 characters; Corsica writes its letter in SECOND position (2A004, 2B033). */
+export const INSEE_PATTERN = /^(?:\d{5}|2[ABab]\d{3})$/;
+
 export const BULK_ACTIONS = ['ASSIGN_SALES_REP', 'SET_SALES_STATUS', 'SET_PRIORITY', 'ADD_TO_CAMPAIGN', 'DELETE'] as const;
 export type BulkAction = (typeof BULK_ACTIONS)[number];
 export type BulkSkipReason = 'NOT_FOUND' | 'OUT_OF_SCOPE';
