@@ -244,13 +244,21 @@ export function buildOrganizationOrderBy(
 type ValidatorDb = Pick<PrismaClient, 'referenceItem' | 'userRoleProject'> | Prisma.TransactionClient;
 
 /** Reference-list fields of the payload → their ReferenceItem category (SPEC-13 §2.3). */
-const REFERENCE_FIELD_CATEGORIES = { type: 'STRUCTURE_TYPE', solution: 'SOLUTION', leadSource: 'LEAD_SOURCE' } as const;
+const REFERENCE_FIELD_CATEGORIES = {
+  type: 'STRUCTURE_TYPE',
+  solution: 'SOLUTION',
+  leadSource: 'LEAD_SOURCE',
+  lossReason: 'LOSS_REASON',
+} as const;
 const REFERENCE_ARRAY_CATEGORIES = { tags: 'TAG', services: 'SERVICE' } as const;
 
+/** Champs pointant vers une liste administrable : la table ci-dessus dit laquelle. */
 export interface ReferenceInput {
   type?: string | null;
   solution?: string | null;
   leadSource?: string | null;
+  /** Motif de perte d'une opportunité (US-02-09) — même validation, autre catégorie. */
+  lossReason?: string | null;
   tags?: string[] | null;
   services?: string[] | null;
 }

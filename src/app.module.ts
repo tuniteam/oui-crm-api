@@ -29,6 +29,7 @@ import { SearchModule } from './search/search.module';
 import { SettingsModule } from './settings/settings.module';
 import { ReferenceItemsModule } from './reference-items/reference-items.module';
 import { PricingModule } from './pricing/pricing.module';
+import { OpportunitiesModule } from './opportunities/opportunities.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { PricingModule } from './pricing/pricing.module';
     RolesModule,
     ScopesModule,
     PricingModule,
+    OpportunitiesModule,
     OrganizationsModule,
     ContactsModule,
     ActivitiesModule,
