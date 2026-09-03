@@ -23,3 +23,14 @@ export const TRAINING_FEE_KEY = 'training';
 
 /** Suffixe des lignes d'option facturées au-delà du quota compris dans l'abonnement. */
 export const EXTRA_QUANTITY_SUFFIX = '(supplémentaire)';
+
+/** Actions du journal (AUDIT_OBJECTS.PRICING_GRID) — US-02-01. */
+export const PRICING_AUDIT = {
+  GRID_CREATE: 'pricingGrid.create',
+  GRID_ACTIVATE: 'pricingGrid.activate',
+} as const;
+
+/** Garde-fous de forme d'une grille enregistrée (US-02-01). */
+export const GRID_MAX_BRACKETS = 20;
+export const GRID_MAX_PLANS = 10;
+export const GRID_LABEL_MAX_LENGTH = 100;

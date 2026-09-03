@@ -22,7 +22,7 @@ import { buildFileCreateData } from '../src/files/files.utils';
 import { bootstrapProject } from '../src/projects/project-bootstrap';
 import { INITIAL_PRICING_GRID_VERSION } from '../src/projects/project-config.constants';
 import { buildObjectPath } from '../src/storage/storage.utils';
-import { PERISCOLIA_PRICING_GRID_V1 } from './seed-data/periscolia.pricing-grid';
+import { PERISCOLIA_PRICING_GRID_V1 } from '../src/pricing/periscolia-grid.constants';
 import {
   PERISCOLIA_CONFIG,
   PERISCOLIA_PROJECT,

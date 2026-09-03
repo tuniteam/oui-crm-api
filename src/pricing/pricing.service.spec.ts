@@ -1,5 +1,5 @@
 import { Prisma } from '@prisma/client';
-import { PERISCOLIA_PRICING_GRID_V1 } from '../../prisma/seed-data/periscolia.pricing-grid';
+import { PERISCOLIA_PRICING_GRID_V1 } from './periscolia-grid.constants';
 import { PricingService } from './pricing.service';
 import { GlobalDiscount, PricingGridContent, QuoteConfig, QuoteInput } from './pricing.types';
 

@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { PERISCOLIA_PRICING_GRID_V1 } from './periscolia-grid.constants';
 import { PopulationBracket } from './pricing.types';
 import {
   applyDiscount,
@@ -10,6 +11,7 @@ import {
   safeQty,
   setupFeePrices,
   sumMoney,
+  validateGridContent,
 } from './pricing.utils';
 
 /** Règles pures du moteur — SPEC-04 §3 règle 1 et §4.7. */
@@ -90,5 +92,105 @@ describe('pricing.utils — lecture de la grille', () => {
     expect(setupFeePrices(fee, 'CONFORT')).toEqual([750, 750]);
     expect(setupFeePrices(fee, 'GOLD')).toEqual([]);
     expect(setupFeePrices(fee, 'label')).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// US-02-01 — validation d'une grille enregistrée
+// ---------------------------------------------------------------------------
+
+describe('validateGridContent (US-02-01)', () => {
+  const valid = () => JSON.parse(JSON.stringify(PERISCOLIA_PRICING_GRID_V1));
+
+  it('accepts the seeded Périscolia grid as is', () => {
+    expect(validateGridContent(valid())).toEqual([]);
+  });
+
+  it('refuses anything that is not an object', () => {
+    expect(validateGridContent(null)).toEqual(['content: must be an object']);
+    expect(validateGridContent([])).toEqual(['content: must be an object']);
+    expect(validateGridContent('grid')).toEqual(['content: must be an object']);
+  });
+
+  it('names the price table whose length does not match the brackets', () => {
+    const grid = valid();
+    grid.subscription.CONFORT = [24.9, 39.9];
+    expect(validateGridContent(grid)).toContain('subscription.CONFORT: 2 prices for 6 brackets');
+  });
+
+  it('names a faulty option and fee post by their path', () => {
+    const grid = valid();
+    grid.options[2].unitPrice = [4, 4, 10];
+    grid.setupFees.training.CONFORT = [750];
+    const issues = validateGridContent(grid);
+    expect(issues).toContain('options[2].unitPrice: 3 prices for 6 brackets');
+    expect(issues).toContain('setupFees.training.CONFORT: 1 prices for 6 brackets');
+  });
+
+  it('requires a price table for every plan of the grid', () => {
+    const grid = valid();
+    grid.plans.push('GOLD');
+    expect(validateGridContent(grid)).toContain('subscription.GOLD: missing price table');
+  });
+
+  it('refuses a plan without brackets, and brackets without a plan', () => {
+    expect(validateGridContent({ ...valid(), brackets: [] })).toContain('brackets: at least one bracket is required');
+    expect(validateGridContent({ ...valid(), plans: [] })).toContain('plans: at least one plan is required');
+  });
+
+  it('refuses overlapping or inverted brackets — the resolution must not depend on the order', () => {
+    const grid = valid();
+    grid.brackets[1].min = 400;
+    expect(validateGridContent(grid)).toContain('brackets[1]: overlaps the previous bracket');
+
+    const inverted = valid();
+    inverted.brackets[0] = { label: '0 – 500 hab.', min: 500, max: 0 };
+    expect(validateGridContent(inverted)).toContain('brackets[0]: max is below min');
+  });
+
+  it('refuses an open-ended bracket that is not the last one', () => {
+    const grid = valid();
+    grid.brackets[0].max = null;
+    expect(validateGridContent(grid)).toContain('brackets[0]: open-ended bracket must be the last');
+  });
+
+  it('refuses negative or non-numeric prices', () => {
+    const grid = valid();
+    grid.subscription.ESSENTIEL = [19.9, 24.9, 39.9, 49.9, 79.9, -1];
+    expect(validateGridContent(grid)).toContain('subscription.ESSENTIEL: prices must be numbers ≥ 0');
+
+    const text = valid();
+    text.extras[0].unitPrice = '500';
+    expect(validateGridContent(text)).toContain('extras[0].unitPrice: must be a number ≥ 0');
+  });
+
+  it('refuses duplicate identifiers on options and extras', () => {
+    const grid = valid();
+    grid.options[1].id = 0;
+    grid.extras[1].id = 0;
+    const issues = validateGridContent(grid);
+    expect(issues).toContain('options: duplicate id');
+    expect(issues).toContain('extras: duplicate id');
+  });
+
+  it('requires the labels a document prints', () => {
+    const grid = valid();
+    grid.brackets[3].label = '  ';
+    grid.setupFees.deployment.label = '';
+    grid.options[0].name = '';
+    const issues = validateGridContent(grid);
+    expect(issues).toContain('brackets[3].label: required');
+    expect(issues).toContain('setupFees.deployment.label: required');
+    expect(issues).toContain('options[0].name: required');
+  });
+
+  it('accepts a grid without options, fees or extras — a project may sell a flat subscription', () => {
+    expect(
+      validateGridContent({
+        brackets: [{ label: 'Tous', min: 0, max: null }],
+        plans: ['STANDARD'],
+        subscription: { STANDARD: [0] },
+      }),
+    ).toEqual([]);
   });
 });

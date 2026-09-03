@@ -15,7 +15,7 @@ import { PrismaClient, ProjectStatus, RelationshipStatus } from '@prisma/client'
 import { UserRole } from '../src/auth/enums/user-role.enum';
 import { bootstrapProject } from '../src/projects/project-bootstrap';
 import { INITIAL_PRICING_GRID_VERSION } from '../src/projects/project-config.constants';
-import { PERISCOLIA_PRICING_GRID_V1 } from './seed-data/periscolia.pricing-grid';
+import { PERISCOLIA_PRICING_GRID_V1 } from '../src/pricing/periscolia-grid.constants';
 import {
   PERISCOLIA_CONFIG,
   PERISCOLIA_PROJECT,
