@@ -4,6 +4,7 @@
 
 import { CustomerStatus, Organization, Prisma, PrismaClient, Priority, RelationshipStatus, SalesStatus } from '@prisma/client';
 import { apiError } from '@/common/api-error';
+import { PopulationBracket } from '@/pricing/pricing.types';
 import { resolveDepartments } from '@/scopes/geo.constants';
 import { ScopeContext, ScopeService } from '@/scopes/scope.service';
 import { hydrateCampaignMembership } from '@/scopes/scopes.utils';
@@ -328,14 +329,8 @@ export async function applySalesStatus(
   return { from: organization.salesStatus, to };
 }
 
-/** One bracket of the active pricing grid (PricingGridContent.brackets — SPEC-04 §2). */
-export interface PopulationBracket {
-  label: string;
-  min: number;
-  max: number | null;
-}
-
-/** Brackets of the project's ACTIVE grid; empty when no grid is active. */
+/** Brackets of the project's ACTIVE grid; empty when no grid is active. The bracket rule
+ *  itself belongs to the pricing engine (`@/pricing/pricing.utils`, SPEC-04 §3 règle 1). */
 export async function loadActiveBrackets(
   db: Pick<PrismaClient, 'pricingGrid'>,
   projectId: string,
@@ -343,13 +338,4 @@ export async function loadActiveBrackets(
   const grid = await db.pricingGrid.findFirst({ where: { projectId, active: true }, select: { content: true } });
   const content = grid?.content as { brackets?: PopulationBracket[] } | null;
   return content?.brackets ?? [];
-}
-
-/**
- * SPEC-04 règle 1 : the bracket is the first one with min ≤ population ≤ max (max null =
- * open-ended). No population, or population ≤ 0 → no bracket, and no quote (décision 5).
- */
-export function resolveBracketLabel(brackets: PopulationBracket[], population: number | null): string | null {
-  if (population === null || population <= 0) return null;
-  return brackets.find((b) => b.min <= population && (b.max === null || population <= b.max))?.label ?? null;
 }

@@ -17,6 +17,11 @@ export const AUDIT_OBJECTS = {
   ACTIVITY: 'Activity',
   CAMPAIGN: 'Campaign',
   IMPORT_BATCH: 'ImportBatch',
+  // L2 — cycle de vente (SPEC-14 phase A).
+  OPPORTUNITY: 'Opportunity',
+  QUOTE: 'Quote',
+  PRICING_GRID: 'PricingGrid',
+  CONTRACT: 'Contract',
 } as const;
 
 export type AuditObjectType = (typeof AUDIT_OBJECTS)[keyof typeof AUDIT_OBJECTS];

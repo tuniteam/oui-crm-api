@@ -43,9 +43,9 @@ import {
   findPossibleDuplicates,
   getOrganizationOrThrow,
   loadActiveBrackets,
-  resolveBracketLabel,
   recomputeCompleteness,
 } from './organizations.utils';
+import { resolveBracketLabel } from '@/pricing/pricing.utils';
 import { mapToDetail, mapToListItem, OrganizationWithRefs, ORGANIZATION_REFS } from './organizations.mapper';
 
 @Injectable()

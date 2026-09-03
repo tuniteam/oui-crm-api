@@ -148,6 +148,21 @@ const errorDefinitions = {
   EXPORT_TOO_LARGE: (max: number) =>
     `Export exceeds the maximum of ${max} rows; narrow the filters`,
 
+  // Document numbering (L2 phase A — SPEC-01 §4.3)
+  DOCUMENT_NUMBER_INITIALS_REQUIRED: 'Quote numbering requires the initials of its owner',
+
+  // Pricing engine (L2 phase B — SPEC-04)
+  ORGANIZATION_POPULATION_REQUIRED:
+    'The organization has no population: its pricing bracket cannot be resolved, so it cannot be quoted',
+  PRICING_PLAN_UNKNOWN: (plan: string) => `Plan ${plan} is not part of the pricing grid`,
+
+  // Pricing grid versions (L2 phase C — US-02-01)
+  PRICING_GRID_NOT_FOUND: (id: string) => `Pricing grid ${id} not found`,
+  PRICING_GRID_VERSION_NOT_FOUND: (version: string) => `Pricing grid version ${version} not found`,
+  PRICING_GRID_NO_ACTIVE: 'This project has no active pricing grid',
+  PRICING_GRID_CONTENT_REQUIRED: 'Provide either content or fromVersion to copy',
+  PRICING_GRID_INVALID: (issues: string) => `Pricing grid is invalid: ${issues}`,
+
 } as const;
 
 type ErrorKey = keyof typeof errorDefinitions;
@@ -229,6 +244,29 @@ export const ApiMessages = {
       listOrganizations: { summary: 'List the frozen target', description: 'Same visibility rules as the organization list' },
       results: { summary: 'Campaign results', description: 'Computed on demand, never stored; only activities are counted at L1' },
       delete: { summary: 'Delete a campaign', description: 'Refused while a geographic scope cites the campaign (D7): detach it first' },
+    },
+
+    pricingGrids: {
+      tag: 'Pricing grids',
+      list: {
+        summary: 'List pricing grid versions',
+        description: 'Newest version first, with its author, its effective date and the number of quotes frozen on it',
+      },
+      active: {
+        summary: 'Get the active grid',
+        description: 'The grid that serves the simulator, the draft quotes and the bracket label of an organization',
+      },
+      get: { summary: 'Get a grid version', description: 'Full content of one version, active or not' },
+      create: {
+        summary: 'Prepare a new version',
+        description:
+          'Content given as is, or copied from another version with fromVersion; created INACTIVE so prices can be prepared without changing what the sales team is quoting. A price table whose length does not match the brackets is refused, with the faulty paths in messages.details',
+      },
+      activate: {
+        summary: 'Activate a version',
+        description:
+          'Exactly one version is active per project, switched in a single transaction; submitted quotes keep their frozen version, drafts follow the new grid',
+      },
     },
 
     exports: {
@@ -342,6 +380,7 @@ export const ApiMessages = {
       contactId: 'Contact unique identifier (CUID)',
       activityId: 'Activity unique identifier (CUID)',
       campaignId: 'Campaign unique identifier (CUID)',
+      pricingGridId: 'Pricing grid version unique identifier (CUID)',
       importBatchId: 'Import batch unique identifier (CUID)',
     },
 

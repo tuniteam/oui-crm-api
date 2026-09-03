@@ -4,7 +4,8 @@
 
 import { ScopeAccess } from '@/scopes/scope.service';
 import { OrganizationWithRefs } from '@/organizations/organizations.mapper';
-import { PopulationBracket, resolveBracketLabel } from '@/organizations/organizations.utils';
+import { PopulationBracket } from '@/pricing/pricing.types';
+import { resolveBracketLabel } from '@/pricing/pricing.utils';
 import { formatDateField } from '@/common/utils/date.utils';
 import { fullName } from '@/common/utils/user.utils';
 import { CSV_BOM, CSV_SEPARATOR, EXPORT_COLUMNS, ExportColumnKey } from './exports.constants';
