@@ -28,6 +28,7 @@ import { ExportsModule } from './exports/exports.module';
 import { SearchModule } from './search/search.module';
 import { SettingsModule } from './settings/settings.module';
 import { ReferenceItemsModule } from './reference-items/reference-items.module';
+import { PricingModule } from './pricing/pricing.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { ReferenceItemsModule } from './reference-items/reference-items.module';
     UsersBackofficeModule,
     RolesModule,
     ScopesModule,
+    PricingModule,
     OrganizationsModule,
     ContactsModule,
     ActivitiesModule,

@@ -151,6 +151,11 @@ const errorDefinitions = {
   // Document numbering (L2 phase A — SPEC-01 §4.3)
   DOCUMENT_NUMBER_INITIALS_REQUIRED: 'Quote numbering requires the initials of its owner',
 
+  // Pricing engine (L2 phase B — SPEC-04)
+  ORGANIZATION_POPULATION_REQUIRED:
+    'The organization has no population: its pricing bracket cannot be resolved, so it cannot be quoted',
+  PRICING_PLAN_UNKNOWN: (plan: string) => `Plan ${plan} is not part of the pricing grid`,
+
 } as const;
 
 type ErrorKey = keyof typeof errorDefinitions;
