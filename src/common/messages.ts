@@ -163,6 +163,14 @@ const errorDefinitions = {
   PRICING_GRID_CONTENT_REQUIRED: 'Provide either content or fromVersion to copy',
   PRICING_GRID_INVALID: (issues: string) => `Pricing grid is invalid: ${issues}`,
 
+  // Opportunities (L2 phase D — US-02-09)
+  OPPORTUNITY_NOT_FOUND: (id: string) => `Opportunity ${id} not found`,
+  OPPORTUNITY_ALREADY_OPEN: (organization: string) => `${organization} already has an open opportunity`,
+  OPPORTUNITY_CLOSED: (stage: string) => `Opportunity is ${stage}: it is closed and cannot move any more`,
+  OPPORTUNITY_STAGE_RESERVED: (stage: string) =>
+    `${stage} is set by a quote being signed or refused, or by the lose route — never by a stage change`,
+  OPPORTUNITY_HAS_QUOTES: (count: string) => `Opportunity carries ${count} quote(s) and cannot be deleted`,
+
 } as const;
 
 type ErrorKey = keyof typeof errorDefinitions;
@@ -244,6 +252,42 @@ export const ApiMessages = {
       listOrganizations: { summary: 'List the frozen target', description: 'Same visibility rules as the organization list' },
       results: { summary: 'Campaign results', description: 'Computed on demand, never stored; only activities are counted at L1' },
       delete: { summary: 'Delete a campaign', description: 'Refused while a geographic scope cites the campaign (D7): detach it first' },
+    },
+
+    opportunities: {
+      tag: 'Opportunities',
+      list: {
+        summary: 'List opportunities',
+        description:
+          'Paginated, closest expected close date first, with the effective probability, the value (highest attached quote, else the estimate) and its weighted amount',
+      },
+      board: {
+        summary: 'Pipeline board',
+        description:
+          'The 5 open stages as columns, each with its count, its total and its weighted total; won and lost are outcomes and are read from the list',
+      },
+      get: { summary: 'Get an opportunity', description: 'Detail with the stage history and the attached quotes' },
+      create: {
+        summary: 'Open an opportunity',
+        description:
+          'One open opportunity per record, guaranteed by the database; the owner defaults to the sales rep of the record, then to the caller',
+      },
+      update: {
+        summary: 'Update an opportunity',
+        description: 'Label, expected close date, weighting and owner; null clears a nullable field. The stage has its own route',
+      },
+      stage: {
+        summary: 'Move to another stage',
+        description: 'Open stages only, historised; WON and LOST come from a quote being signed or refused, or from /lose',
+      },
+      lose: {
+        summary: 'Declare an opportunity lost',
+        description: 'Reason required (LOSS_REASON reference list) — it is what loss statistics are made of',
+      },
+      delete: {
+        summary: 'Delete an opportunity',
+        description: 'For one opened by mistake: refused as soon as a quote is attached',
+      },
     },
 
     pricingGrids: {
@@ -381,6 +425,7 @@ export const ApiMessages = {
       activityId: 'Activity unique identifier (CUID)',
       campaignId: 'Campaign unique identifier (CUID)',
       pricingGridId: 'Pricing grid version unique identifier (CUID)',
+      opportunityId: 'Opportunity unique identifier (CUID)',
       importBatchId: 'Import batch unique identifier (CUID)',
     },
 
