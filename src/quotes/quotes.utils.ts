@@ -2,18 +2,33 @@
 // OUI-CRM - Quotes utils: pure rules, single result resolver (US-02-02, US-02-03)
 // ============================================
 
-import { Prisma, PrismaClient, QuoteLine, QuoteLineNature, QuoteStatus } from '@prisma/client';
+import {
+  OpportunityStageCode,
+  Prisma,
+  PrismaClient,
+  QuoteLine,
+  QuoteLineNature,
+  QuoteStatus,
+  QuoteType,
+  SalesStatus,
+} from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { MS_PER_DAY } from '@/common/utils/date.utils';
+import { applyOpportunityStage } from '@/opportunities/opportunities.utils';
+import { applySalesStatus } from '@/organizations/organizations.utils';
 import { PricingService } from '@/pricing/pricing.service';
 import { ComputedQuoteLine, PricingGridContent, QuoteConfig, QuoteResult } from '@/pricing/pricing.types';
 import { money, sumMoney } from '@/pricing/pricing.utils';
 import {
+  BUMPS_TO_IN_PROGRESS_FROM,
   DEFAULT_BILLING,
   DEFAULT_CANCELLABLE,
   DEFAULT_START_OFFSET_DAYS,
   DEFAULT_TRIAL_CLAUSE,
   EDITABLE_STATUSES,
+  OPPORTUNITY_STAGE_BY_QUOTE_STATUS,
+  QUOTE_SENT_STATUSES,
+  canTransition,
 } from './quotes.constants';
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -275,4 +290,118 @@ export async function recomputeDraftQuotes(
 
   await Promise.all(writes);
   return writes.length;
+}
+
+// ---------------------------------------------------------------------------- cycle de vie
+
+/** Ce qu'une transition a réellement changé — le service en tire ses entrées de journal. */
+export interface QuoteStatusChange {
+  quote: { from: QuoteStatus; to: QuoteStatus };
+  opportunity: { from: OpportunityStageCode; to: OpportunityStageCode } | null;
+  organization: { from: SalesStatus; to: SalesStatus } | null;
+}
+
+/** Le devis et son entourage, tels que le writer a besoin de les connaître. */
+export interface QuoteWithContext {
+  id: string;
+  status: QuoteStatus;
+  organization: { id: string; salesStatus: SalesStatus };
+  opportunity: { id: string; stage: OpportunityStageCode } | null;
+}
+
+/**
+ * **Writer unique du statut d'un devis** (SPEC-14 §2.5). Toutes les routes d'action passent
+ * ici, et la cascade de SPEC-01 §3.8 y est écrite **une seule fois** :
+ *
+ *   devis envoyé/relancé/en négociation → opportunité `QUOTE_SENT` ou `NEGOTIATING`,
+ *   et la fiche encore froide passe « en cours de prospection » ;
+ *   devis refusé ou expiré → opportunité perdue, avec le motif que le CRM sait donner ;
+ *   devis signé → opportunité gagnée (phase G).
+ *
+ * Deux chemins qui écriraient `status` séparément divergeraient au premier correctif — c'est
+ * la leçon que le L1 a payée deux fois (`applySalesStatus`, `recomputeCompleteness`).
+ */
+export async function applyQuoteStatus(
+  tx: Db,
+  projectId: string,
+  quote: QuoteWithContext,
+  to: QuoteStatus,
+  userId: string,
+  extra: {
+    rejectionReason?: string | null;
+    declineReason?: string | null;
+    validatedById?: string | null;
+    signedAt?: Date | null;
+    lossReason?: string | null;
+  } = {},
+): Promise<QuoteStatusChange> {
+  if (!canTransition(quote.status, to)) throw apiError.conflict('QUOTE_INVALID_TRANSITION', quote.status, to);
+
+  const { count } = await tx.quote.updateMany({
+    where: { id: quote.id, projectId },
+    data: {
+      status: to,
+      ...(extra.rejectionReason !== undefined ? { rejectionReason: extra.rejectionReason } : {}),
+      ...(extra.declineReason !== undefined ? { declineReason: extra.declineReason } : {}),
+      ...(extra.validatedById !== undefined
+        ? { validatedById: extra.validatedById, validatedAt: extra.validatedById ? new Date() : null }
+        : {}),
+      ...(extra.signedAt !== undefined ? { signedAt: extra.signedAt } : {}),
+    },
+  });
+  if (count === 0) throw apiError.notFound('QUOTE_NOT_FOUND', quote.id);
+
+  const change: QuoteStatusChange = { quote: { from: quote.status, to }, opportunity: null, organization: null };
+
+  const stage = OPPORTUNITY_STAGE_BY_QUOTE_STATUS[to];
+  if (stage && quote.opportunity) {
+    change.opportunity = await applyOpportunityStage(tx, projectId, quote.opportunity, stage, userId, {
+      lossReason: stage === OpportunityStageCode.LOST ? (extra.lossReason ?? null) : null,
+    });
+  }
+
+  if (QUOTE_SENT_STATUSES.includes(to) && BUMPS_TO_IN_PROGRESS_FROM.includes(quote.organization.salesStatus)) {
+    change.organization = await applySalesStatus(tx, quote.organization, SalesStatus.IN_PROGRESS);
+  }
+
+  return change;
+}
+
+/**
+ * Copie d'un devis expiré en nouveau brouillon (US-02-06). Un devis expiré ne ressuscite pas :
+ * il en naît un autre, avec **son propre numéro**, pour que l'historique commercial garde la
+ * trace des deux tentatives.
+ */
+export function reopenData(
+  quote: {
+    projectId: string;
+    organizationId: string;
+    opportunityId: string | null;
+    pricingGridId: string;
+    type: QuoteType;
+    config: Prisma.JsonValue | null;
+    startDate: Date;
+    id: string;
+  },
+  number: string,
+  ownerId: string,
+  issueDate: Date,
+  validUntil: Date,
+  amounts: QuoteAmounts,
+): Prisma.QuoteCreateManyInput {
+  return {
+    projectId: quote.projectId,
+    organizationId: quote.organizationId,
+    opportunityId: quote.opportunityId,
+    pricingGridId: quote.pricingGridId,
+    number,
+    type: quote.type,
+    ownerId,
+    issueDate,
+    validUntil,
+    startDate: quote.startDate,
+    config: quote.config as Prisma.InputJsonValue,
+    sourceQuoteId: quote.id,
+    ...amounts,
+  };
 }
