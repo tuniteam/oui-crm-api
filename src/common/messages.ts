@@ -181,8 +181,7 @@ const errorDefinitions = {
   QUOTE_ALREADY_SUBMITTED: (status: string) => `Quote is ${status}: it has already left the draft stage`,
   QUOTE_NOT_PENDING: (status: string) => `Quote is ${status}: only a quote awaiting validation can be validated or sent back`,
   QUOTE_NOT_REOPENABLE: (status: string) => `Quote is ${status}: only an expired quote is reopened as a new draft`,
-  QUOTE_DISCOUNT_ABOVE_CAP: (max: string, cap: string) =>
-    `Discount of ${max}% exceeds the cap of ${cap}%: the quote goes to validation`,
+  QUOTE_HAS_NO_CONFIG: 'Quote was carried over from the workbook: it holds no configuration to replay',
 
 } as const;
 

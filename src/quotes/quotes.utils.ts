@@ -13,7 +13,7 @@ import {
   SalesStatus,
 } from '@prisma/client';
 import { apiError } from '@/common/api-error';
-import { MS_PER_DAY } from '@/common/utils/date.utils';
+import { MS_PER_DAY, formatDateField } from '@/common/utils/date.utils';
 import { applyOpportunityStage } from '@/opportunities/opportunities.utils';
 import { applySalesStatus } from '@/organizations/organizations.utils';
 import { PricingService } from '@/pricing/pricing.service';
@@ -75,6 +75,16 @@ export function assertSetupShape(setup: QuoteConfig['setup'] | undefined): void 
       throw apiError.badRequest('QUOTE_SETUP_INVALID', key);
     }
   }
+}
+
+/**
+ * La remise du devis dépasse-t-elle le plafond du projet ? **Une seule** écriture de la règle :
+ * elle décide de l'aiguillage à la soumission, et elle est servie à chaque lecture. Deux
+ * expressions séparées finissaient par se contredire — une transition répondait `false` sur un
+ * devis que la liste annonçait `true`.
+ */
+export function exceedsDiscountCap(maxDiscount: number, discountCap: number): boolean {
+  return maxDiscount > discountCap;
 }
 
 /** Jour de démarrage par défaut : date du devis + 30 jours (SPEC-04 déc. 4). */
@@ -174,7 +184,7 @@ export function resolveQuoteResult(
       grid,
       population,
       vatRate,
-      startDate: quote.startDate.toISOString().slice(0, 10),
+      startDate: formatDateField(quote.startDate),
       config: quote.config as unknown as QuoteConfig,
     });
     return {
@@ -212,6 +222,22 @@ export async function getQuoteOrThrow(
 
 export function assertEditable(quote: { status: QuoteStatus }): void {
   if (!EDITABLE_STATUSES.includes(quote.status)) throw apiError.conflict('QUOTE_NOT_EDITABLE', quote.status);
+}
+
+/** Seul un brouillon se soumet — les gardes d'état vivent ici, avec la table des transitions. */
+export function assertSubmittable(quote: { status: QuoteStatus }): void {
+  if (quote.status !== QuoteStatus.DRAFT) throw apiError.conflict('QUOTE_ALREADY_SUBMITTED', quote.status);
+}
+
+/** Valider ou renvoyer au brouillon ne concerne qu'un devis qui attend une décision. */
+export function assertPending(quote: { status: QuoteStatus }): void {
+  if (quote.status !== QuoteStatus.PENDING_VALIDATION) throw apiError.conflict('QUOTE_NOT_PENDING', quote.status);
+}
+
+/** On ne rouvre qu'un devis expiré, et seulement s'il a une configuration à rejouer. */
+export function assertReopenable(quote: { status: QuoteStatus; config: Prisma.JsonValue | null }): void {
+  if (quote.status !== QuoteStatus.EXPIRED) throw apiError.conflict('QUOTE_NOT_REOPENABLE', quote.status);
+  if (!quote.config) throw apiError.conflict('QUOTE_HAS_NO_CONFIG');
 }
 
 export function assertDeletable(quote: { status: QuoteStatus }): void {
@@ -361,7 +387,7 @@ export async function applyQuoteStatus(
   }
 
   if (QUOTE_SENT_STATUSES.includes(to) && BUMPS_TO_IN_PROGRESS_FROM.includes(quote.organization.salesStatus)) {
-    change.organization = await applySalesStatus(tx, quote.organization, SalesStatus.IN_PROGRESS);
+    change.organization = await applySalesStatus(tx, projectId, quote.organization, SalesStatus.IN_PROGRESS);
   }
 
   return change;
@@ -377,12 +403,14 @@ export function reopenData(
     projectId: string;
     organizationId: string;
     opportunityId: string | null;
-    pricingGridId: string;
     type: QuoteType;
     config: Prisma.JsonValue | null;
     startDate: Date;
     id: string;
   },
+  /** La grille qui a servi à calculer les montants ci-dessous — jamais celle du devis expiré,
+   *  sans quoi le nouveau brouillon citerait une version qui n'est pas la sienne. */
+  pricingGridId: string,
   number: string,
   ownerId: string,
   issueDate: Date,
@@ -393,7 +421,7 @@ export function reopenData(
     projectId: quote.projectId,
     organizationId: quote.organizationId,
     opportunityId: quote.opportunityId,
-    pricingGridId: quote.pricingGridId,
+    pricingGridId,
     number,
     type: quote.type,
     ownerId,

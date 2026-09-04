@@ -212,7 +212,7 @@ export class CampaignsService {
       });
       // The campaign starts the follow-up: fresh records become TO_CONTACT
       for (const org of eligible.filter((o) => o.salesStatus === SalesStatus.NOT_CONTACTED)) {
-        const change = await applySalesStatus(tx, org, SalesStatus.TO_CONTACT);
+        const change = await applySalesStatus(tx, projectId, org, SalesStatus.TO_CONTACT);
         if (change) {
           await this.audit.log(tx, {
             projectId,

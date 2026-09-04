@@ -330,11 +330,18 @@ export async function assertFullOrganizationAccess(
  */
 export async function applySalesStatus(
   tx: Prisma.TransactionClient,
+  projectId: string,
   organization: Pick<Organization, 'id' | 'salesStatus'>,
   to: SalesStatus,
 ): Promise<{ from: SalesStatus; to: SalesStatus } | null> {
   if (organization.salesStatus === to) return null;
-  await tx.organization.update({ where: { id: organization.id }, data: { salesStatus: to } });
+  // `updateMany` plutôt qu'`update` : le projet reste dans le `where`, y compris pour les
+  // appelants qui partent d'un devis plutôt que d'une lecture scopée (writer partagé).
+  const { count } = await tx.organization.updateMany({
+    where: { id: organization.id, projectId },
+    data: { salesStatus: to },
+  });
+  if (count === 0) throw apiError.notFound('ORGANIZATION_NOT_FOUND', organization.id);
   return { from: organization.salesStatus, to };
 }
 

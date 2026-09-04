@@ -1,4 +1,4 @@
-import { Prisma, PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient, QuoteLineNature } from '@prisma/client';
 import {
   DISCOUNT_MAX,
   DISCOUNT_MIN,
@@ -8,8 +8,9 @@ import {
   MONEY_ROUNDING,
   MONEY_SCALE,
   PERCENT_BASE,
+  TRAINING_FEE_KEY,
 } from './pricing.constants';
-import { PopulationBracket, PricingGridContent, PricingSetupFee } from './pricing.types';
+import { ComputedQuoteLine, PopulationBracket, PricingGridContent, PricingSetupFee } from './pricing.types';
 
 /** Arrondi commercial au centime, HALF_UP (SPEC-04 déc. 3). */
 export function money(value: Prisma.Decimal.Value): Prisma.Decimal {
@@ -74,6 +75,31 @@ export function priceAt(prices: number[], bracketIndex: number): Prisma.Decimal 
   if (!prices.length) return new Prisma.Decimal(0);
   const value = prices[Math.min(bracketIndex, prices.length - 1)];
   return new Prisma.Decimal(Number.isFinite(value) ? value : 0);
+}
+
+/**
+ * Ventilation des frais one-shot en formation / mise en place / matériel (SPEC-01 §4.2).
+ *
+ * La règle vit ici et non dans le moteur, parce que **deux** chemins en ont besoin : le calcul
+ * d'un brouillon, et la relecture d'un devis figé dont les lignes sont en base. Le poste de
+ * formation se reconnaît à son libellé, celui que la grille lui donne — un projet qui renomme
+ * « Formation » garde une ventilation juste.
+ */
+export function splitOneShot(
+  lines: ComputedQuoteLine[],
+  trainingLabel: string | undefined,
+): { setup: Prisma.Decimal; training: Prisma.Decimal; hardware: Prisma.Decimal; total: Prisma.Decimal } {
+  const isSetup = (line: ComputedQuoteLine) => line.nature === QuoteLineNature.SETUP;
+  const training = sumMoney(lines.filter((l) => isSetup(l) && l.label === trainingLabel).map((l) => l.total));
+  const setup = sumMoney(lines.filter((l) => isSetup(l) && l.label !== trainingLabel).map((l) => l.total));
+  const hardware = sumMoney(lines.filter((l) => l.nature === QuoteLineNature.EXTRA).map((l) => l.total));
+  return { setup, training, hardware, total: money(setup.plus(training).plus(hardware)) };
+}
+
+/** Libellé du poste de formation dans une grille, clé de la ventilation ci-dessus. */
+export function trainingFeeLabel(grid: PricingGridContent | null): string | undefined {
+  const label = grid?.setupFees?.[TRAINING_FEE_KEY]?.label;
+  return typeof label === 'string' ? label : undefined;
 }
 
 /**

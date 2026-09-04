@@ -14,7 +14,11 @@ import { formatDateField, parseDayOrThrow, todayUtc } from '@/common/utils/date.
 import { PrismaService } from '@/prisma/prisma.service';
 import { ScopeService } from '@/scopes/scope.service';
 import { loadScopeContext } from '@/scopes/scopes.utils';
-import { applySalesStatus, assertFullOrganizationAccess, getOrganizationOrThrow } from '@/organizations/organizations.utils';
+import {
+  applySalesStatus,
+  assertFullOrganizationAccess,
+  getOrganizationOrThrow,
+} from '@/organizations/organizations.utils';
 import { ORGANIZATION_AUDIT } from '@/organizations/organizations.constants';
 import {
   ACTIVITIES_AUDIT,
@@ -30,6 +34,7 @@ import {
 import {
   ACTIVITY_REFS,
   ActivityWithRefs,
+  activityTypeLabel,
   assertPlanned,
   buildActivityWhere,
   buildIcs,
@@ -44,7 +49,11 @@ import { CompleteActivityDto } from './dto/complete-activity.dto';
 import { CreateActivityDto } from './dto/create-activity.dto';
 import { ActivityListQueryDto } from './dto/query-activity-list.dto';
 import { AgendaQueryDto } from './dto/agenda-query.dto';
-import { ActivitiesListResponseDto, ActivityDto, AgendaResponseDto } from './dto/response-activity.dto';
+import {
+  ActivitiesListResponseDto,
+  ActivityDto,
+  AgendaResponseDto,
+} from './dto/response-activity.dto';
 import { UpdateActivityDto } from './dto/update-activity.dto';
 import { REFERENCE_CATEGORIES } from '@/common/messages';
 
@@ -76,16 +85,29 @@ export class ActivitiesService {
         include: ACTIVITY_REFS,
       }),
     ]);
-    return { data: await this.toDtos(projectId, rows as ActivityWithRefs[]), meta: buildPaginationMeta(total, page, limit) };
+    return {
+      data: await this.toDtos(projectId, rows as ActivityWithRefs[]),
+      meta: buildPaginationMeta(total, page, limit),
+    };
   }
 
   // -------------------------------------------------------------------------------- create
 
   /** Planning a meeting-like activity books the record (MEETING_SCHEDULED automatism). */
-  async create(projectId: string, dto: CreateActivityDto, user: AuthenticatedUser): Promise<ActivityDto> {
+  async create(
+    projectId: string,
+    dto: CreateActivityDto,
+    user: AuthenticatedUser,
+  ): Promise<ActivityDto> {
     const organization = await getOrganizationOrThrow(this.prisma, dto.organizationId, projectId);
     const ctx = await loadScopeContext(this.prisma, user, projectId);
-    await assertFullOrganizationAccess(this.prisma, this.scopeService, ctx, organization, organization.id);
+    await assertFullOrganizationAccess(
+      this.prisma,
+      this.scopeService,
+      ctx,
+      organization,
+      organization.id,
+    );
     const type = await getActivityTypeOrThrow(this.prisma, projectId, dto.type);
     await this.assertContactOfOrganization(dto.contactId, dto.organizationId);
     await this.assertCampaignOfProject(dto.campaignId, projectId);
@@ -95,7 +117,16 @@ export class ActivitiesService {
         data: { ...dto, date: parseDayOrThrow(dto.date), projectId, userId: user.id },
         include: ACTIVITY_REFS,
       });
-      if (type.ics) await this.bumpSalesStatus(tx, projectId, organization, SalesStatus.MEETING_SCHEDULED, BUMPS_TO_MEETING, user, 'activity.planned');
+      if (type.ics)
+        await this.bumpSalesStatus(
+          tx,
+          projectId,
+          organization,
+          SalesStatus.MEETING_SCHEDULED,
+          BUMPS_TO_MEETING,
+          user,
+          'activity.planned',
+        );
       await recomputeActivityMarks(tx, dto.organizationId);
       await this.audit.log(tx, {
         projectId,
@@ -124,7 +155,8 @@ export class ActivitiesService {
     const existing = await getActivityOrThrow(this.prisma, id, projectId, scopeWhere);
     assertPlanned(existing);
     const type = dto.type ? await getActivityTypeOrThrow(this.prisma, projectId, dto.type) : null;
-    if (dto.contactId) await this.assertContactOfOrganization(dto.contactId, existing.organizationId);
+    if (dto.contactId)
+      await this.assertContactOfOrganization(dto.contactId, existing.organizationId);
     if (dto.campaignId) await this.assertCampaignOfProject(dto.campaignId, projectId);
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -134,7 +166,16 @@ export class ActivitiesService {
         include: ACTIVITY_REFS,
       });
       // Turning a planned activity into a meeting books the record too
-      if (type?.ics) await this.bumpSalesStatus(tx, projectId, existing.organization, SalesStatus.MEETING_SCHEDULED, BUMPS_TO_MEETING, user, 'activity.planned');
+      if (type?.ics)
+        await this.bumpSalesStatus(
+          tx,
+          projectId,
+          existing.organization,
+          SalesStatus.MEETING_SCHEDULED,
+          BUMPS_TO_MEETING,
+          user,
+          'activity.planned',
+        );
       await recomputeActivityMarks(tx, existing.organizationId);
       await this.audit.log(tx, {
         projectId,
@@ -163,10 +204,20 @@ export class ActivitiesService {
     assertPlanned(existing);
     if (dto.result) {
       const known = await this.prisma.referenceItem.findFirst({
-        where: { projectId, category: REFERENCE_CATEGORIES.ACTIVITY_RESULT, key: dto.result, active: true },
+        where: {
+          projectId,
+          category: REFERENCE_CATEGORIES.ACTIVITY_RESULT,
+          key: dto.result,
+          active: true,
+        },
         select: { id: true },
       });
-      if (!known) throw apiError.badRequest('INVALID_REFERENCE_VALUE', REFERENCE_CATEGORIES.ACTIVITY_RESULT, dto.result);
+      if (!known)
+        throw apiError.badRequest(
+          'INVALID_REFERENCE_VALUE',
+          REFERENCE_CATEGORIES.ACTIVITY_RESULT,
+          dto.result,
+        );
     }
 
     const completed = await this.prisma.$transaction(async (tx) => {
@@ -180,7 +231,15 @@ export class ActivitiesService {
         },
         include: ACTIVITY_REFS,
       });
-      await this.bumpSalesStatus(tx, projectId, existing.organization, SalesStatus.IN_PROGRESS, BUMPS_TO_IN_PROGRESS, user, 'activity.completed');
+      await this.bumpSalesStatus(
+        tx,
+        projectId,
+        existing.organization,
+        SalesStatus.IN_PROGRESS,
+        BUMPS_TO_IN_PROGRESS,
+        user,
+        'activity.completed',
+      );
       await recomputeActivityMarks(tx, existing.organizationId);
       await this.audit.log(tx, {
         projectId,
@@ -195,12 +254,21 @@ export class ActivitiesService {
     return (await this.toDtos(projectId, [completed]))[0];
   }
 
-  async cancel(id: string, projectId: string, scopeWhere: Record<string, unknown>, user: AuthenticatedUser): Promise<ActivityDto> {
+  async cancel(
+    id: string,
+    projectId: string,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<ActivityDto> {
     const existing = await getActivityOrThrow(this.prisma, id, projectId, scopeWhere);
     assertPlanned(existing);
 
     const cancelled = await this.prisma.$transaction(async (tx) => {
-      const row = await tx.activity.update({ where: { id }, data: { status: ActivityStatus.CANCELLED }, include: ACTIVITY_REFS });
+      const row = await tx.activity.update({
+        where: { id },
+        data: { status: ActivityStatus.CANCELLED },
+        include: ACTIVITY_REFS,
+      });
       await recomputeActivityMarks(tx, existing.organizationId);
       await this.audit.log(tx, {
         projectId,
@@ -214,7 +282,12 @@ export class ActivitiesService {
     return (await this.toDtos(projectId, [cancelled]))[0];
   }
 
-  async remove(id: string, projectId: string, scopeWhere: Record<string, unknown>, user: AuthenticatedUser): Promise<void> {
+  async remove(
+    id: string,
+    projectId: string,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<void> {
     const existing = await getActivityOrThrow(this.prisma, id, projectId, scopeWhere);
     await this.prisma.$transaction(async (tx) => {
       await tx.activity.delete({ where: { id } });
@@ -225,7 +298,12 @@ export class ActivitiesService {
         action: ACTIVITIES_AUDIT.DELETE,
         objectType: AUDIT_OBJECTS.ACTIVITY,
         objectId: id,
-        metadata: { organizationId: existing.organizationId, type: existing.type, date: formatDateField(existing.date), status: existing.status },
+        metadata: {
+          organizationId: existing.organizationId,
+          type: existing.type,
+          date: formatDateField(existing.date),
+          status: existing.status,
+        },
       });
     });
   }
@@ -236,7 +314,12 @@ export class ActivitiesService {
    * US-01-09. One merged view; at L1 only ACTIVITY has a source, the other kinds are accepted
    * and return nothing — the contract will not change when trainings and deadlines arrive.
    */
-  async agenda(projectId: string, query: AgendaQueryDto, scopeWhere: Record<string, unknown>, user: AuthenticatedUser): Promise<AgendaResponseDto> {
+  async agenda(
+    projectId: string,
+    query: AgendaQueryDto,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<AgendaResponseDto> {
     const kinds = this.parseKinds(query.kinds);
     const { page, limit } = query;
 
@@ -297,8 +380,11 @@ export class ActivitiesService {
         id: row.id,
         date: formatDateField(row.date),
         time: row.time,
-        title: labels.get(`${REFERENCE_CATEGORIES.ACTIVITY_TYPE}:${row.type}`) ?? row.type,
-        subtitle: [row.contact ? `${row.contact.firstName} ${row.contact.lastName}` : null, row.location].filter(Boolean).join(' — ') || null,
+        title: activityTypeLabel(labels, row.type),
+        subtitle:
+          [row.contact ? `${row.contact.firstName} ${row.contact.lastName}` : null, row.location]
+            .filter(Boolean)
+            .join(' — ') || null,
         organization: { id: row.organization.id, name: row.organization.name },
         user: userRef(users.get(row.userId), row.userId),
         status: row.status,
@@ -310,7 +396,11 @@ export class ActivitiesService {
   }
 
   /** Only meeting-like types (referential metadata `ics: true`) export to a calendar. */
-  async ics(id: string, projectId: string, scopeWhere: Record<string, unknown>): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
+  async ics(
+    id: string,
+    projectId: string,
+    scopeWhere: Record<string, unknown>,
+  ): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
     const activity = await getActivityOrThrow(this.prisma, id, projectId, scopeWhere);
     const type = await getActivityTypeOrThrow(this.prisma, projectId, activity.type);
     if (!type.ics) throw apiError.badRequest('ICS_NOT_AVAILABLE');
@@ -339,7 +429,7 @@ export class ActivitiesService {
     trigger: string,
   ): Promise<void> {
     if (!allowedFrom.includes(organization.salesStatus)) return;
-    const change = await applySalesStatus(tx, organization, to);
+    const change = await applySalesStatus(tx, projectId, organization, to);
     if (!change) return;
     await this.audit.log(tx, {
       projectId,
@@ -353,14 +443,20 @@ export class ActivitiesService {
 
   private parseKinds(raw?: string): AgendaKind[] {
     if (!raw) return [...AGENDA_KINDS];
-    const kinds = raw.split(',').map((k) => k.trim()).filter(Boolean);
+    const kinds = raw
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean);
     for (const kind of kinds) {
       if (!AGENDA_KINDS.includes(kind as AgendaKind)) throw apiError.badRequest('INVALID_DATA');
     }
     return kinds as AgendaKind[];
   }
 
-  private async assertContactOfOrganization(contactId: string | undefined, organizationId: string): Promise<void> {
+  private async assertContactOfOrganization(
+    contactId: string | undefined,
+    organizationId: string,
+  ): Promise<void> {
     if (!contactId) return;
     const contact = await this.prisma.contact.findFirst({
       where: { id: contactId, organizationId, deletedAt: null },
@@ -369,9 +465,15 @@ export class ActivitiesService {
     if (!contact) throw apiError.notFound('CONTACT_NOT_FOUND', contactId);
   }
 
-  private async assertCampaignOfProject(campaignId: string | undefined, projectId: string): Promise<void> {
+  private async assertCampaignOfProject(
+    campaignId: string | undefined,
+    projectId: string,
+  ): Promise<void> {
     if (!campaignId) return;
-    const campaign = await this.prisma.campaign.findFirst({ where: { id: campaignId, projectId }, select: { id: true } });
+    const campaign = await this.prisma.campaign.findFirst({
+      where: { id: campaignId, projectId },
+      select: { id: true },
+    });
     if (!campaign) throw apiError.notFound('CAMPAIGN_NOT_FOUND', campaignId);
   }
 }
