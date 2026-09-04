@@ -44,6 +44,8 @@ export const apiError: {
   forbidden: Factory;
   notFound: Factory;
   conflict: Factory;
+  /** 422 : la demande est comprise, mais l'objet n'a pas de quoi y répondre (US-02-08). */
+  unprocessable: Factory;
   gone: Factory;
   payloadTooLarge: Factory;
   locked: Factory;
@@ -56,6 +58,7 @@ export const apiError: {
   forbidden: (key, ...args) => new ForbiddenException(apiErrorBody(key, ...args)),
   notFound: (key, ...args) => new NotFoundException(apiErrorBody(key, ...args)),
   conflict: (key, ...args) => new ConflictException(apiErrorBody(key, ...args)),
+  unprocessable: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.UNPROCESSABLE_ENTITY),
   gone: (key, ...args) => new GoneException(apiErrorBody(key, ...args)),
   payloadTooLarge: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.PAYLOAD_TOO_LARGE),
   locked: (key, ...args) => new HttpException(apiErrorBody(key, ...args), HttpStatus.LOCKED),

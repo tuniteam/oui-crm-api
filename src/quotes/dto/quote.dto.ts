@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { BillingMode, QuoteLineNature, QuoteOrigin, QuoteStatus, QuoteType } from '@prisma/client';
+import {
+  BillingMode,
+  FileCategory,
+  QuoteLineNature,
+  QuoteOrigin,
+  QuoteStatus,
+  QuoteType,
+} from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -36,7 +43,10 @@ export class QuoteLineConfigDto {
   @Min(0)
   id: number;
 
-  @ApiProperty({ example: 3, description: 'Quantity asked; only the part above the included quota is billed' })
+  @ApiProperty({
+    example: 3,
+    description: 'Quantity asked; only the part above the included quota is billed',
+  })
   @IsNumber()
   @Min(0)
   qty: number;
@@ -61,7 +71,10 @@ export class GlobalDiscountDto {
   @Max(DISCOUNT_MAX)
   percent?: number;
 
-  @ApiPropertyOptional({ example: 12, description: 'Months the discount runs; default 12 (PERCENT) or 2 (FREE_MONTHS)' })
+  @ApiPropertyOptional({
+    example: 12,
+    description: 'Months the discount runs; default 12 (PERCENT) or 2 (FREE_MONTHS)',
+  })
   @IsOptional()
   @IsInt()
   @Min(0)
@@ -94,7 +107,10 @@ export class QuoteConfigDto {
   @ApiPropertyOptional({
     type: 'object',
     additionalProperties: true,
-    example: { deployment: { included: true, discount: 0 }, training: { included: true, discount: 25 } },
+    example: {
+      deployment: { included: true, discount: 0 },
+      training: { included: true, discount: 25 },
+    },
     description: 'One entry per setup fee kept, keyed as in the grid',
   })
   @IsOptional()
@@ -149,19 +165,28 @@ export class SimulateQuoteDto {
   @Type(() => QuoteConfigDto)
   config: QuoteConfigDto;
 
-  @ApiPropertyOptional({ example: '2027-01-01', description: 'Defaults to today + 30 days (SPEC-04 déc. 4)' })
+  @ApiPropertyOptional({
+    example: '2027-01-01',
+    description: 'Defaults to today + 30 days (SPEC-04 déc. 4)',
+  })
   @IsOptionalNotNull()
   @Matches(DAY_PATTERN)
   startDate?: string;
 
-  @ApiPropertyOptional({ example: 'cmtl…', description: 'Simulate against another grid version than the active one' })
+  @ApiPropertyOptional({
+    example: 'cmtl…',
+    description: 'Simulate against another grid version than the active one',
+  })
   @IsOptionalNotNull()
   @IsCuid()
   pricingGridId?: string;
 }
 
 export class CreateQuoteDto extends SimulateQuoteDto {
-  @ApiPropertyOptional({ example: 'cmtl…', description: 'Defaults to the open opportunity of the record, created if none' })
+  @ApiPropertyOptional({
+    example: 'cmtl…',
+    description: 'Defaults to the open opportunity of the record, created if none',
+  })
   @IsOptionalNotNull()
   @IsCuid()
   opportunityId?: string;
@@ -306,7 +331,9 @@ export class QuoteResultDto {
   @ApiProperty({ example: { setup: 1500, training: 1250, hardware: 0, total: 2750 } })
   oneShot: { setup: number; training: number; hardware: number; total: number };
 
-  @ApiProperty({ example: { subscription: 958.8, totalHt: 3708.8, vat: 741.76, totalTtc: 4450.56 } })
+  @ApiProperty({
+    example: { subscription: 958.8, totalHt: 3708.8, vat: 741.76, totalTtc: 4450.56 },
+  })
   firstYear: { subscription: number; totalHt: number; vat: number; totalTtc: number };
 
   @ApiProperty({ type: [QuoteYearDto], description: 'Four calendar years from the start date' })
@@ -337,7 +364,11 @@ export class QuoteDto {
   @ApiProperty({ example: 'DEV-2026-243-WB001' })
   number: string;
 
-  @ApiProperty({ example: null, nullable: true, description: 'Number carried over from the workbook' })
+  @ApiProperty({
+    example: null,
+    nullable: true,
+    description: 'Number carried over from the workbook',
+  })
   legacyNumber: string | null;
 
   @ApiProperty({ enum: QuoteOrigin, example: QuoteOrigin.CRM })
@@ -410,6 +441,16 @@ export class QuoteDocumentDto {
   @ApiProperty({ example: 'cmtf…' })
   id: string;
 
+  @ApiProperty({
+    enum: FileCategory,
+    example: FileCategory.QUOTE_PDF,
+    description: 'QUOTE_PDF or SIGNED_RETURN',
+  })
+  category: FileCategory;
+
+  @ApiProperty({ example: 148213, description: 'Bytes' })
+  size: number;
+
   @ApiProperty({ example: 'Periscolia_Devis_DEV-2026-243-WB001.pdf' })
   fileName: string;
 
@@ -418,7 +459,11 @@ export class QuoteDocumentDto {
 }
 
 export class QuoteDetailDto extends QuoteDto {
-  @ApiProperty({ type: QuoteConfigDto, nullable: true, description: 'null for a quote carried over from the workbook' })
+  @ApiProperty({
+    type: QuoteConfigDto,
+    nullable: true,
+    description: 'null for a quote carried over from the workbook',
+  })
   config: QuoteConfigDto | null;
 
   @ApiProperty({ type: QuoteResultDto })
@@ -465,12 +510,32 @@ export class QuoteStatusResponseDto {
   @ApiProperty({ enum: QuoteStatus, example: QuoteStatus.SENT })
   status: QuoteStatus;
 
-  @ApiProperty({ example: false, description: 'true when the discount put the quote in the validation loop' })
+  @ApiProperty({
+    example: false,
+    description: 'true when the discount put the quote in the validation loop',
+  })
   requiresValidation: boolean;
 }
 
+export class QuoteDocumentQueryDto {
+  @ApiPropertyOptional({
+    example: 'pdf',
+    description: 'Only pdf is served at L2; docx will come from the same HTML',
+  })
+  @IsOptional()
+  @IsString()
+  format?: string;
+}
+
+export class QuoteDocumentsResponseDto {
+  @ApiProperty({ type: [QuoteDocumentDto] }) data: QuoteDocumentDto[];
+}
+
 export class SignQuoteDto {
-  @ApiProperty({ example: '2026-09-04', description: 'The day the client signed — never in the future' })
+  @ApiProperty({
+    example: '2026-09-04',
+    description: 'The day the client signed — never in the future',
+  })
   @Matches(DAY_PATTERN)
   signedAt: string;
 }

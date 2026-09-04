@@ -8,6 +8,9 @@ import { MIME } from '@/common/constants/mime.constants';
 import { FileService } from '@/files/file.service';
 import { assertFilePresent } from '@/files/files.utils';
 import { UploadedFileLike } from '@/files/uploaded-file.interface';
+import { DocumentRenderService } from '@/documents/document-render.service';
+import { dataUri } from '@/documents/documents.utils';
+import { previewQuoteData } from '@/documents/preview.fixture';
 import { PrismaService } from '@/prisma/prisma.service';
 import { DocumentsResponseDto, SignatureUploadResponseDto, TemplateUploadResponseDto } from './dto/response-documents.dto';
 import { SettingsResponseDto } from './dto/response-settings.dto';
@@ -30,6 +33,7 @@ export class SettingsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
     private readonly fileService: FileService,
+    private readonly renderer: DocumentRenderService,
   ) {}
 
   async get(projectId: string): Promise<SettingsResponseDto> {
@@ -78,6 +82,56 @@ export class SettingsService {
       signatureImage: signature ? { fileId: signature.id, fileName: signature.fileName, uploadedAt: signature.uploadedAt } : null,
       numbering: numberingExamples(new Date(), initials ?? NUMBERING.FALLBACK_INITIALS),
     };
+  }
+
+  /**
+   * US-00-08 — prévisualiser un gabarit avant de le publier. Le rendu se fait sur un **jeu de
+   * données fictif** (`Exempleville`) : l'administrateur juge sa mise en page sans ouvrir un
+   * devis réel. Le cachet du projet, lui, est le vrai — c'est ce qu'il vient vérifier.
+   *
+   * Sans fichier téléversé, la route prévisualise le gabarit **actif** du projet ; avec un
+   * fichier, elle prévisualise **celui-là**, avant même de le publier.
+   */
+  async previewTemplate(
+    projectId: string,
+    type: DocumentTemplateType,
+    file: UploadedFileLike | undefined,
+  ): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
+    const source = file ? file.buffer.toString('utf8') : await this.activeTemplateSource(projectId, type);
+    const issues = validateTemplate(source, type);
+    if (issues.length) throw withDetails(apiError.badRequest('TEMPLATE_INVALID', issues.join('; ')), issues);
+
+    const buffer = await this.renderer.fromTemplate(source, {
+      ...previewQuoteData(),
+      signature_image: await this.signatureDataUri(projectId),
+    });
+    return { buffer, filename: `apercu-gabarit-${type.toLowerCase()}.pdf`, contentType: MIME.PDF };
+  }
+
+  /** Le gabarit actif du type : le dernier téléversé (règle du L0). */
+  private async activeTemplateSource(projectId: string, type: DocumentTemplateType): Promise<string> {
+    const template = await this.prisma.file.findFirst({
+      where: {
+        projectId,
+        ownerType: FileOwnerType.PROJECT,
+        category: FileCategory.HTML_TEMPLATE,
+        templateType: type,
+      },
+      orderBy: { uploadedAt: 'desc' },
+    });
+    if (!template) throw apiError.notFound('TEMPLATE_NOT_CONFIGURED', type);
+    return (await this.fileService.getBuffer(template)).toString('utf8');
+  }
+
+  /** Le cachet du projet en data URI — vide s'il n'est pas configuré, jamais une erreur. */
+  private async signatureDataUri(projectId: string): Promise<string> {
+    const signature = await this.findSignatureImage(projectId);
+    if (!signature) return '';
+    try {
+      return dataUri(await this.fileService.getBuffer(signature), signature.mimeType);
+    } catch {
+      return '';
+    }
   }
 
   /** New active version of a template type; the file is validated (Handlebars + required tags) first. */

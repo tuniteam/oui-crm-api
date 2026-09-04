@@ -1,0 +1,245 @@
+<!--
+  Gabarit « Devis » — transcription du Gabarit_Devis_V8.docx (SPEC-01 §6.2).
+  Handlebars ; les accolades simples de la V8 ({mairie_nom}) deviennent {{mairie_nom}}.
+  Le serveur fournit tout formaté : ce gabarit ne calcule rien.
+  <pagebreak /> marque une coupure de page (react-pdf-html ignore page-break-before).
+-->
+<style>
+  body { font-family: Helvetica; font-size: 8px; color: #14232E; line-height: 1.25; }
+  h1 { font-size: 15px; color: #0369A1; margin: 0 0 2px 0; }
+  h2 { font-size: 10px; color: #0369A1; margin: 8px 0 4px 0; }
+  .brand { font-size: 13px; color: #0369A1; font-weight: bold; }
+  .baseline { font-size: 7px; color: #5A7184; margin-bottom: 8px; }
+  .label { font-size: 7px; color: #5A7184; letter-spacing: 1px; }
+  .big { font-size: 15px; color: #0369A1; }
+  .muted { color: #5A7184; }
+  .box { border: 1px solid #D9E4EC; padding: 6px; margin-bottom: 5px; }
+  .highlight { background: #F1F7FB; border: 1px solid #BFDCEC; padding: 6px; margin-bottom: 5px; }
+  table { width: 100%; margin-bottom: 6px; }
+  th { background: #0369A1; color: #FFFFFF; font-size: 7px; text-align: left; padding: 4px 6px; }
+  td { border-bottom: 1px solid #D9E4EC; padding: 4px 6px; }
+  .num { text-align: right; }
+  .total-row td { background: #F1F7FB; font-size: 10px; color: #0369A1; border-bottom: none; }
+  .foot { font-size: 7px; color: #5A7184; margin-top: 4px; }
+  .sign { border: 1px solid #D9E4EC; padding: 8px; margin-top: 6px; }
+</style>
+
+<!-- ============================================================ page 1 — la proposition -->
+<div class="brand">{{emetteur_nom}}</div>
+<div class="baseline">Éditeur de logiciel pour collectivités</div>
+
+<h1>PROPOSITION COMMERCIALE</h1>
+<div class="muted">{{mairie_prefixe}}{{mairie_nom}}</div>
+
+<table>
+  <tr>
+    <td style="width: 50%">
+      <div class="label">CLIENT</div>
+      <div>{{mairie_nom}}</div>
+      <div class="muted">{{mairie_habitants}} hab. — strate {{strate}}</div>
+    </td>
+    <td>
+      <div class="label">VOTRE CONTACT</div>
+      <div>{{contact_nom}}</div>
+      <div class="muted">{{contact_fonction}}</div>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <div class="label">RÉFÉRENCE DEVIS</div>
+      <div>{{ref_devis}}</div>
+      <div class="muted">Émis le {{date_emission}}</div>
+    </td>
+    <td>
+      <div class="label">ABONNEMENT MENSUEL HT</div>
+      <div class="big">{{abo_ht_affiche}} €</div>
+      <div class="muted">Abonnement + options / mois (HT)</div>
+    </td>
+  </tr>
+  <tr>
+    <td>
+      <div class="label">DÉMARRAGE ENVISAGÉ</div>
+      <div>{{date_demarrage}}</div>
+    </td>
+    <td>
+      <div class="label">DURÉE D'ENGAGEMENT</div>
+      <div>{{engagement_txt}}</div>
+      <div class="muted">{{resiliation_txt}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="highlight">Cette proposition est valable jusqu'au {{date_validite}}.</div>
+
+<h2>Récapitulatif de l'offre</h2>
+<table>
+  <tr>
+    <td style="width: 33%"><div class="label">FORMULE</div>{{formule}}</td>
+    <td style="width: 33%"><div class="label">STRATE</div>{{strate}}</td>
+    <td><div class="label">ENGAGEMENT</div>{{engagement_txt}}</td>
+  </tr>
+</table>
+
+{{#if offre_items}}
+<div class="box">
+  <div class="label">CE QUE COMPREND L'OFFRE</div>
+  {{#each offre_items}}<div>· {{texte}}</div>{{/each}}
+</div>
+{{/if}}
+
+<div class="box">
+  <div class="label">VOTRE CONTACT COMMERCIAL</div>
+  <div>{{contact_nom}} — {{contact_fonction}}</div>
+  <div class="muted">{{contact_email}}</div>
+</div>
+
+<pagebreak />
+
+<!-- ============================================================ page 2 — le devis chiffré -->
+<div class="brand">DEVIS {{ref_devis}}</div>
+<div class="baseline">Émis le {{date_emission}} · valable jusqu'au {{date_validite}}</div>
+
+<table>
+  <tr>
+    <td style="width: 50%">
+      <div class="label">ÉMETTEUR</div>
+      <div>{{emetteur_nom}}</div>
+      <div class="muted">{{emetteur_adresse}}</div>
+    </td>
+    <td>
+      <div class="label">CLIENT</div>
+      <div>{{mairie_nom}}</div>
+      <div class="muted">{{mairie_adresse}}</div>
+      <div class="muted">{{mairie_cp_ville}}</div>
+      <div class="muted">SIRET : {{mairie_siret}}</div>
+    </td>
+  </tr>
+</table>
+
+<div class="box"><span class="label">OBJET</span> Proposition commerciale pour {{mairie_prefixe_min}}{{mairie_nom}}</div>
+
+<h2>Abonnement mensuel (base année civile)</h2>
+<table>
+  <tr>
+    <th>DÉSIGNATION</th><th class="num">QTÉ</th><th class="num">PU HT/MOIS</th>
+    <th class="num">REMISE</th><th class="num">TOTAL HT MENSUEL</th>
+  </tr>
+  {{#each lignes_abo}}
+  <tr>
+    <td>{{nom}}{{#if sous}}<br /><span class="muted">{{sous}}</span>{{/if}}</td>
+    <td class="num">{{qte}}</td><td class="num">{{pu}} €</td>
+    <td class="num">{{remise}}</td><td class="num">{{total}} €</td>
+  </tr>
+  {{/each}}
+  <tr class="total-row">
+    <td colspan="4">TOTAL TTC ABONNEMENT MENSUEL</td>
+    <td class="num">{{total_ttc_abo}} €</td>
+  </tr>
+</table>
+<div class="foot">dont {{total_ht_abo}} € HT + {{total_tva_abo}} € TVA. {{mention_abo}}</div>
+
+{{#if has_remise}}
+<div class="highlight">
+  <span class="label">{{remise_badge}}</span> {{remise_titre}} — {{remise_sous}} : {{remise_valeur}} € / mois
+</div>
+{{/if}}
+
+<h2>Frais de mise en place — facturés une seule fois</h2>
+<table>
+  <tr>
+    <th>DÉSIGNATION</th><th class="num">QTÉ</th><th class="num">PU HT</th>
+    <th class="num">REMISE</th><th class="num">TOTAL HT</th>
+  </tr>
+  {{#each lignes_frais}}
+  <tr>
+    <td>{{nom}}</td><td class="num">{{qte}}</td><td class="num">{{pu}} €</td>
+    <td class="num">{{remise}}</td><td class="num">{{total}} €</td>
+  </tr>
+  {{/each}}
+  <tr class="total-row">
+    <td colspan="4">TOTAL TTC FRAIS DE MISE EN PLACE</td>
+    <td class="num">{{total_ttc_frais}} €</td>
+  </tr>
+</table>
+<div class="foot">
+  dont {{total_ht_frais}} € HT + {{total_tva_frais}} € TVA.
+  Les frais de mise en place correspondent à un coût unique facturé lors du démarrage du service.
+</div>
+
+{{#if conditions_txt}}<div class="box">{{conditions_txt}}</div>{{/if}}
+
+<pagebreak />
+
+<!-- ============================================================ page 3 — budget et signature -->
+<h2>Récapitulatif budgétaire pluriannuel</h2>
+<table>
+  <tr>
+    <th>POSTE</th>
+    <th class="num">{{py_annee1}}</th><th class="num">{{py_annee2}}</th>
+    <th class="num">{{py_annee3}}</th><th class="num">{{py_annee4}}</th>
+  </tr>
+  <tr>
+    <td>Frais de mise en place<br /><span class="muted">hors formation</span></td>
+    <td class="num">{{py_frais_1}}</td><td class="num">{{py_frais_2}}</td>
+    <td class="num">{{py_frais_3}}</td><td class="num">{{py_frais_4}}</td>
+  </tr>
+  <tr>
+    <td>Formation</td>
+    <td class="num">{{py_formation_1}}</td><td class="num">{{py_formation_2}}</td>
+    <td class="num">{{py_formation_3}}</td><td class="num">{{py_formation_4}}</td>
+  </tr>
+  <tr>
+    <td>Matériel &amp; prestations<br /><span class="muted">tablettes, pointage…</span></td>
+    <td class="num">{{py_materiel_1}}</td><td class="num">{{py_materiel_2}}</td>
+    <td class="num">{{py_materiel_3}}</td><td class="num">{{py_materiel_4}}</td>
+  </tr>
+  <tr>
+    <td>Abonnement mensuel<br /><span class="muted">×12, récurrent{{py_abo_note}}</span></td>
+    <td class="num">{{py_abo_1}}{{py_abo_1_detail}}</td><td class="num">{{py_abo_2}}</td>
+    <td class="num">{{py_abo_3}}</td><td class="num">{{py_abo_4}}</td>
+  </tr>
+  <tr class="total-row">
+    <td>TOTAL HT</td>
+    <td class="num">{{py_total_ht_1}}</td><td class="num">{{py_total_ht_2}}</td>
+    <td class="num">{{py_total_ht_3}}</td><td class="num">{{py_total_ht_4}}</td>
+  </tr>
+  <tr class="total-row">
+    <td>TOTAL TTC</td>
+    <td class="num">{{py_total_ttc_1}}</td><td class="num">{{py_total_ttc_2}}</td>
+    <td class="num">{{py_total_ttc_3}}</td><td class="num">{{py_total_ttc_4}}</td>
+  </tr>
+</table>
+<div class="foot">* Tarifs en euros. ** Tarif sans revalorisation Syntec.</div>
+
+{{#if clause_essai}}
+<h2>Clause de période d'essai</h2>
+<div class="muted">
+  À compter de la date de mise à disposition de la plateforme, la collectivité bénéficie d'une
+  période d'essai de quatre (4) semaines permettant de tester la solution en conditions réelles
+  d'utilisation. En cas de non-validation durant cette période, elle pourra mettre fin à
+  l'engagement par simple notification écrite avant l'expiration du délai, sans aucun frais.
+  Au-delà, le devis et les conditions contractuelles associées sont réputés acceptés.
+</div>
+{{/if}}
+
+<table>
+  <tr>
+    <td style="width: 50%">
+      <div class="sign">
+        <div class="label">BON POUR ACCORD — CLIENT</div>
+        <div class="muted">Nom et prénom</div>
+        <div class="muted">Fonction</div>
+        <div class="muted">Date</div>
+        <div class="muted">Signature et cachet</div>
+      </div>
+    </td>
+    <td>
+      <div class="sign">
+        <div class="label">POUR {{emetteur_nom}}</div>
+        <div>{{signataire_periscolia}}</div>
+        <div class="muted">{{date_signature}}</div>
+        <img src="{{signature_image}}" style="width: 120px" />
+      </div>
+    </td>
+  </tr>
+</table>

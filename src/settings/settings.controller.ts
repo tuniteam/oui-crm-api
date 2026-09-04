@@ -14,7 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConsumes, ApiHeader, ApiOkResponse, ApiOperation, ApiParam, ApiProduces, ApiTags } from '@nestjs/swagger';
 import { DocumentTemplateType } from '@prisma/client';
 import { PROJECT_ID_HEADER } from '@/auth/auth.constants';
 import { CurrentProjectId } from '@/auth/decorators/current-project.decorator';
@@ -25,7 +25,11 @@ import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guards';
 import { PermissionsGuard } from '@/auth/guards/permissions.guard';
 import { ProjectGuard } from '@/auth/guards/project.guard';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
+import { Res } from '@nestjs/common';
+import { Response } from 'express';
 import { apiError } from '@/common/api-error';
+import { MIME } from '@/common/constants/mime.constants';
+import { sendFileAttachment } from '@/common/helper/file-response.helper';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
 import { ApiDeleteResponse, ApiGetResponse, ApiPatchResponse, ApiPostResponse, ApiAuthResponses, ApiResourceNotFound } from '@/common/decorators';
 import { ApiMessages } from '@/common/messages';
@@ -95,6 +99,29 @@ export class SettingsController {
     @CurrentUser() actor: AuthenticatedUser,
   ): Promise<TemplateUploadResponseDto> {
     return this.settingsService.uploadTemplate(projectId, type, file, actor);
+  }
+
+  /**
+   * US-00-08 — juger un gabarit avant de le publier. Sans fichier, prévisualise le gabarit actif ;
+   * avec un fichier, prévisualise **celui-là**, avant même de le téléverser. Données fictives,
+   * cachet réel du projet.
+   */
+  @Post('documents/:type/preview')
+  @Permissions({ code: 'settings:read' })
+  @HttpCode(HttpStatus.OK)
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation(swagger.settings.previewTemplate)
+  @ApiParam({ name: 'type', enum: DocumentTemplateType, description: swagger.params.templateType })
+  @ApiProduces(MIME.PDF)
+  @ApiOkResponse({ description: swagger.responses.attachment })
+  @UseInterceptors(FileInterceptor(UPLOAD_FIELD, { limits: { fileSize: MAX_SIZE_BY_CATEGORY.HTML_TEMPLATE } }))
+  async previewTemplate(
+    @CurrentProjectId() projectId: string,
+    @Param('type', templateTypePipe) type: DocumentTemplateType,
+    @UploadedFile() file: UploadedFileLike | undefined,
+    @Res() res: Response,
+  ): Promise<void> {
+    sendFileAttachment(res, await this.settingsService.previewTemplate(projectId, type, file));
   }
 
   @Post('signature-image')

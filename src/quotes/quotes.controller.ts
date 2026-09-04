@@ -14,7 +14,15 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiConsumes,
+  ApiHeader,
+  ApiOkResponse,
+  ApiOperation,
+  ApiProduces,
+  ApiTags,
+} from '@nestjs/swagger';
 import { PROJECT_ID_HEADER } from '@/auth/auth.constants';
 import { CurrentProjectId } from '@/auth/decorators/current-project.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
@@ -26,8 +34,21 @@ import { PermissionsGuard } from '@/auth/guards/permissions.guard';
 import { ProjectGuard } from '@/auth/guards/project.guard';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
-import { ApiAuthResponses, ApiCuidParam, ApiDeleteResponse, ApiGetResponse, ApiListResponse, ApiPatchResponse, ApiPostResponse } from '@/common/decorators';
+import {
+  ApiAuthResponses,
+  ApiCuidParam,
+  ApiDeleteResponse,
+  ApiGetResponse,
+  ApiListResponse,
+  ApiPatchResponse,
+  ApiPostResponse,
+} from '@/common/decorators';
 import { ApiMessages } from '@/common/messages';
+import { Res } from '@nestjs/common';
+import { Response } from 'express';
+import { MIME } from '@/common/constants/mime.constants';
+import { sendFileAttachment } from '@/common/helper/file-response.helper';
+import { DOCUMENT_WARNINGS_HEADER } from '@/documents/documents.constants';
 import { ParseCuidPipe } from '@/common/pipes';
 import { MAX_SIZE_BY_CATEGORY, UPLOAD_FIELD } from '@/files/files.constants';
 import { UploadedFileLike } from '@/files/uploaded-file.interface';
@@ -35,6 +56,8 @@ import { QuotesService } from './quotes.service';
 import {
   CreateQuoteDto,
   QuoteDetailDto,
+  QuoteDocumentQueryDto,
+  QuoteDocumentsResponseDto,
   QuoteIdResponseDto,
   QuoteListQueryDto,
   QuoteResultDto,
@@ -131,7 +154,6 @@ export class QuotesController {
   ): Promise<QuoteDetailDto> {
     return this.quotesService.update(id, projectId, dto, scopeWhere, user);
   }
-
 
   // ------------------------------------------------------------------ cycle de vie (US-02-04 à 06)
 
@@ -242,6 +264,51 @@ export class QuotesController {
     return this.quotesService.reopen(id, projectId, scopeWhere, user);
   }
 
+  @Get(':id/document')
+  @Permissions({ code: 'quotes:read' })
+  @ApiOperation(swagger.quotes.document)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiProduces(MIME.PDF)
+  @ApiOkResponse({ description: swagger.responses.attachment })
+  async document(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @Query() query: QuoteDocumentQueryDto,
+    @ScopeFilter('quotes:read') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ): Promise<void> {
+    const document = await this.quotesService.document(
+      id,
+      projectId,
+      query.format ?? 'pdf',
+      scopeWhere,
+      user,
+    );
+    // Le cachet manquant s'annonce en en-tête : un document sans cachet vaut mieux qu'une erreur.
+    if (document.warnings.length)
+      res.setHeader(DOCUMENT_WARNINGS_HEADER, document.warnings.join(','));
+    sendFileAttachment(res, {
+      buffer: document.buffer,
+      filename: document.fileName,
+      contentType: MIME.PDF,
+    });
+  }
+
+  @Get(':id/documents')
+  @Permissions({ code: 'quotes:read' })
+  @ApiOperation(swagger.quotes.documents)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiGetResponse(QuoteDocumentsResponseDto)
+  archivedDocuments(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @ScopeFilter('quotes:read') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<QuoteDocumentsResponseDto> {
+    return this.quotesService.archivedDocuments(id, projectId, scopeWhere, user);
+  }
+
   @Post(':id/sign')
   @Permissions({ code: 'quotes:sign' })
   @HttpCode(HttpStatus.OK)
@@ -261,7 +328,9 @@ export class QuotesController {
   @Post(':id/signed-return')
   @Permissions({ code: 'quotes:update' })
   @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FileInterceptor(UPLOAD_FIELD, { limits: { fileSize: MAX_SIZE_BY_CATEGORY.SIGNED_RETURN } }))
+  @UseInterceptors(
+    FileInterceptor(UPLOAD_FIELD, { limits: { fileSize: MAX_SIZE_BY_CATEGORY.SIGNED_RETURN } }),
+  )
   @ApiConsumes('multipart/form-data')
   @ApiOperation(swagger.quotes.signedReturn)
   @ApiCuidParam('id', swagger.params.quoteId)

@@ -5,6 +5,7 @@
 import {
   ContractStatus,
   CustomerStatus,
+  FileCategory,
   OpportunityStageCode,
   Prisma,
   PrismaClient,
@@ -20,6 +21,7 @@ import { applyOpportunityStage } from '@/opportunities/opportunities.utils';
 import { releaseAmendedContract } from '@/contracts/contracts.utils';
 import { applyCustomerStatus, applySalesStatus } from '@/organizations/organizations.utils';
 import { PricingService } from '@/pricing/pricing.service';
+import { QuoteDocumentDto } from './dto/quote.dto';
 import { ComputedQuoteLine, PricingGridContent, QuoteConfig, QuoteResult } from '@/pricing/pricing.types';
 import { money, sumMoney } from '@/pricing/pricing.utils';
 import {
@@ -202,6 +204,26 @@ export function resolveQuoteResult(
 
   const lines = (quote.lines ?? []).sort((a, b) => a.order - b.order).map(storedLine);
   return { lines, amounts: quote, result: null };
+}
+
+/**
+ * Un document rattaché à un devis, dans la forme unique que servent le détail **et** la liste
+ * des archives : le PDF officiel comme le retour signé, avec sa catégorie et son poids.
+ */
+export function quoteDocumentDto(file: {
+  id: string;
+  fileName: string;
+  category: FileCategory;
+  fileSize: number;
+  uploadedAt: Date;
+}): QuoteDocumentDto {
+  return {
+    id: file.id,
+    category: file.category,
+    size: file.fileSize,
+    fileName: file.fileName,
+    createdAt: file.uploadedAt,
+  };
 }
 
 /** Contrôle de cohérence : un total figé doit recouper la somme de ses lignes (SPEC-04 déc. 3). */

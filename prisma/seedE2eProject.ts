@@ -23,7 +23,7 @@ import {
   PLATFORM_SUPER_ADMIN,
 } from './seed-data/periscolia.config';
 import { seedDemoOrganizations } from './seedOrganizations';
-import { seedSignatureImage } from './seedDev';
+import { seedQuoteTemplate, seedSignatureImage } from './seedDev';
 
 const EXTERNAL_ACCOUNT_DAYS = 365;
 
@@ -105,7 +105,10 @@ async function main(): Promise<void> {
       where: { email: PLATFORM_SUPER_ADMIN.email },
       select: { id: true },
     });
-    if (superAdmin) await seedSignatureImage(prisma, project.id, superAdmin.id);
+    if (superAdmin) {
+      await seedSignatureImage(prisma, project.id, superAdmin.id);
+      await seedQuoteTemplate(prisma, project.id, superAdmin.id);
+    }
 
     console.log(
       `✓ ${E2E_PROJECT.name} (${E2E_PROJECT.slug}) rebuilt — ${PERISCOLIA_USERS.length} accounts, ${seeded} demo organizations`,

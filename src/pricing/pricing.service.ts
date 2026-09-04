@@ -31,6 +31,7 @@ import {
   safeQty,
   setupFeePrices,
   sumMoney,
+  vatOf,
 } from './pricing.utils';
 
 /**
@@ -73,7 +74,7 @@ export class PricingService {
     const multiYear = this.simulate(input.startDate, monthly, oneShot, vatRate);
     const firstYearSubscription = multiYear.subscription[0];
     const firstYearHt = money(firstYearSubscription.plus(oneShot.total));
-    const firstYearVat = this.vatOf(firstYearHt, vatRate);
+    const firstYearVat = vatOf(firstYearHt, vatRate);
 
     return {
       bracketIndex,
@@ -293,12 +294,8 @@ export class PricingService {
       subscription: subscriptionRounded,
       months,
       totalHt,
-      totalTtc: totalHt.map((amount) => money(amount.plus(this.vatOf(amount, vatRate)))),
+      totalTtc: totalHt.map((amount) => money(amount.plus(vatOf(amount, vatRate)))),
     };
-  }
-
-  private vatOf(amountHt: Prisma.Decimal, vatRate: number): Prisma.Decimal {
-    return money(amountHt.times(new Prisma.Decimal(vatRate ?? 0).dividedBy(PERCENT_BASE)));
   }
 
   /** SPEC-04 déc. 1 : la remise déclencheuse tient compte de **toutes** les lignes. */
