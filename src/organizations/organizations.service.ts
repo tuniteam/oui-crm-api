@@ -3,9 +3,12 @@
 // ============================================
 
 import { Injectable } from '@nestjs/common';
-import { Organization, Prisma, SalesStatus, ScopeType } from '@prisma/client';
+import { ActivityStatus, Organization, Prisma, SalesStatus, ScopeType } from '@prisma/client';
 import { AuditLogService } from '@/audit-log/audit-log.service';
+import { loadActivityLabels } from '@/activities/activities.utils';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
+import { REFERENCE_CATEGORIES } from '@/common/messages';
+import { formatDateField } from '@/common/utils/date.utils';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { apiError, withMeta } from '@/common/api-error';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
@@ -19,6 +22,7 @@ import {
   BoardItemDto,
   BulkActionDto,
   BulkResultDto,
+  BoardNextActivityDto,
   BoardQueryDto,
   BoardResponseDto,
   ChangeSalesStatusDto,
@@ -292,7 +296,7 @@ export class OrganizationsService {
     const wanted = query.salesStatus ? [query.salesStatus] : BOARD_COLUMNS;
     const { page, limit } = query;
 
-    const columns = await Promise.all(
+    const fetched = await Promise.all(
       wanted.map(async (salesStatus) => {
         const where = { ...base, salesStatus };
         const [total, rows] = await Promise.all([
@@ -305,14 +309,21 @@ export class OrganizationsService {
             include: ORGANIZATION_REFS,
           }),
         ]);
-        await hydrateCampaignMembership(this.prisma, ctx, rows);
-        return {
-          salesStatus,
-          meta: buildPaginationMeta(total, page, limit),
-          items: rows.map((row) => this.toBoardItem(row, this.accessOf(ctx, row))),
-        };
+        return { salesStatus, total, rows };
       }),
     );
+
+    // Une seule passe pour tout le tableau : appartenances de campagne (périmètres) et
+    // prochaine action de chaque carte, plutôt que deux requêtes par colonne.
+    const rows = fetched.flatMap((column) => column.rows);
+    await hydrateCampaignMembership(this.prisma, ctx, rows);
+    const nextActivities = await this.loadNextActivities(projectId, rows.map((row) => row.id));
+
+    const columns = fetched.map((column) => ({
+      salesStatus: column.salesStatus,
+      meta: buildPaginationMeta(column.total, page, limit),
+      items: column.rows.map((row) => this.toBoardItem(row, this.accessOf(ctx, row), nextActivities.get(row.id) ?? null)),
+    }));
     return { columns };
   }
 
@@ -348,7 +359,45 @@ export class OrganizationsService {
     return { id, salesStatus: dto.salesStatus };
   }
 
-  private toBoardItem(row: OrganizationWithRefs, access: ScopeAccess): BoardItemDto {
+  /**
+   * La prochaine action planifiée de chaque fiche affichée — **la même** que celle qui donne
+   * `nextActivityAt` et trie la colonne : la première par date, puis par heure. Rien n'est
+   * dénormalisé de plus : une colonne de kanban se lit à la lecture, et un type stocké sur
+   * l'organisme serait une seconde vérité à maintenir à chaque écriture d'action.
+   */
+  private async loadNextActivities(
+    projectId: string,
+    organizationIds: string[],
+  ): Promise<Map<string, BoardNextActivityDto>> {
+    if (!organizationIds.length) return new Map();
+
+    const planned = await this.prisma.activity.findMany({
+      where: { projectId, organizationId: { in: organizationIds }, status: ActivityStatus.PLANNED },
+      orderBy: [{ date: 'asc' }, { time: { sort: 'asc', nulls: 'first' } }],
+      select: { id: true, organizationId: true, type: true, date: true, time: true, result: true },
+    });
+
+    const labels = await loadActivityLabels(this.prisma, projectId, planned);
+    const byOrganization = new Map<string, BoardNextActivityDto>();
+    for (const activity of planned) {
+      // Les actions arrivent triées : la première rencontrée pour une fiche est la prochaine.
+      if (byOrganization.has(activity.organizationId)) continue;
+      byOrganization.set(activity.organizationId, {
+        id: activity.id,
+        type: activity.type,
+        title: labels.get(`${REFERENCE_CATEGORIES.ACTIVITY_TYPE}:${activity.type}`) ?? activity.type,
+        date: formatDateField(activity.date),
+        time: activity.time,
+      });
+    }
+    return byOrganization;
+  }
+
+  private toBoardItem(
+    row: OrganizationWithRefs,
+    access: ScopeAccess,
+    nextActivity: BoardNextActivityDto | null,
+  ): BoardItemDto {
     const restricted: BoardItemDto = {
       id: row.id,
       name: row.name,
@@ -361,6 +410,7 @@ export class OrganizationsService {
       priority: row.priority,
       tags: row.tags,
       nextActivityAt: row.nextActivityAt,
+      nextActivity,
       lastActivityAt: row.lastActivityAt,
     };
   }

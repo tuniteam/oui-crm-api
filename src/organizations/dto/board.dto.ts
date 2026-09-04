@@ -34,6 +34,28 @@ export class BoardQueryDto {
 }
 
 /**
+ * La prochaine action planifiée de la fiche — celle-là même qui donne `nextActivityAt` et qui
+ * trie la colonne. La carte porte son type et son libellé pour être lisible sans second appel :
+ * « RDV physique mardi 14:30 » dit ce qu'il y a à faire, « mardi » ne dit rien.
+ */
+export class BoardNextActivityDto {
+  @ApiProperty({ example: 'cmtj…' })
+  id: string;
+
+  @ApiProperty({ example: 'MEETING', description: 'Key of the ACTIVITY_TYPE reference list' })
+  type: string;
+
+  @ApiProperty({ example: 'RDV physique', description: 'Label of that type, resolved from the project list' })
+  title: string;
+
+  @ApiProperty({ example: '2026-09-15' })
+  date: string;
+
+  @ApiProperty({ example: '14:30', nullable: true, description: 'Local time as entered, or null for an all-day task' })
+  time: string | null;
+}
+
+/**
  * A kanban card. Outside the caller's scope with a RESTRICTED role the card is greyed:
  * only id, name, salesRep and access are present — the front disables its drag.
  */
@@ -56,8 +78,19 @@ export class BoardItemDto {
   @ApiPropertyOptional({ example: ['HOT'] })
   tags?: string[];
 
-  @ApiPropertyOptional({ example: '2026-09-15T00:00:00.000Z', nullable: true })
+  @ApiPropertyOptional({
+    example: '2026-09-15T00:00:00.000Z',
+    nullable: true,
+    description: 'Date of the next planned activity — what the column is sorted by',
+  })
   nextActivityAt?: Date | null;
+
+  @ApiPropertyOptional({
+    type: BoardNextActivityDto,
+    nullable: true,
+    description: 'The next planned activity itself: what is to be done, not only when',
+  })
+  nextActivity?: BoardNextActivityDto | null;
 
   @ApiPropertyOptional({ example: null, nullable: true })
   lastActivityAt?: Date | null;
