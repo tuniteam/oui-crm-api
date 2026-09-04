@@ -183,6 +183,14 @@ const errorDefinitions = {
   QUOTE_NOT_REOPENABLE: (status: string) => `Quote is ${status}: only an expired quote is reopened as a new draft`,
   QUOTE_HAS_NO_CONFIG: 'Quote was carried over from the workbook: it holds no configuration to replay',
 
+  // Signature and contracts (L2 phase G — US-02-07, US-02-10)
+  QUOTE_NOT_SIGNABLE: (status: string) => `Quote is ${status}: only a quote sent to the client can be signed`,
+  QUOTE_IMPORTED_NO_CONTRACT:
+    'Quote was carried over from the workbook: it holds no configuration to turn into a contract',
+  ORGANIZATION_INCOMPLETE: (missing: string) => `Organization record is incomplete: ${missing}`,
+  CONTRACT_NOT_FOUND: (id: string) => `Contract ${id} not found`,
+  CONTRACT_NOT_AMENDABLE: (status: string) => `Contract is ${status}: only an active contract can be amended`,
+
 } as const;
 
 type ErrorKey = keyof typeof errorDefinitions;
@@ -320,6 +328,30 @@ export const ApiMessages = {
         summary: 'Reopen an expired quote',
         description:
           'Creates a NEW draft from its configuration, with its own number and a link back to it: the commercial history keeps both attempts',
+      },
+      sign: {
+        summary: 'Sign a quote',
+        description:
+          'Creates the contract in the same transaction (number CTR- derived from the quote, amounts copied from the frozen result), moves the opportunity to WON and the record to DEPLOYING. The sales status is left untouched — the sales rep moves their own card. Refused when the record is incomplete for a contract',
+      },
+      signedReturn: {
+        summary: 'Attach the signed return',
+        description: 'Archives the signed PDF or scan under the quote; a contractual piece, never deletable',
+      },
+    },
+
+    contracts: {
+      tag: 'Contracts',
+      list: {
+        summary: 'List contracts',
+        description:
+          'Read-only at L2: contracts are born of a signature. Newest signature first; a sales rep granted OWN only sees the ones they signed',
+      },
+      detail: { summary: 'Get a contract', description: 'The signed terms, the amounts and the amendment chain' },
+      amend: {
+        summary: 'Open an amendment',
+        description:
+          'A renewal or an addition is a new deal: the contract moves to AMENDING, the opportunity opens (or is reused) and a prefilled draft quote is created. The contract keeps running until its successor starts',
       },
     },
 
@@ -500,6 +532,7 @@ export const ApiMessages = {
       pricingGridId: 'Pricing grid version unique identifier (CUID)',
       opportunityId: 'Opportunity unique identifier (CUID)',
       quoteId: 'Quote unique identifier (CUID)',
+      contractId: 'Contract unique identifier (CUID)',
       importBatchId: 'Import batch unique identifier (CUID)',
     },
 

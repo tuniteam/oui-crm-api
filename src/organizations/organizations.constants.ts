@@ -10,6 +10,7 @@ export const ORGANIZATION_AUDIT = {
   UPDATE: 'organization.update',
   DELETE: 'organization.delete',
   SALES_STATUS: 'organization.salesStatus',
+  CUSTOMER_STATUS: 'organization.customerStatus',
 } as const;
 
 /**

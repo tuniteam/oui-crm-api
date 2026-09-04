@@ -29,6 +29,23 @@ export function todayUtc(now: Date = new Date()): Date {
   return toDate(formatDateField(now));
 }
 
+/** Lendemain d'un jour calendaire (fin de contrat → début de son successeur). */
+export function nextDay(date: Date): Date {
+  return new Date(date.getTime() + MS_PER_DAY);
+}
+
+/**
+ * Même jour du mois, `months` plus tard. Le 31 d'un mois qui n'en a que 30 recule au dernier
+ * jour du mois — c'est ce que fait un échéancier contractuel, et ce que `Date.UTC` produit
+ * naturellement si on borne le quantième.
+ */
+export function addMonths(date: Date, months: number): Date {
+  const day = date.getUTCDate();
+  const shifted = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1));
+  const lastDay = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), Math.min(day, lastDay)));
+}
+
 /**
  * Strict calendar-day parsing: shape AND existence (2027-02-30 or 2026-13-45 → 400 INVALID_DATA,
  * never an Invalid Date reaching Prisma as a 500).

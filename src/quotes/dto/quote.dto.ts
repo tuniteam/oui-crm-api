@@ -469,6 +469,32 @@ export class QuoteStatusResponseDto {
   requiresValidation: boolean;
 }
 
+export class SignQuoteDto {
+  @ApiProperty({ example: '2026-09-04', description: 'The day the client signed — never in the future' })
+  @Matches(DAY_PATTERN)
+  signedAt: string;
+}
+
+export class SignResponseDto {
+  @ApiProperty({ example: 'cmtn…' })
+  contractId: string;
+
+  @ApiProperty({ example: 'CTR-2026-247-AS001' })
+  contractNumber: string;
+
+  @ApiProperty({
+    example: null,
+    nullable: true,
+    description: 'Always null at L2: the deployment is an L4 object (SPEC-14 D1)',
+  })
+  deploymentId: string | null;
+}
+
+export class SignedReturnResponseDto {
+  @ApiProperty({ example: 'cmtn…' })
+  fileId: string;
+}
+
 export class QuoteIdResponseDto {
   @ApiProperty({ example: 'cmtl…' })
   id: string;

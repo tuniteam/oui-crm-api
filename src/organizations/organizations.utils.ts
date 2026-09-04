@@ -345,6 +345,26 @@ export async function applySalesStatus(
   return { from: organization.salesStatus, to };
 }
 
+/**
+ * The single writer of Organization.customerStatus. Nothing wrote it before the L2: the update
+ * DTO excludes it on purpose — the customer status follows the contract, never a manual edit.
+ * Signing a quote is its first writer (SPEC-14 D14); the L3 lifecycle will join here.
+ */
+export async function applyCustomerStatus(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  organization: Pick<Organization, 'id' | 'customerStatus'>,
+  to: CustomerStatus,
+): Promise<{ from: CustomerStatus; to: CustomerStatus } | null> {
+  if (organization.customerStatus === to) return null;
+  const { count } = await tx.organization.updateMany({
+    where: { id: organization.id, projectId },
+    data: { customerStatus: to },
+  });
+  if (count === 0) throw apiError.notFound('ORGANIZATION_NOT_FOUND', organization.id);
+  return { from: organization.customerStatus, to };
+}
+
 /** Brackets of the project's ACTIVE grid; empty when no grid is active. The bracket rule
  *  itself belongs to the pricing engine (`@/pricing/pricing.utils`, SPEC-04 §3 règle 1). */
 export async function loadActiveBrackets(
