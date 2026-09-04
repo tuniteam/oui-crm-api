@@ -20,6 +20,7 @@ import {
   ACTIVITIES_AUDIT,
   AGENDA_KIND,
   AGENDA_KINDS,
+  AgendaCounts,
   emptyAgendaCounts,
   AgendaKind,
   BUMPS_TO_IN_PROGRESS,
@@ -264,8 +265,8 @@ export class ActivitiesService {
      * est servie à zéro d'ici là, pour que l'écran se construise une seule fois.
      */
     const wantsActivities = kinds.includes(AGENDA_KIND.ACTIVITY);
-    const [activityCount, rows] = (await Promise.all([
-      this.prisma.activity.count({ where }),
+    const [perDay, rows] = (await Promise.all([
+      this.prisma.activity.groupBy({ by: ['date'], where, _count: { _all: true } }),
       wantsActivities
         ? this.prisma.activity.findMany({
             where,
@@ -275,11 +276,15 @@ export class ActivitiesService {
             include: ACTIVITY_REFS,
           })
         : Promise.resolve([]),
-    ])) as [number, ActivityWithRefs[]];
+    ])) as [{ date: Date; _count: { _all: number } }[], ActivityWithRefs[]];
 
-    const counts = emptyAgendaCounts();
-    counts[AGENDA_KIND.ACTIVITY] = activityCount;
-    const total = wantsActivities ? activityCount : 0;
+    // Un seul agrégat sert les deux vues : le total d'une nature est la somme de ses jours.
+    const counts: AgendaCounts = { byKind: emptyAgendaCounts(), byDay: {} };
+    for (const day of perDay) {
+      counts.byDay[formatDateField(day.date)] = { [AGENDA_KIND.ACTIVITY]: day._count._all };
+      counts.byKind[AGENDA_KIND.ACTIVITY] += day._count._all;
+    }
+    const total = wantsActivities ? counts.byKind[AGENDA_KIND.ACTIVITY] : 0;
 
     const [labels, users] = await Promise.all([
       loadActivityLabels(this.prisma, projectId, rows),

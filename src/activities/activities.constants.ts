@@ -43,6 +43,20 @@ export function emptyAgendaCounts(): Record<AgendaKind, number> {
   return Object.fromEntries(AGENDA_KINDS.map((k) => [k, 0])) as Record<AgendaKind, number>;
 }
 
+/**
+ * Ce que l'écran compte : les totaux par nature (puces de calque) et le détail par jour
+ * (pastilles d'un mini-calendrier). Les deux sont calculés sur la fenêtre et ses filtres mais
+ * **avant** le filtre `kinds` — un décompte qui s'annule quand on éteint son calque ne dirait
+ * plus rien de ce qu'il y a derrière.
+ *
+ * `byDay` ne porte que les jours qui ont quelque chose, et pour chaque jour que les natures
+ * non nulles : un mois vide pèse un objet vide, pas trente zéros.
+ */
+export interface AgendaCounts {
+  byKind: Record<AgendaKind, number>;
+  byDay: Record<string, Partial<Record<AgendaKind, number>>>;
+}
+
 /** ICS export (US-01-09) — floating local time, no timezone (SPEC-13 D9). */
 export const ICS = {
   CONTENT_TYPE: 'text/calendar',
