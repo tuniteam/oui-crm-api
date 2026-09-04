@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as Minio from 'minio';
 import {
+  DocumentTemplateType,
   FileCategory,
   FileOwnerType,
   PrismaClient,
@@ -26,6 +27,7 @@ import { PERISCOLIA_PRICING_GRID_V1 } from '../src/pricing/periscolia-grid.const
 import {
   PERISCOLIA_CONFIG,
   PERISCOLIA_PROJECT,
+  PERISCOLIA_QUOTE_TEMPLATE_PATH,
   PERISCOLIA_SIGNATURE_IMAGE_PATH,
   PERISCOLIA_USERS,
   PLATFORM_SUPER_ADMIN,
@@ -137,6 +139,7 @@ export async function seedDev(prisma: PrismaClient): Promise<void> {
 
   // ---------- Signature image (best effort: needs MinIO up and the PNG in docs/) ----------
   await seedSignatureImage(prisma, project.id, superAdmin.id);
+  await seedQuoteTemplate(prisma, project.id, superAdmin.id);
 
   console.log(`Périscolia project ready (${PERISCOLIA_USERS.length} users + super admin)`);
 }
@@ -224,5 +227,75 @@ export async function seedSignatureImage(prisma: PrismaClient, projectId: string
     console.log('Signature image uploaded to MinIO');
   } catch (e) {
     console.warn(`Signature image upload skipped: ${(e as Error).message}`);
+  }
+}
+
+/**
+ * Gabarit « Devis » du projet : le CRM ne doit pas partir d'une page blanche. Même chemin que le
+ * cachet — un `File` `HTML_TEMPLATE` de type `QUOTE`, que l'administrateur remplacera en
+ * téléversant le sien (US-00-08, phase H).
+ */
+export async function seedQuoteTemplate(prisma: PrismaClient, projectId: string, uploadedBy: string) {
+  const existing = await prisma.file.findFirst({
+    where: {
+      projectId,
+      ownerType: FileOwnerType.PROJECT,
+      category: FileCategory.HTML_TEMPLATE,
+      templateType: DocumentTemplateType.QUOTE,
+    },
+  });
+  if (existing) return;
+  if (!fs.existsSync(PERISCOLIA_QUOTE_TEMPLATE_PATH)) {
+    console.warn(`Quote template not found (${PERISCOLIA_QUOTE_TEMPLATE_PATH}) — skipped`);
+    return;
+  }
+  const endPoint = process.env.MINIO_ENDPOINT;
+  const port = process.env.MINIO_PORT;
+  const bucket = process.env.MINIO_BUCKET;
+  if (!endPoint || !port || !bucket) {
+    console.warn('MINIO_ENDPOINT / MINIO_PORT / MINIO_BUCKET not set — quote template skipped');
+    return;
+  }
+  try {
+    const client = new Minio.Client({
+      endPoint,
+      port: Number(port),
+      useSSL: process.env.MINIO_USE_SSL === 'true',
+      accessKey: process.env.MINIO_ACCESS_KEY ?? '',
+      secretKey: process.env.MINIO_SECRET_KEY ?? '',
+    });
+    if (!(await client.bucketExists(bucket))) await client.makeBucket(bucket);
+    const buffer = fs.readFileSync(PERISCOLIA_QUOTE_TEMPLATE_PATH);
+    const fileName = path.basename(PERISCOLIA_QUOTE_TEMPLATE_PATH);
+    const objectKey = buildObjectPath(
+      {
+        type: 'ENTITY_FILE',
+        projectId,
+        ownerType: FileOwnerType.PROJECT,
+        ownerId: projectId,
+        category: FileCategory.HTML_TEMPLATE,
+      },
+      path.extname(fileName),
+    );
+    await client.putObject(bucket, objectKey, buffer, buffer.byteLength, { 'Content-Type': MIME.HTML });
+    await prisma.file.create({
+      data: {
+        ...buildFileCreateData({
+          projectId,
+          ownerType: FileOwnerType.PROJECT,
+          ownerId: projectId,
+          category: FileCategory.HTML_TEMPLATE,
+          fileName,
+          filePath: objectKey,
+          fileSize: buffer.byteLength,
+          mimeType: MIME.HTML,
+          uploadedBy,
+        }),
+        templateType: DocumentTemplateType.QUOTE,
+      },
+    });
+    console.log('Quote template uploaded to MinIO');
+  } catch (e) {
+    console.warn(`Quote template upload skipped: ${(e as Error).message}`);
   }
 }

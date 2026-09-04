@@ -18,11 +18,15 @@ import {
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { CONTRACTS_AUDIT } from '@/contracts/contracts.constants';
 import { contractData, releaseAmendedContract } from '@/contracts/contracts.utils';
+import { RenderedDocument, QuoteDocumentService } from '@/documents/quote-document.service';
 import { FileService } from '@/files/file.service';
 import { assertFilePresent } from '@/files/files.utils';
 import { UploadedFileLike } from '@/files/uploaded-file.interface';
 import { OPPORTUNITIES_AUDIT } from '@/opportunities/opportunities.constants';
-import { CONTRACT_BLOCKING_FIELDS, ORGANIZATION_AUDIT } from '@/organizations/organizations.constants';
+import {
+  CONTRACT_BLOCKING_FIELDS,
+  ORGANIZATION_AUDIT,
+} from '@/organizations/organizations.constants';
 import { computeCompleteness } from '@/organizations/organizations.utils';
 import { loadUsersWithInitials } from '@/audit-log/audit-log-labels';
 import { AuditLogService } from '@/audit-log/audit-log.service';
@@ -79,6 +83,7 @@ import {
   defaultStartDate,
   linesToCreate,
   normalizeQuoteConfig,
+  quoteDocumentDto,
   reopenData,
   resolveQuoteResult,
   validUntilFrom,
@@ -86,6 +91,7 @@ import {
 import {
   CreateQuoteDto,
   QuoteDetailDto,
+  QuoteDocumentsResponseDto,
   QuoteDto,
   QuoteIdResponseDto,
   QuoteLineDto,
@@ -128,6 +134,7 @@ export class QuotesService {
     private readonly scopeService: ScopeService,
     private readonly audit: AuditLogService,
     private readonly fileService: FileService,
+    private readonly quoteDocuments: QuoteDocumentService,
   ) {}
 
   // -------------------------------------------------------------------------------- simulate
@@ -226,7 +233,7 @@ export class QuotesService {
       this.loadHistory(projectId, id),
       this.prisma.file.findMany({
         where: { projectId, ownerType: FileOwnerType.QUOTE, ownerId: id },
-        select: { id: true, fileName: true, uploadedAt: true },
+        select: { id: true, fileName: true, category: true, fileSize: true, uploadedAt: true },
         orderBy: { uploadedAt: 'desc' },
       }),
     ]);
@@ -238,11 +245,7 @@ export class QuotesService {
         ? this.toResultDto(result, settings)
         : this.frozenResultDto(quote, lines, settings, trainingFeeLabel(grid)),
       lines: lines.map((line) => this.toLineDto(line)),
-      documents: documents.map((f) => ({
-        id: f.id,
-        fileName: f.fileName,
-        createdAt: f.uploadedAt,
-      })),
+      documents: documents.map((f) => quoteDocumentDto(f)),
       history,
       pricingGridVersion: quote.pricingGrid.version,
     };
@@ -300,7 +303,11 @@ export class QuotesService {
       onCreated: (tx: Prisma.TransactionClient) => Promise<void>;
     },
   ): Promise<{ id: string; number: string; opportunityId: string }> {
-    const organization = await this.assertWritableOrganization(input.organizationId, projectId, user);
+    const organization = await this.assertWritableOrganization(
+      input.organizationId,
+      projectId,
+      user,
+    );
     const settings = await this.loadSettings(projectId);
 
     return this.createDraft(projectId, user, {
@@ -394,7 +401,9 @@ export class QuotesService {
           number: created.number,
           organizationId: organization.id,
           opportunityId,
-          ...(input.sourceContractId ? { type: input.type, sourceContractId: input.sourceContractId } : {}),
+          ...(input.sourceContractId
+            ? { type: input.type, sourceContractId: input.sourceContractId }
+            : {}),
         },
       });
 
@@ -540,6 +549,16 @@ export class QuotesService {
       return moved;
     });
 
+    // D17 — le document ne conditionne jamais la soumission : elle est écrite, le PDF officiel
+    // est archivé ensuite, au mieux. Un gabarit absent laisse simplement le devis sans archive,
+    // et `GET /quotes/:id/document` le régénère à l'identique depuis ses lignes figées.
+    await this.quoteDocuments.archive(
+      projectId,
+      { ...quote, status: change.quote.to },
+      result,
+      user.id,
+    );
+
     return { id, number: quote.number, status: change.quote.to, requiresValidation };
   }
 
@@ -572,9 +591,16 @@ export class QuotesService {
     const config = quote.config as unknown as QuoteConfig;
 
     const contract = await this.prisma.$transaction(async (tx) => {
-      const moved = await applyQuoteStatus(tx, projectId, this.contextOf(quote), QuoteStatus.SIGNED, user.id, {
-        signedAt,
-      });
+      const moved = await applyQuoteStatus(
+        tx,
+        projectId,
+        this.contextOf(quote),
+        QuoteStatus.SIGNED,
+        user.id,
+        {
+          signedAt,
+        },
+      );
 
       const created = await tx.contract.create({
         data: {
@@ -665,8 +691,68 @@ export class QuotesService {
     });
     if (!completeness.blocks.contract) return;
 
-    const missing = completeness.missing.filter((field) => CONTRACT_BLOCKING_FIELDS.includes(field));
+    const missing = completeness.missing.filter((field) =>
+      CONTRACT_BLOCKING_FIELDS.includes(field),
+    );
     throw withDetails(apiError.conflict('ORGANIZATION_INCOMPLETE', missing.join(', ')), missing);
+  }
+
+  /**
+   * US-02-08 — le devis en PDF. Le document est calculé sur **la version de grille du devis**,
+   * pas sur la grille active : un devis soumis est figé, son document doit l'être aussi. Un
+   * brouillon, lui, pointe déjà la grille active — les deux chemins se rejoignent.
+   */
+  async document(
+    id: string,
+    projectId: string,
+    format: string,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<RenderedDocument> {
+    this.quoteDocuments.assertFormat(format);
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+    // L'ordre compte : un devis repris du classeur n'a pas de configuration, et le moteur
+    // tarifaire échouerait le premier — sur une erreur qui n'explique rien (constaté en recette).
+    this.quoteDocuments.assertPrintable(quote);
+    return this.quoteDocuments.render(
+      projectId,
+      quote,
+      await this.resultForDocument(projectId, quote),
+    );
+  }
+
+  /** US-02-08 — les documents archivés d'un devis, le plus récent d'abord. */
+  async archivedDocuments(
+    id: string,
+    projectId: string,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<QuoteDocumentsResponseDto> {
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+    const files = await this.prisma.file.findMany({
+      where: {
+        projectId,
+        ownerType: FileOwnerType.QUOTE,
+        ownerId: quote.id,
+        category: { in: [FileCategory.QUOTE_PDF, FileCategory.SIGNED_RETURN] },
+      },
+      orderBy: { uploadedAt: 'desc' },
+      select: { id: true, fileName: true, category: true, fileSize: true, uploadedAt: true },
+    });
+    return { data: files.map((file) => quoteDocumentDto(file)) };
+  }
+
+  /** Le résultat tarifaire que le document imprime, sur la grille à laquelle le devis est épinglé. */
+  private async resultForDocument(projectId: string, quote: QuoteWithLines): Promise<QuoteResult> {
+    const settings = await this.loadSettings(projectId);
+    const { content } = await this.loadGrid(projectId, quote.pricingGridId);
+    return this.price(
+      content,
+      quote.organization.population,
+      settings,
+      quote.startDate,
+      quote.config as unknown as QuoteConfig,
+    );
   }
 
   /**

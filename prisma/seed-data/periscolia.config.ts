@@ -18,6 +18,12 @@ export const PERISCOLIA_SIGNATURE_IMAGE_PATH = path.join(
   'cachet-signature-periscolia.png',
 );
 
+/**
+ * Gabarit « Devis » transcrit du Word V8 (SPEC-01 §6.2). Il vit **avec le seed**, pas dans
+ * `docs/` : c'est un actif du produit, versionné, et non un document de travail.
+ */
+export const PERISCOLIA_QUOTE_TEMPLATE_PATH = path.join(__dirname, 'periscolia-quote-template.html');
+
 export const PERISCOLIA_PROJECT = {
   slug: 'periscolia',
   name: 'Périscolia',

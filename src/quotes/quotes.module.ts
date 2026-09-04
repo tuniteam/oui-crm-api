@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { registerLabelResolver } from '@/audit-log/audit-log-labels';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { AuthModule } from '@/auth/auth.module';
+import { DocumentsModule } from '@/documents/documents.module';
 import { FilesModule } from '@/files/files.module';
 import { registerOwnerChecker } from '@/files/files.utils';
 import { PricingModule } from '@/pricing/pricing.module';
@@ -27,7 +28,7 @@ registerOwnerChecker(FileOwnerType.QUOTE, async (prisma, ownerId, projectId) => 
 });
 
 @Module({
-  imports: [AuthModule, ScopesModule, PricingModule, FilesModule],
+  imports: [AuthModule, ScopesModule, PricingModule, FilesModule, DocumentsModule],
   controllers: [QuotesController],
   providers: [QuotesService],
   exports: [QuotesService],

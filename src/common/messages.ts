@@ -191,6 +191,12 @@ const errorDefinitions = {
   CONTRACT_NOT_FOUND: (id: string) => `Contract ${id} not found`,
   CONTRACT_NOT_AMENDABLE: (status: string) => `Contract is ${status}: only an active contract can be amended`,
 
+  // Documents (L2 phase H — US-02-08)
+  TEMPLATE_NOT_CONFIGURED: (type: string) => `No ${type} template uploaded for this project yet`,
+  QUOTE_IMPORTED_NO_DOCUMENT:
+    'Quote was carried over from the workbook: it holds no configuration to render as a document',
+  FORMAT_NOT_SUPPORTED: (format: string) => `Format ${format} is not served yet: only pdf`,
+
 } as const;
 
 type ErrorKey = keyof typeof errorDefinitions;
@@ -328,6 +334,15 @@ export const ApiMessages = {
         summary: 'Reopen an expired quote',
         description:
           'Creates a NEW draft from its configuration, with its own number and a link back to it: the commercial history keeps both attempts',
+      },
+      document: {
+        summary: 'Download the quote as a PDF',
+        description:
+          'Merges the project HTML template with the quote data and renders it. A quote that has not reached SENT carries a BROUILLON watermark. A missing stamp is announced in X-Document-Warnings, never as a failure. Computed on the grid version the quote is pinned to: a submitted quote renders identically to its archive',
+      },
+      documents: {
+        summary: 'List the documents of a quote',
+        description: 'The official PDF archived at submission and the signed return, newest first',
       },
       sign: {
         summary: 'Sign a quote',
@@ -695,6 +710,11 @@ export const ApiMessages = {
       uploadTemplate: {
         summary: 'Upload document template',
         description: 'Uploads a new HTML template version for a document type; validates required tags',
+      },
+      previewTemplate: {
+        summary: 'Preview a document template',
+        description:
+          'Renders the template on a fictional dataset so an administrator can judge the layout before publishing it. With no file, previews the active template; with a file, previews that one — before it is uploaded. The project stamp is the real one',
       },
       uploadSignature: { summary: 'Upload signature image', description: 'Uploads the stamp + signature image (PNG/JPEG, 2 MB max); replaces the previous one' },
       deleteSignature: { summary: 'Delete signature image', description: 'Removes the stamp + signature image of the project' },

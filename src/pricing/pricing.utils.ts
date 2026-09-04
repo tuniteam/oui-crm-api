@@ -25,6 +25,14 @@ export function sumMoney(values: Prisma.Decimal[]): Prisma.Decimal {
 }
 
 /** Remise bornée à 0-100 : une saisie hors bornes est ramenée dedans, comme la V8 (§4.7). */
+/**
+ * TVA d'un montant HT, au taux du projet. **Une seule implémentation** : le moteur tarifaire et
+ * le document imprimé doivent donner le même chiffre au centime, sinon le PDF contredit l'API.
+ */
+export function vatOf(amountHt: Prisma.Decimal, vatRate: number): Prisma.Decimal {
+  return money(amountHt.times(new Prisma.Decimal(vatRate ?? 0).dividedBy(PERCENT_BASE)));
+}
+
 export function clampDiscount(discount: number | null | undefined): number {
   if (!Number.isFinite(discount ?? NaN)) return DISCOUNT_MIN;
   return Math.min(DISCOUNT_MAX, Math.max(DISCOUNT_MIN, discount as number));
