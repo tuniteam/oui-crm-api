@@ -979,7 +979,10 @@ model Quote {
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   opportunity  Opportunity? @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  pricingGrid  PricingGrid  @relation(fields: [pricingGridId], references: [id])
+  /// Cascade et non Restrict : une grille ne disparaît qu'avec son projet (aucune route ne
+  /// la supprime), et un projet supprimé doit pouvoir l'être. Le jour où une suppression de
+  /// version est offerte, elle devra refuser une grille référencée — au service, pas ici.
+  pricingGrid  PricingGrid  @relation(fields: [pricingGridId], references: [id], onDelete: Cascade)
   owner        User?        @relation("QuoteOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   validatedBy  User?        @relation("QuoteValidatedBy", fields: [validatedById], references: [id], onDelete: SetNull)
   lines        QuoteLine[]
