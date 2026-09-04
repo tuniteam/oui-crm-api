@@ -51,6 +51,9 @@ export const DEFAULT_QUOTE_TYPE: QuoteType = QuoteType.INITIAL;
 export const DEFAULT_CANCELLABLE = true;
 export const DEFAULT_TRIAL_CLAUSE = false;
 
+/** Un devis figé ne connaît plus sa strate : le récapitulatif la sert avec cette sentinelle. */
+export const NO_BRACKET_INDEX = -1;
+
 /** Longueur d'une clé de formule ou de poste, alignée sur le schéma. */
 export const PLAN_KEY_MAX_LENGTH = 60;
 export const REASON_MAX_LENGTH = 1000;
@@ -104,9 +107,9 @@ export const QUOTE_SENT_STATUSES: readonly QuoteStatus[] = [
 ];
 export const BUMPS_TO_IN_PROGRESS_FROM: readonly SalesStatus[] = [SalesStatus.NOT_CONTACTED, SalesStatus.TO_CONTACT];
 
-/** Motifs de perte posés par le CRM lui-même, pas par le commercial (référentiel LOSS_REASON). */
+/** Motif de perte posé par le CRM lui-même quand le client refuse (référentiel LOSS_REASON).
+ *  Celui de l'expiration viendra avec le job de la phase I, avec son appelant. */
 export const LOSS_REASON_ON_DECLINE = 'ABANDONED';
-export const LOSS_REASON_ON_EXPIRY = 'NO_RESPONSE';
 
 /** Type d'activité créé par une relance manuelle (référentiel ACTIVITY_TYPE). */
 export const FOLLOW_UP_ACTIVITY_TYPE = 'FOLLOW_UP';

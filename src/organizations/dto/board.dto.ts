@@ -2,7 +2,11 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Priority, SalesStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
-import { PAGINATION_DEFAULT_PAGE, PAGINATION_MAX_LIMIT, PaginationMetaDto } from '@/common/dto/pagination.dto';
+import {
+  PAGINATION_MAX_LIMIT,
+  PaginationMetaDto,
+  PaginationQueryDto,
+} from '@/common/dto/pagination.dto';
 import { BOARD_DEFAULT_LIMIT } from '../organizations.constants';
 import { UserRefDto } from './response-organization.dto';
 
@@ -11,19 +15,14 @@ import { UserRefDto } from './response-organization.dto';
  * page courante ; avec, une seule colonne répond — c'est ainsi qu'on déroule une colonne sans
  * recharger les quatre autres.
  */
-export class BoardQueryDto {
+export class BoardQueryDto extends PaginationQueryDto {
   @ApiPropertyOptional({ enum: SalesStatus, description: 'Narrow the answer to one column' })
   @IsOptional()
   @IsEnum(SalesStatus)
   salesStatus?: SalesStatus;
 
-  @ApiPropertyOptional({ default: PAGINATION_DEFAULT_PAGE, minimum: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page: number = PAGINATION_DEFAULT_PAGE;
-
+  // Seul le défaut change : une colonne de kanban se lit d'un coup d'œil, comme l'agenda
+  // charge son mois. Les contraintes (entier, 1..maximum) sont héritées.
   @ApiPropertyOptional({ default: BOARD_DEFAULT_LIMIT, minimum: 1, maximum: PAGINATION_MAX_LIMIT })
   @IsOptional()
   @Type(() => Number)
@@ -45,13 +44,20 @@ export class BoardNextActivityDto {
   @ApiProperty({ example: 'MEETING', description: 'Key of the ACTIVITY_TYPE reference list' })
   type: string;
 
-  @ApiProperty({ example: 'RDV physique', description: 'Label of that type, resolved from the project list' })
+  @ApiProperty({
+    example: 'RDV physique',
+    description: 'Label of that type, resolved from the project list',
+  })
   title: string;
 
   @ApiProperty({ example: '2026-09-15' })
   date: string;
 
-  @ApiProperty({ example: '14:30', nullable: true, description: 'Local time as entered, or null for an all-day task' })
+  @ApiProperty({
+    example: '14:30',
+    nullable: true,
+    description: 'Local time as entered, or null for an all-day task',
+  })
   time: string | null;
 }
 

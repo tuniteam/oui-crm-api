@@ -5,7 +5,7 @@
 import { Injectable } from '@nestjs/common';
 import { ActivityStatus, Organization, Prisma, SalesStatus, ScopeType } from '@prisma/client';
 import { AuditLogService } from '@/audit-log/audit-log.service';
-import { loadActivityLabels } from '@/activities/activities.utils';
+import { activityTypeLabel, loadActivityLabels } from '@/activities/activities.utils';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { REFERENCE_CATEGORIES } from '@/common/messages';
 import { formatDateField } from '@/common/utils/date.utils';
@@ -17,7 +17,11 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { findPermission } from '@/auth/utils/permissions.util';
 import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { ScopeAccess, ScopeContext, ScopeService } from '@/scopes/scope.service';
-import { hydrateCampaignMembership, loadScopeContext, mergeVisibilityWhere } from '@/scopes/scopes.utils';
+import {
+  hydrateCampaignMembership,
+  loadScopeContext,
+  mergeVisibilityWhere,
+} from '@/scopes/scopes.utils';
 import {
   BoardItemDto,
   BulkActionDto,
@@ -35,7 +39,12 @@ import {
   OrganizationListResponseDto,
   UpdateOrganizationDto,
 } from './dto';
-import { BOARD_COLUMNS, BULK_AUDIT_ACTION, BULK_PAYLOAD_FIELD, ORGANIZATION_AUDIT } from './organizations.constants';
+import {
+  BOARD_COLUMNS,
+  BULK_AUDIT_ACTION,
+  BULK_PAYLOAD_FIELD,
+  ORGANIZATION_AUDIT,
+} from './organizations.constants';
 import {
   applySalesStatus,
   assertAssigneesAreMembers,
@@ -51,7 +60,12 @@ import {
   recomputeCompleteness,
 } from './organizations.utils';
 import { resolveBracketLabel } from '@/pricing/pricing.utils';
-import { mapToDetail, mapToListItem, OrganizationWithRefs, ORGANIZATION_REFS } from './organizations.mapper';
+import {
+  mapToDetail,
+  mapToListItem,
+  OrganizationWithRefs,
+  ORGANIZATION_REFS,
+} from './organizations.mapper';
 
 @Injectable()
 export class OrganizationsService {
@@ -99,7 +113,11 @@ export class OrganizationsService {
     const withPrimary = new Set(
       (
         await this.prisma.contact.findMany({
-          where: { organizationId: { in: rows.map((r) => r.id) }, isPrimary: true, deletedAt: null },
+          where: {
+            organizationId: { in: rows.map((r) => r.id) },
+            isPrimary: true,
+            deletedAt: null,
+          },
           select: { organizationId: true },
         })
       ).map((c) => c.organizationId),
@@ -126,7 +144,11 @@ export class OrganizationsService {
    * replays the list filters server-side (the only mass action whose set the client does not
    * enumerate). DELETE additionally requires organizations:delete.
    */
-  async bulk(projectId: string, dto: BulkActionDto, user: AuthenticatedUser): Promise<BulkResultDto> {
+  async bulk(
+    projectId: string,
+    dto: BulkActionDto,
+    user: AuthenticatedUser,
+  ): Promise<BulkResultDto> {
     const payloadField = BULK_PAYLOAD_FIELD[dto.action];
     if (payloadField && !dto.payload?.[payloadField]) throw apiError.badRequest('INVALID_DATA');
     if (!dto.selectAll && !dto.ids?.length) throw apiError.badRequest('INVALID_DATA');
@@ -134,11 +156,17 @@ export class OrganizationsService {
       throw apiError.forbidden('ACCESS_DENIED');
     }
     if (dto.action === 'ASSIGN_SALES_REP') {
-      await assertAssigneesAreMembers(this.prisma, projectId, { salesRepId: dto.payload.salesRepId });
+      await assertAssigneesAreMembers(this.prisma, projectId, {
+        salesRepId: dto.payload.salesRepId,
+      });
     }
     if (dto.action === 'ADD_TO_CAMPAIGN') {
-      const campaign = await this.prisma.campaign.findFirst({ where: { id: dto.payload.campaignId, projectId }, select: { id: true } });
-      if (!campaign) throw apiError.notFound('CAMPAIGN_NOT_FOUND', dto.payload.campaignId as string);
+      const campaign = await this.prisma.campaign.findFirst({
+        where: { id: dto.payload.campaignId, projectId },
+        select: { id: true },
+      });
+      if (!campaign)
+        throw apiError.notFound('CAMPAIGN_NOT_FOUND', dto.payload.campaignId as string);
     }
 
     const ctx = await loadScopeContext(this.prisma, user, projectId);
@@ -173,7 +201,8 @@ export class OrganizationsService {
     if (!dto.selectAll) {
       // A NONE caller must not learn that a hidden record exists — same contract as findOne
       for (const id of dto.ids ?? []) {
-        if (!accessById.has(id) || accessById.get(id) === 'NONE') skipped.push({ id, reason: 'NOT_FOUND' });
+        if (!accessById.has(id) || accessById.get(id) === 'NONE')
+          skipped.push({ id, reason: 'NOT_FOUND' });
         else if (!eligibleIds.has(id)) skipped.push({ id, reason: 'OUT_OF_SCOPE' });
       }
     } else {
@@ -196,7 +225,9 @@ export class OrganizationsService {
           processed: count,
           skipped: skipped.length,
           ...(payloadField ? { [payloadField]: dto.payload[payloadField] } : {}),
-          ...(dto.selectAll ? { selectAll: true, filters: (dto.filters ?? {}) as Prisma.InputJsonValue } : {}),
+          ...(dto.selectAll
+            ? { selectAll: true, filters: (dto.filters ?? {}) as Prisma.InputJsonValue }
+            : {}),
         },
       });
       return count;
@@ -214,17 +245,28 @@ export class OrganizationsService {
     const ids = eligible.map((o) => o.id);
     switch (dto.action) {
       case 'ASSIGN_SALES_REP': {
-        await tx.organization.updateMany({ where: { id: { in: ids } }, data: { salesRepId: dto.payload.salesRepId } });
+        await tx.organization.updateMany({
+          where: { id: { in: ids } },
+          data: { salesRepId: dto.payload.salesRepId },
+        });
         return ids.length;
       }
       case 'SET_PRIORITY': {
-        await tx.organization.updateMany({ where: { id: { in: ids } }, data: { priority: dto.payload.priority } });
+        await tx.organization.updateMany({
+          where: { id: { in: ids } },
+          data: { priority: dto.payload.priority },
+        });
         return ids.length;
       }
       case 'SET_SALES_STATUS': {
         // Through the single writer, so every real transition lands in the journal
         for (const org of eligible) {
-          const change = await applySalesStatus(tx, org, dto.payload.salesStatus as SalesStatus);
+          const change = await applySalesStatus(
+            tx,
+            projectId,
+            org,
+            dto.payload.salesStatus as SalesStatus,
+          );
           if (change) {
             await this.audit.log(tx, {
               projectId,
@@ -240,12 +282,16 @@ export class OrganizationsService {
       }
       case 'ADD_TO_CAMPAIGN': {
         await tx.campaignOrganization.createMany({
-          data: ids.map((organizationId) => ({ campaignId: dto.payload.campaignId as string, organizationId, addedBy: user.id })),
+          data: ids.map((organizationId) => ({
+            campaignId: dto.payload.campaignId as string,
+            organizationId,
+            addedBy: user.id,
+          })),
           skipDuplicates: true,
         });
         // Same automatism as the direct targeting (US-01-11)
         for (const org of eligible.filter((o) => o.salesStatus === SalesStatus.NOT_CONTACTED)) {
-          const change = await applySalesStatus(tx, org, SalesStatus.TO_CONTACT);
+          const change = await applySalesStatus(tx, projectId, org, SalesStatus.TO_CONTACT);
           if (change) {
             await this.audit.log(tx, {
               projectId,
@@ -253,14 +299,21 @@ export class OrganizationsService {
               action: ORGANIZATION_AUDIT.SALES_STATUS,
               objectType: AUDIT_OBJECTS.ORGANIZATION,
               objectId: org.id,
-              metadata: { ...change, trigger: 'campaign.targeted', campaignId: dto.payload.campaignId },
+              metadata: {
+                ...change,
+                trigger: 'campaign.targeted',
+                campaignId: dto.payload.campaignId,
+              },
             });
           }
         }
         return ids.length;
       }
       case 'DELETE': {
-        await tx.organization.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date() } });
+        await tx.organization.updateMany({
+          where: { id: { in: ids } },
+          data: { deletedAt: new Date() },
+        });
         for (const org of eligible) {
           await this.audit.log(tx, {
             projectId,
@@ -288,7 +341,11 @@ export class OrganizationsService {
    * pas page par page. Sans `salesStatus`, les cinq colonnes rendent leur page courante ; avec,
    * une seule répond, ce qui permet d'en charger la suite sans toucher aux quatre autres.
    */
-  async board(projectId: string, query: BoardQueryDto, user: AuthenticatedUser): Promise<BoardResponseDto> {
+  async board(
+    projectId: string,
+    query: BoardQueryDto,
+    user: AuthenticatedUser,
+  ): Promise<BoardResponseDto> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const base: Prisma.OrganizationWhereInput = { projectId, deletedAt: null };
     mergeVisibilityWhere(base, ctx, this.scopeService);
@@ -317,12 +374,17 @@ export class OrganizationsService {
     // prochaine action de chaque carte, plutôt que deux requêtes par colonne.
     const rows = fetched.flatMap((column) => column.rows);
     await hydrateCampaignMembership(this.prisma, ctx, rows);
-    const nextActivities = await this.loadNextActivities(projectId, rows.map((row) => row.id));
+    const nextActivities = await this.loadNextActivities(
+      projectId,
+      rows.map((row) => row.id),
+    );
 
     const columns = fetched.map((column) => ({
       salesStatus: column.salesStatus,
       meta: buildPaginationMeta(column.total, page, limit),
-      items: column.rows.map((row) => this.toBoardItem(row, this.accessOf(ctx, row), nextActivities.get(row.id) ?? null)),
+      items: column.rows.map((row) =>
+        this.toBoardItem(row, this.accessOf(ctx, row), nextActivities.get(row.id) ?? null),
+      ),
     }));
     return { columns };
   }
@@ -346,7 +408,7 @@ export class OrganizationsService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      const change = await applySalesStatus(tx, organization, dto.salesStatus);
+      const change = await applySalesStatus(tx, projectId, organization, dto.salesStatus);
       await this.audit.log(tx, {
         projectId,
         userId: user.id,
@@ -385,7 +447,7 @@ export class OrganizationsService {
       byOrganization.set(activity.organizationId, {
         id: activity.id,
         type: activity.type,
-        title: labels.get(`${REFERENCE_CATEGORIES.ACTIVITY_TYPE}:${activity.type}`) ?? activity.type,
+        title: activityTypeLabel(labels, activity.type),
         date: formatDateField(activity.date),
         time: activity.time,
       });
@@ -401,7 +463,13 @@ export class OrganizationsService {
     const restricted: BoardItemDto = {
       id: row.id,
       name: row.name,
-      salesRep: row.salesRep ? { id: row.salesRep.id, fullName: `${row.salesRep.firstName} ${row.salesRep.lastName}`.trim(), initials: null } : null,
+      salesRep: row.salesRep
+        ? {
+            id: row.salesRep.id,
+            fullName: `${row.salesRep.firstName} ${row.salesRep.lastName}`.trim(),
+            initials: null,
+          }
+        : null,
       access: access === 'FULL' ? 'FULL' : 'RESTRICTED',
     };
     if (access !== 'FULL') return restricted;
@@ -442,7 +510,10 @@ export class OrganizationsService {
   }
 
   /** The FULL-access detail payload, shared by findOne and the update echo. */
-  private async fullDetail(organization: OrganizationWithRefs, projectId: string): Promise<OrganizationDetailDto> {
+  private async fullDetail(
+    organization: OrganizationWithRefs,
+    projectId: string,
+  ): Promise<OrganizationDetailDto> {
     const id = organization.id;
     const [contacts, activities, hasPrimaryContact] = await Promise.all([
       this.prisma.contact.count({ where: { organizationId: id, deletedAt: null } }),
@@ -455,7 +526,10 @@ export class OrganizationsService {
     return mapToDetail(organization, {
       completeness: computeCompleteness({ ...organization, hasPrimaryContact }),
       counts: { contacts, activities },
-      bracketLabel: resolveBracketLabel(await loadActiveBrackets(this.prisma, projectId), organization.population),
+      bracketLabel: resolveBracketLabel(
+        await loadActiveBrackets(this.prisma, projectId),
+        organization.population,
+      ),
     });
   }
 
@@ -477,7 +551,12 @@ export class OrganizationsService {
     await assertIdentifiersAvailable(this.prisma, projectId, data);
 
     if (!force) {
-      const duplicates = await findPossibleDuplicates(this.prisma, projectId, data.name, data.postalCode);
+      const duplicates = await findPossibleDuplicates(
+        this.prisma,
+        projectId,
+        data.name,
+        data.postalCode,
+      );
       if (duplicates.length) {
         // The project carries structured payloads in `messages.meta`; `details` is reserved
         // for human-readable lines (api-error.ts). SPEC-07 says "details": divergence noted.
@@ -487,25 +566,25 @@ export class OrganizationsService {
 
     const organization = await this.runMappingUniqueRaces(() =>
       this.prisma.$transaction(async (tx) => {
-      const created = await tx.organization.create({
-        data: {
-          ...data,
+        const created = await tx.organization.create({
+          data: {
+            ...data,
+            projectId,
+            createdBy: user.id,
+            ...(goLiveTarget && { goLiveTarget: parseDayOrThrow(goLiveTarget) }),
+          },
+        });
+        // A brand-new record has no contact yet: the score is computed on its own columns.
+        await recomputeCompleteness(tx, created.id);
+        await this.audit.log(tx, {
           projectId,
-          createdBy: user.id,
-          ...(goLiveTarget && { goLiveTarget: parseDayOrThrow(goLiveTarget) }),
-        },
-      });
-      // A brand-new record has no contact yet: the score is computed on its own columns.
-      await recomputeCompleteness(tx, created.id);
-      await this.audit.log(tx, {
-        projectId,
-        userId: user.id,
-        action: ORGANIZATION_AUDIT.CREATE,
-        objectType: AUDIT_OBJECTS.ORGANIZATION,
-        objectId: created.id,
-        metadata: { name: created.name, type: created.type, department: created.department },
-      });
-      return created;
+          userId: user.id,
+          action: ORGANIZATION_AUDIT.CREATE,
+          objectType: AUDIT_OBJECTS.ORGANIZATION,
+          objectId: created.id,
+          metadata: { name: created.name, type: created.type, department: created.department },
+        });
+        return created;
       }),
     );
 
@@ -537,20 +616,25 @@ export class OrganizationsService {
 
     await this.runMappingUniqueRaces(() =>
       this.prisma.$transaction(async (tx) => {
-      await tx.organization.update({
-        where: { id },
-        // null clears the go-live date, like every other nullable field (closure review L1)
-        data: { ...data, ...(goLiveTarget !== undefined && { goLiveTarget: goLiveTarget === null ? null : parseDayOrThrow(goLiveTarget) }) },
-      });
-      await recomputeCompleteness(tx, id);
-      await this.audit.log(tx, {
-        projectId,
-        userId: user.id,
-        action: ORGANIZATION_AUDIT.UPDATE,
-        objectType: AUDIT_OBJECTS.ORGANIZATION,
-        objectId: id,
-        metadata: { fields: Object.keys(dto) },
-      });
+        await tx.organization.update({
+          where: { id },
+          // null clears the go-live date, like every other nullable field (closure review L1)
+          data: {
+            ...data,
+            ...(goLiveTarget !== undefined && {
+              goLiveTarget: goLiveTarget === null ? null : parseDayOrThrow(goLiveTarget),
+            }),
+          },
+        });
+        await recomputeCompleteness(tx, id);
+        await this.audit.log(tx, {
+          projectId,
+          userId: user.id,
+          action: ORGANIZATION_AUDIT.UPDATE,
+          objectType: AUDIT_OBJECTS.ORGANIZATION,
+          objectId: id,
+          metadata: { fields: Object.keys(dto) },
+        });
       }),
     );
 
@@ -572,7 +656,8 @@ export class OrganizationsService {
       return await work();
     } catch (err) {
       if (isUniqueViolation(err, 'siret')) throw apiError.conflict('ORGANIZATION_SIRET_EXISTS');
-      if (isUniqueViolation(err, 'insee_code')) throw apiError.conflict('ORGANIZATION_INSEE_CODE_EXISTS');
+      if (isUniqueViolation(err, 'insee_code'))
+        throw apiError.conflict('ORGANIZATION_INSEE_CODE_EXISTS');
       throw err;
     }
   }
@@ -605,7 +690,10 @@ export class OrganizationsService {
     return ctx.outOfScopeAccess === 'NONE';
   }
 
-  private accessOf(ctx: ScopeContext, organization: Parameters<ScopeService['access']>[1]): ScopeAccess {
+  private accessOf(
+    ctx: ScopeContext,
+    organization: Parameters<ScopeService['access']>[1],
+  ): ScopeAccess {
     return this.scopeService.access(ctx, organization);
   }
 
@@ -614,7 +702,11 @@ export class OrganizationsService {
    * learn that the record exists (404), while a RESTRICTED caller already sees it in the list
    * and deserves a real answer (403).
    */
-  private async assertWritable(ctx: ScopeContext, organization: Organization, id: string): Promise<void> {
+  private async assertWritable(
+    ctx: ScopeContext,
+    organization: Organization,
+    id: string,
+  ): Promise<void> {
     await assertFullOrganizationAccess(this.prisma, this.scopeService, ctx, organization, id);
   }
 }
