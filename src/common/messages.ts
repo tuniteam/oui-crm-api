@@ -177,6 +177,12 @@ const errorDefinitions = {
   QUOTE_NOT_DELETABLE: (status: string) => `Quote is ${status}: only a draft can be deleted`,
   QUOTE_SETUP_INVALID: (key: string) => `Setup entry ${key} must carry a boolean "included"`,
   QUOTE_OPPORTUNITY_MISMATCH: (id: string) => `Opportunity ${id} does not belong to that organization`,
+  QUOTE_INVALID_TRANSITION: (from: string, to: string) => `A quote cannot go from ${from} to ${to}`,
+  QUOTE_ALREADY_SUBMITTED: (status: string) => `Quote is ${status}: it has already left the draft stage`,
+  QUOTE_NOT_PENDING: (status: string) => `Quote is ${status}: only a quote awaiting validation can be validated or sent back`,
+  QUOTE_NOT_REOPENABLE: (status: string) => `Quote is ${status}: only an expired quote is reopened as a new draft`,
+  QUOTE_DISCOUNT_ABOVE_CAP: (max: string, cap: string) =>
+    `Discount of ${max}% exceeds the cap of ${cap}%: the quote goes to validation`,
 
 } as const;
 
@@ -187,6 +193,8 @@ export const labels = {
   auditObjects: {
     settings: 'Réglages',
   },
+  /** Compte rendu de l'activité que la relance d'un devis laisse sur la fiche (US-02-06). */
+  quoteFollowUpReport: (number: string) => `Relance du devis ${number}.`,
 } as const;
 
 /** Reference lists consumed by the commercial base (L1). Values live in ReferenceItem. */
@@ -287,6 +295,33 @@ export const ApiMessages = {
         description: 'Configuration, start date and type; the amounts are recomputed. A submitted quote is refused (409)',
       },
       delete: { summary: 'Delete a draft', description: 'Only a draft; a submitted quote stays (409)' },
+      submit: {
+        summary: 'Submit a quote',
+        description:
+          'Freezes the lines and the grid version — the quote stops being recomputed. Beyond the project discount cap it goes to validation, unless its author holds quotes:discountAboveCap. The opportunity moves to QUOTE_SENT and a record still cold moves to IN_PROGRESS',
+      },
+      validate: {
+        summary: 'Validate a quote awaiting validation',
+        description: 'Sends it to the client; the validator is recorded on the quote',
+      },
+      reject: {
+        summary: 'Send a quote back to draft',
+        description: 'Its frozen lines are dropped: it becomes a live quote again, recomputed from the active grid',
+      },
+      followUp: {
+        summary: 'Follow a quote up',
+        description: 'Marks the quote FOLLOWED_UP and leaves a completed FOLLOW_UP activity on the record',
+      },
+      negotiate: { summary: 'Enter negotiation', description: 'Moves the opportunity to NEGOTIATING as well' },
+      decline: {
+        summary: 'The client says no',
+        description: 'The quote is REJECTED and the opportunity is lost, with the reason the CRM can give',
+      },
+      reopen: {
+        summary: 'Reopen an expired quote',
+        description:
+          'Creates a NEW draft from its configuration, with its own number and a link back to it: the commercial history keeps both attempts',
+      },
     },
 
     opportunities: {
@@ -411,7 +446,11 @@ export const ApiMessages = {
         description:
           'ASSIGN_SALES_REP, SET_SALES_STATUS, SET_PRIORITY, ADD_TO_CAMPAIGN, DELETE on an explicit selection or selectAll with the list filters; out-of-scope records are skipped, never a global failure',
       },
-      board: { summary: 'Prospection board', description: 'The 5 sales-status columns with their cards; geographic scope applied, 200 cards per column' },
+      board: {
+        summary: 'Prospection board',
+        description:
+          'The 5 sales-status columns with their cards, geographic scope applied. Paginated PER COLUMN: each column carries its own meta, and salesStatus + page unrolls one column without reloading the other four',
+      },
       changeSalesStatus: {
         summary: 'Move a record on the board',
         description: 'Free transitions between the 5 statuses; moving onto the current status answers 409. The reason lands in the journal',

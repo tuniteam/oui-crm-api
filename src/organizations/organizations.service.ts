@@ -19,6 +19,7 @@ import {
   BoardItemDto,
   BulkActionDto,
   BulkResultDto,
+  BoardQueryDto,
   BoardResponseDto,
   ChangeSalesStatusDto,
   ChangeSalesStatusResponseDto,
@@ -30,7 +31,7 @@ import {
   OrganizationListResponseDto,
   UpdateOrganizationDto,
 } from './dto';
-import { BOARD_COLUMN_LIMIT, BOARD_COLUMNS, BULK_AUDIT_ACTION, BULK_PAYLOAD_FIELD, ORGANIZATION_AUDIT } from './organizations.constants';
+import { BOARD_COLUMNS, BULK_AUDIT_ACTION, BULK_PAYLOAD_FIELD, ORGANIZATION_AUDIT } from './organizations.constants';
 import {
   applySalesStatus,
   assertAssigneesAreMembers,
@@ -278,28 +279,36 @@ export class OrganizationsService {
    * all; a RESTRICTED role gets their cards greyed (reduced fields, drag disabled by the
    * front). Cards are ordered by next activity so the actionable ones come first.
    */
-  async board(projectId: string, user: AuthenticatedUser): Promise<BoardResponseDto> {
+  /**
+   * US-01-10 — le kanban, **paginé par colonne** : un tableau se déroule colonne par colonne,
+   * pas page par page. Sans `salesStatus`, les cinq colonnes rendent leur page courante ; avec,
+   * une seule répond, ce qui permet d'en charger la suite sans toucher aux quatre autres.
+   */
+  async board(projectId: string, query: BoardQueryDto, user: AuthenticatedUser): Promise<BoardResponseDto> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const base: Prisma.OrganizationWhereInput = { projectId, deletedAt: null };
     mergeVisibilityWhere(base, ctx, this.scopeService);
 
+    const wanted = query.salesStatus ? [query.salesStatus] : BOARD_COLUMNS;
+    const { page, limit } = query;
+
     const columns = await Promise.all(
-      BOARD_COLUMNS.map(async (salesStatus) => {
+      wanted.map(async (salesStatus) => {
         const where = { ...base, salesStatus };
-        const [count, rows] = await Promise.all([
+        const [total, rows] = await Promise.all([
           this.prisma.organization.count({ where }),
           this.prisma.organization.findMany({
             where,
             orderBy: [{ nextActivityAt: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
-            take: BOARD_COLUMN_LIMIT,
+            skip: paginationSkip(page, limit),
+            take: limit,
             include: ORGANIZATION_REFS,
           }),
         ]);
         await hydrateCampaignMembership(this.prisma, ctx, rows);
         return {
           salesStatus,
-          count,
-          hasMore: count > rows.length,
+          meta: buildPaginationMeta(total, page, limit),
           items: rows.map((row) => this.toBoardItem(row, this.accessOf(ctx, row))),
         };
       }),
