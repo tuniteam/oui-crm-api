@@ -2,7 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ActivityStatus } from '@prisma/client';
 import { PaginationMetaDto } from '@/common/dto/pagination.dto';
 import { ReferenceRefDto, UserRefDto } from '@/organizations/dto';
-import { AGENDA_KINDS, AgendaKind } from '../activities.constants';
+import { AGENDA_KINDS, AgendaCounts, AgendaKind } from '../activities.constants';
 
 export class ActivityOrgRefDto {
   @ApiProperty({ example: 'cmtj…' })
@@ -115,6 +115,16 @@ export class AgendaItemDto {
 export class AgendaResponseDto {
   @ApiProperty({ type: [AgendaItemDto], description: 'Sorted by date then time' })
   data: AgendaItemDto[];
+
+  @ApiProperty({
+    example: {
+      byKind: { ACTIVITY: 14, TRAINING: 0, CONTRACT_END: 0, QUOTE_EXPIRY: 3 },
+      byDay: { '2026-09-15': { ACTIVITY: 2 }, '2026-09-30': { ACTIVITY: 1, QUOTE_EXPIRY: 1 } },
+    },
+    description:
+      'What the screen counts. `byKind` feeds the layer chips, `byDay` the dots of a month view — a day carries only its non-empty kinds, and a quiet month weighs an empty object rather than thirty zeros. Both cover the whole window whatever the pagination, and are computed BEFORE the kinds filter: a badge that falls to zero when its own layer is switched off would say nothing about what lies behind it. Kinds whose source arrives with a later lot are served at 0',
+  })
+  counts: AgendaCounts;
 
   @ApiProperty({
     type: PaginationMetaDto,

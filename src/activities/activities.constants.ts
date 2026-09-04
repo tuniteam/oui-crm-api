@@ -35,6 +35,28 @@ export const BUMPS_TO_MEETING: readonly SalesStatus[] = [
 export const AGENDA_KINDS = ['ACTIVITY', 'TRAINING', 'CONTRACT_END', 'QUOTE_EXPIRY'] as const;
 export type AgendaKind = (typeof AGENDA_KINDS)[number];
 
+/** Les natures nommées, pour ne pas écrire 'ACTIVITY' en littéral dans un service. */
+export const AGENDA_KIND = Object.fromEntries(AGENDA_KINDS.map((k) => [k, k])) as Record<AgendaKind, AgendaKind>;
+
+/** Décomptes à zéro sur toutes les natures : le service ne remplit que celles qu'il sert. */
+export function emptyAgendaCounts(): Record<AgendaKind, number> {
+  return Object.fromEntries(AGENDA_KINDS.map((k) => [k, 0])) as Record<AgendaKind, number>;
+}
+
+/**
+ * Ce que l'écran compte : les totaux par nature (puces de calque) et le détail par jour
+ * (pastilles d'un mini-calendrier). Les deux sont calculés sur la fenêtre et ses filtres mais
+ * **avant** le filtre `kinds` — un décompte qui s'annule quand on éteint son calque ne dirait
+ * plus rien de ce qu'il y a derrière.
+ *
+ * `byDay` ne porte que les jours qui ont quelque chose, et pour chaque jour que les natures
+ * non nulles : un mois vide pèse un objet vide, pas trente zéros.
+ */
+export interface AgendaCounts {
+  byKind: Record<AgendaKind, number>;
+  byDay: Record<string, Partial<Record<AgendaKind, number>>>;
+}
+
 /** ICS export (US-01-09) — floating local time, no timezone (SPEC-13 D9). */
 export const ICS = {
   CONTENT_TYPE: 'text/calendar',

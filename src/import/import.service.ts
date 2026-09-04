@@ -6,7 +6,7 @@ import { apiError } from '@/common/api-error';
 import { recomputeActivityMarks } from '@/activities/activities.utils';
 import { recomputeCompleteness } from '@/organizations/organizations.utils';
 import { PrismaService } from '@/prisma/prisma.service';
-import { IMPORT_AUDIT, IMPORT_BATCH_MODIFIED_TOLERANCE_MS } from './import.constants';
+import { IMPORT_AUDIT, IMPORT_BATCH_MODIFIED_TOLERANCE_MS, batchAppliedAt } from './import.constants';
 
 /**
  * Shared batch lifecycle (US-01-06/14): every profile stamps what it creates with
@@ -39,8 +39,20 @@ export class ImportService {
         select: { id: true, organizationId: true, createdAt: true, updatedAt: true },
       }),
     ]);
+    /**
+     * Une ligne a **dérivé** si quelqu'un l'a touchée depuis la fin de l'application du lot.
+     * Le lot porte cet instant (`totals.appliedAt`), ce qui rend le contrôle exact : une
+     * correction faite dix secondes ou dix jours après l'import est vue de la même façon.
+     *
+     * Repli pour les lots antérieurs à cet horodatage : l'écart entre création et dernière
+     * écriture, avec sa tolérance — imprécis par construction, une modification faite dans la
+     * foulée de l'import y passait inaperçue.
+     */
+    const appliedAt = batchAppliedAt(batch.totals);
     const drifted = (row: { createdAt: Date; updatedAt: Date }): boolean =>
-      row.updatedAt.getTime() - row.createdAt.getTime() > IMPORT_BATCH_MODIFIED_TOLERANCE_MS;
+      appliedAt
+        ? row.updatedAt.getTime() > appliedAt.getTime()
+        : row.updatedAt.getTime() - row.createdAt.getTime() > IMPORT_BATCH_MODIFIED_TOLERANCE_MS;
     if (
       organizations.some(drifted) ||
       contacts.some((c) => drifted(c) || c.deletedAt !== null) ||

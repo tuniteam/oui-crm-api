@@ -18,7 +18,10 @@ import { applySalesStatus, assertFullOrganizationAccess, getOrganizationOrThrow 
 import { ORGANIZATION_AUDIT } from '@/organizations/organizations.constants';
 import {
   ACTIVITIES_AUDIT,
+  AGENDA_KIND,
   AGENDA_KINDS,
+  AgendaCounts,
+  emptyAgendaCounts,
   AgendaKind,
   BUMPS_TO_IN_PROGRESS,
   BUMPS_TO_MEETING,
@@ -236,10 +239,15 @@ export class ActivitiesService {
   async agenda(projectId: string, query: AgendaQueryDto, scopeWhere: Record<string, unknown>, user: AuthenticatedUser): Promise<AgendaResponseDto> {
     const kinds = this.parseKinds(query.kinds);
     const { page, limit } = query;
-    if (!kinds.includes('ACTIVITY')) return { data: [], meta: buildPaginationMeta(0, page, limit) };
 
-    // An OWN-scoped caller always gets their own agenda, whatever userId says
+    /**
+     * Portée OWN : le calendrier d'un collègue n'est pas lisible. On **refuse** au lieu de
+     * servir le sien en silence — une réponse juste sous un libellé faux est pire qu'une
+     * erreur. Le front sait à qui il a affaire : `/profile/me` expose la portée de chaque
+     * permission, et masque le filtre quand `activities:read` est en OWN.
+     */
     const own = (scopeWhere as { userId?: string }).userId;
+    if (own && query.userId && query.userId !== own) throw apiError.forbidden('ACCESS_DENIED');
     const targetUserId = own ?? query.userId;
 
     const where: Prisma.ActivityWhereInput = {
@@ -250,16 +258,33 @@ export class ActivitiesService {
       status: { not: ActivityStatus.CANCELLED },
     };
 
-    const [total, rows] = (await Promise.all([
-      this.prisma.activity.count({ where }),
-      this.prisma.activity.findMany({
-        where,
-        skip: paginationSkip(page, limit),
-        take: limit,
-        orderBy: [{ date: 'asc' }, { time: 'asc' }],
-        include: ACTIVITY_REFS,
-      }),
-    ])) as [number, ActivityWithRefs[]];
+    /**
+     * Les décomptes portent sur la fenêtre et ses filtres, mais **avant** le filtre `kinds` :
+     * une pastille qui tombe à zéro quand on éteint son calque ne dit plus rien de ce qu'il
+     * y a derrière. Les sources des trois autres natures arrivent aux lots L2 à L4 ; leur clé
+     * est servie à zéro d'ici là, pour que l'écran se construise une seule fois.
+     */
+    const wantsActivities = kinds.includes(AGENDA_KIND.ACTIVITY);
+    const [perDay, rows] = (await Promise.all([
+      this.prisma.activity.groupBy({ by: ['date'], where, _count: { _all: true } }),
+      wantsActivities
+        ? this.prisma.activity.findMany({
+            where,
+            skip: paginationSkip(page, limit),
+            take: limit,
+            orderBy: [{ date: 'asc' }, { time: 'asc' }],
+            include: ACTIVITY_REFS,
+          })
+        : Promise.resolve([]),
+    ])) as [{ date: Date; _count: { _all: number } }[], ActivityWithRefs[]];
+
+    // Un seul agrégat sert les deux vues : le total d'une nature est la somme de ses jours.
+    const counts: AgendaCounts = { byKind: emptyAgendaCounts(), byDay: {} };
+    for (const day of perDay) {
+      counts.byDay[formatDateField(day.date)] = { [AGENDA_KIND.ACTIVITY]: day._count._all };
+      counts.byKind[AGENDA_KIND.ACTIVITY] += day._count._all;
+    }
+    const total = wantsActivities ? counts.byKind[AGENDA_KIND.ACTIVITY] : 0;
 
     const [labels, users] = await Promise.all([
       loadActivityLabels(this.prisma, projectId, rows),
@@ -280,6 +305,7 @@ export class ActivitiesService {
         isLate: row.status === ActivityStatus.PLANNED && row.date < today,
       })),
       meta: buildPaginationMeta(total, page, limit),
+      counts,
     };
   }
 

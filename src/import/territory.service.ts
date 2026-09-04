@@ -11,7 +11,7 @@ import {
   completenessScore,
   recomputeCompleteness,
 } from '@/organizations/organizations.utils';
-import { IMPORT_AUDIT, TERRITORY } from './import.constants';
+import { IMPORT_AUDIT, TERRITORY, stampAppliedAt } from './import.constants';
 import { TerritoryImportDto, TerritoryReportDto } from './dto/territory.dto';
 import {
   GeoCommune,
@@ -169,6 +169,13 @@ export class TerritoryService {
           await tx.organization.update({ where: { id }, data: { population: item.population } });
           await recomputeCompleteness(tx, id);
         }
+
+        // Même règle que l'import de fichier : l'instant de référence est posé une fois les
+        // fiches écrites, dans la même transaction.
+        await tx.importBatch.update({
+          where: { id: batch.id },
+          data: { totals: stampAppliedAt({ ...totals }) },
+        });
 
         await this.audit.log(tx, {
           projectId,
