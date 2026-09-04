@@ -38,6 +38,7 @@ import {
   BulkActionDto,
   ChangeSalesStatusResponseDto,
   ChangeSalesStatusDto,
+  BoardQueryDto,
   BoardResponseDto,
   CreateOrganizationDto,
   CreateOrganizationResponseDto,
@@ -95,8 +96,12 @@ export class OrganizationsController {
   @Permissions({ code: 'organizations:read' })
   @ApiOperation(swagger.organizations.board)
   @ApiListResponse(BoardResponseDto)
-  board(@CurrentProjectId() projectId: string, @CurrentUser() user: AuthenticatedUser): Promise<BoardResponseDto> {
-    return this.organizationsService.board(projectId, user);
+  board(
+    @CurrentProjectId() projectId: string,
+    @Query() query: BoardQueryDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<BoardResponseDto> {
+    return this.organizationsService.board(projectId, query, user);
   }
 
   @Get('search-registry')

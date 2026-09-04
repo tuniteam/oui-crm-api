@@ -3,9 +3,12 @@
 // ============================================
 
 import { Injectable } from '@nestjs/common';
-import { Organization, Prisma, SalesStatus, ScopeType } from '@prisma/client';
+import { ActivityStatus, Organization, Prisma, SalesStatus, ScopeType } from '@prisma/client';
 import { AuditLogService } from '@/audit-log/audit-log.service';
+import { loadActivityLabels } from '@/activities/activities.utils';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
+import { REFERENCE_CATEGORIES } from '@/common/messages';
+import { formatDateField } from '@/common/utils/date.utils';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { apiError, withMeta } from '@/common/api-error';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
@@ -19,6 +22,8 @@ import {
   BoardItemDto,
   BulkActionDto,
   BulkResultDto,
+  BoardNextActivityDto,
+  BoardQueryDto,
   BoardResponseDto,
   ChangeSalesStatusDto,
   ChangeSalesStatusResponseDto,
@@ -30,7 +35,7 @@ import {
   OrganizationListResponseDto,
   UpdateOrganizationDto,
 } from './dto';
-import { BOARD_COLUMN_LIMIT, BOARD_COLUMNS, BULK_AUDIT_ACTION, BULK_PAYLOAD_FIELD, ORGANIZATION_AUDIT } from './organizations.constants';
+import { BOARD_COLUMNS, BULK_AUDIT_ACTION, BULK_PAYLOAD_FIELD, ORGANIZATION_AUDIT } from './organizations.constants';
 import {
   applySalesStatus,
   assertAssigneesAreMembers,
@@ -278,32 +283,47 @@ export class OrganizationsService {
    * all; a RESTRICTED role gets their cards greyed (reduced fields, drag disabled by the
    * front). Cards are ordered by next activity so the actionable ones come first.
    */
-  async board(projectId: string, user: AuthenticatedUser): Promise<BoardResponseDto> {
+  /**
+   * US-01-10 — le kanban, **paginé par colonne** : un tableau se déroule colonne par colonne,
+   * pas page par page. Sans `salesStatus`, les cinq colonnes rendent leur page courante ; avec,
+   * une seule répond, ce qui permet d'en charger la suite sans toucher aux quatre autres.
+   */
+  async board(projectId: string, query: BoardQueryDto, user: AuthenticatedUser): Promise<BoardResponseDto> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const base: Prisma.OrganizationWhereInput = { projectId, deletedAt: null };
     mergeVisibilityWhere(base, ctx, this.scopeService);
 
-    const columns = await Promise.all(
-      BOARD_COLUMNS.map(async (salesStatus) => {
+    const wanted = query.salesStatus ? [query.salesStatus] : BOARD_COLUMNS;
+    const { page, limit } = query;
+
+    const fetched = await Promise.all(
+      wanted.map(async (salesStatus) => {
         const where = { ...base, salesStatus };
-        const [count, rows] = await Promise.all([
+        const [total, rows] = await Promise.all([
           this.prisma.organization.count({ where }),
           this.prisma.organization.findMany({
             where,
             orderBy: [{ nextActivityAt: { sort: 'asc', nulls: 'last' } }, { name: 'asc' }],
-            take: BOARD_COLUMN_LIMIT,
+            skip: paginationSkip(page, limit),
+            take: limit,
             include: ORGANIZATION_REFS,
           }),
         ]);
-        await hydrateCampaignMembership(this.prisma, ctx, rows);
-        return {
-          salesStatus,
-          count,
-          hasMore: count > rows.length,
-          items: rows.map((row) => this.toBoardItem(row, this.accessOf(ctx, row))),
-        };
+        return { salesStatus, total, rows };
       }),
     );
+
+    // Une seule passe pour tout le tableau : appartenances de campagne (périmètres) et
+    // prochaine action de chaque carte, plutôt que deux requêtes par colonne.
+    const rows = fetched.flatMap((column) => column.rows);
+    await hydrateCampaignMembership(this.prisma, ctx, rows);
+    const nextActivities = await this.loadNextActivities(projectId, rows.map((row) => row.id));
+
+    const columns = fetched.map((column) => ({
+      salesStatus: column.salesStatus,
+      meta: buildPaginationMeta(column.total, page, limit),
+      items: column.rows.map((row) => this.toBoardItem(row, this.accessOf(ctx, row), nextActivities.get(row.id) ?? null)),
+    }));
     return { columns };
   }
 
@@ -339,7 +359,45 @@ export class OrganizationsService {
     return { id, salesStatus: dto.salesStatus };
   }
 
-  private toBoardItem(row: OrganizationWithRefs, access: ScopeAccess): BoardItemDto {
+  /**
+   * La prochaine action planifiée de chaque fiche affichée — **la même** que celle qui donne
+   * `nextActivityAt` et trie la colonne : la première par date, puis par heure. Rien n'est
+   * dénormalisé de plus : une colonne de kanban se lit à la lecture, et un type stocké sur
+   * l'organisme serait une seconde vérité à maintenir à chaque écriture d'action.
+   */
+  private async loadNextActivities(
+    projectId: string,
+    organizationIds: string[],
+  ): Promise<Map<string, BoardNextActivityDto>> {
+    if (!organizationIds.length) return new Map();
+
+    const planned = await this.prisma.activity.findMany({
+      where: { projectId, organizationId: { in: organizationIds }, status: ActivityStatus.PLANNED },
+      orderBy: [{ date: 'asc' }, { time: { sort: 'asc', nulls: 'first' } }],
+      select: { id: true, organizationId: true, type: true, date: true, time: true, result: true },
+    });
+
+    const labels = await loadActivityLabels(this.prisma, projectId, planned);
+    const byOrganization = new Map<string, BoardNextActivityDto>();
+    for (const activity of planned) {
+      // Les actions arrivent triées : la première rencontrée pour une fiche est la prochaine.
+      if (byOrganization.has(activity.organizationId)) continue;
+      byOrganization.set(activity.organizationId, {
+        id: activity.id,
+        type: activity.type,
+        title: labels.get(`${REFERENCE_CATEGORIES.ACTIVITY_TYPE}:${activity.type}`) ?? activity.type,
+        date: formatDateField(activity.date),
+        time: activity.time,
+      });
+    }
+    return byOrganization;
+  }
+
+  private toBoardItem(
+    row: OrganizationWithRefs,
+    access: ScopeAccess,
+    nextActivity: BoardNextActivityDto | null,
+  ): BoardItemDto {
     const restricted: BoardItemDto = {
       id: row.id,
       name: row.name,
@@ -352,6 +410,7 @@ export class OrganizationsService {
       priority: row.priority,
       tags: row.tags,
       nextActivityAt: row.nextActivityAt,
+      nextActivity,
       lastActivityAt: row.lastActivityAt,
     };
   }

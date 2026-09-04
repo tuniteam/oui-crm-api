@@ -84,7 +84,12 @@ export const BOARD_COLUMNS: readonly SalesStatus[] = [
   SalesStatus.MEETING_SCHEDULED,
   SalesStatus.CLOSED,
 ];
-export const BOARD_COLUMN_LIMIT = 200;
+/**
+ * Cartes servies par colonne au premier appel. Un kanban se lit colonne par colonne : la
+ * valeur est plus généreuse que les 20 d'une liste, sans aller jusqu'au maximum — la suite
+ * se demande colonne par colonne (`salesStatus` + `page`).
+ */
+export const BOARD_DEFAULT_LIMIT = 50;
 export const SALES_STATUS_REASON_MAX_LENGTH = 500;
 
 /** Bulk operations (US-01-05). DELETE additionally requires organizations:delete. */

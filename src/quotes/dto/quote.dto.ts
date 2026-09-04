@@ -24,7 +24,7 @@ import { PaginationMetaDto, PaginationQueryDto } from '@/common/dto/pagination.d
 import { DAY_PATTERN } from '@/common/utils/date.utils';
 import { UserRefDto } from '@/organizations/dto';
 import { DISCOUNT_MAX, DISCOUNT_MIN } from '@/pricing/pricing.constants';
-import { PLAN_KEY_MAX_LENGTH } from '../quotes.constants';
+import { PLAN_KEY_MAX_LENGTH, REASON_MAX_LENGTH } from '../quotes.constants';
 
 const MAX_LINES = 50;
 
@@ -443,6 +443,30 @@ export class QuotesListResponseDto {
 
   @ApiProperty({ type: PaginationMetaDto })
   meta: PaginationMetaDto;
+}
+
+/** Motif facultatif d'un renvoi au brouillon ou d'un refus client. */
+export class RejectQuoteDto {
+  @ApiPropertyOptional({ example: 'Remise trop forte pour la marge cible.' })
+  @IsOptionalNotNull()
+  @IsString()
+  @MaxLength(REASON_MAX_LENGTH)
+  reason?: string;
+}
+
+/** Ce que renvoie une transition : le statut atteint, et s'il attend une validation. */
+export class QuoteStatusResponseDto {
+  @ApiProperty({ example: 'cmtl…' })
+  id: string;
+
+  @ApiProperty({ example: 'DEV-2026-243-WB001' })
+  number: string;
+
+  @ApiProperty({ enum: QuoteStatus, example: QuoteStatus.SENT })
+  status: QuoteStatus;
+
+  @ApiProperty({ example: false, description: 'true when the discount put the quote in the validation loop' })
+  requiresValidation: boolean;
 }
 
 export class QuoteIdResponseDto {

@@ -3,16 +3,20 @@
 // ============================================
 
 import { Injectable } from '@nestjs/common';
-import { DocumentType, Organization, Prisma, QuoteStatus, Settings } from '@prisma/client';
+import { ActivityStatus, DocumentType, Organization, Prisma, QuoteStatus, Settings } from '@prisma/client';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
+import { ORGANIZATION_AUDIT } from '@/organizations/organizations.constants';
 import { loadUsersWithInitials } from '@/audit-log/audit-log-labels';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { apiError } from '@/common/api-error';
+import { labels } from '@/common/messages';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { formatDateField, parseDayOrThrow, todayUtc } from '@/common/utils/date.utils';
 import { nextDocumentNumbers } from '@/common/utils/document-number.utils';
 import { userRef } from '@/common/utils/user.utils';
+import { recomputeActivityMarks } from '@/activities/activities.utils';
+import { findPermission } from '@/auth/utils/permissions.util';
 import { ensureOpenOpportunity } from '@/opportunities/opportunities.utils';
 import { assertFullOrganizationAccess } from '@/organizations/organizations.utils';
 import { PricingService } from '@/pricing/pricing.service';
@@ -21,17 +25,27 @@ import { loadActiveGridContent } from '@/pricing/pricing.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ScopeService } from '@/scopes/scope.service';
 import { loadScopeContext, mergeVisibilityWhere } from '@/scopes/scopes.utils';
-import { QUOTES_AUDIT, STATUS_BY_AUDIT_ACTION } from './quotes.constants';
+import {
+  FOLLOW_UP_ACTIVITY_TYPE,
+  LOSS_REASON_ON_DECLINE,
+  QUOTES_AUDIT,
+  QUOTE_LIFECYCLE_ACTIONS,
+} from './quotes.constants';
 import {
   QuoteAmounts,
   QuoteConfigInput,
+  QuoteStatusChange,
+  QuoteWithContext,
   amountsOf,
+  applyQuoteStatus,
   assertDeletable,
   assertEditable,
   assertSetupShape,
   buildQuoteWhere,
   defaultStartDate,
+  linesToCreate,
   normalizeQuoteConfig,
+  reopenData,
   resolveQuoteResult,
   validUntilFrom,
 } from './quotes.utils';
@@ -43,17 +57,23 @@ import {
   QuoteLineDto,
   QuoteListQueryDto,
   QuoteResultDto,
+  QuoteStatusResponseDto,
   QuotesListResponseDto,
+  RejectQuoteDto,
   SimulateQuoteDto,
   UpdateQuoteDto,
 } from './dto/quote.dto';
 
-const ORGANIZATION_SELECT = { id: true, name: true, population: true } as const;
+const ORGANIZATION_SELECT = { id: true, name: true, population: true, salesStatus: true } as const;
 
 const QUOTE_INCLUDE = {
   organization: { select: ORGANIZATION_SELECT },
   pricingGrid: { select: { version: true } },
+  opportunity: { select: { id: true, stage: true } },
 } as const;
+
+/** Le devis tel que les routes d'action le chargent : son entourage et ses lignes figées. */
+type QuoteWithLines = Prisma.QuoteGetPayload<{ include: typeof QUOTE_INCLUDE & { lines: true } }>;
 
 type QuoteRow = Prisma.QuoteGetPayload<{ include: typeof QUOTE_INCLUDE }>;
 
@@ -244,7 +264,7 @@ export class QuotesService {
         action: QUOTES_AUDIT.CREATE,
         objectType: AUDIT_OBJECTS.QUOTE,
         objectId: created.id,
-        metadata: { number: created.number, organizationId: organization.id, opportunityId },
+        metadata: { status: QuoteStatus.DRAFT, number: created.number, organizationId: organization.id, opportunityId },
       });
       return created;
     });
@@ -331,7 +351,300 @@ export class QuotesService {
     });
   }
 
+
+  // -------------------------------------------------------------------------------- lifecycle
+
+  /**
+   * US-02-04 — la soumission. Elle **fige** : les lignes calculées deviennent des lignes en
+   * base et le devis cesse d'être recalculé. Au-delà du plafond de remise du projet, il part
+   * en validation, sauf si son auteur porte `quotes:discountAboveCap` — un directeur commercial
+   * n'a pas à se valider lui-même.
+   */
+  async submit(
+    id: string,
+    projectId: string,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+    if (quote.status !== QuoteStatus.DRAFT) throw apiError.conflict('QUOTE_ALREADY_SUBMITTED', quote.status);
+    await this.assertWritableOrganization(quote.organizationId, projectId, user);
+
+    const settings = await this.loadSettings(projectId);
+    const { id: gridId, content } = await this.loadGrid(projectId);
+
+    // Recalcul final avant figeage : c'est ce résultat-là qui devient le devis.
+    const result = this.pricing.computeQuote({
+      grid: content,
+      population: quote.organization.population,
+      vatRate: Number(settings.vatRate),
+      startDate: formatDateField(quote.startDate),
+      config: quote.config as unknown as QuoteConfig,
+    });
+
+    const requiresValidation = result.maxDiscount > settings.discountCap;
+    const mayExceed = Boolean(findPermission(user, projectId, 'quotes:discountAboveCap'));
+    const to = requiresValidation && !mayExceed ? QuoteStatus.PENDING_VALIDATION : QuoteStatus.SENT;
+
+    const change = await this.prisma.$transaction(async (tx) => {
+      await tx.quote.update({
+        where: { id },
+        data: { pricingGridId: gridId, ...amountsOf(result) },
+      });
+      await tx.quoteLine.createMany({ data: linesToCreate(id, result) });
+
+      const moved = await applyQuoteStatus(tx, projectId, this.contextOf(quote), to, user.id);
+      await this.logLifecycle(tx, projectId, user, quote.number, id, QUOTES_AUDIT.SUBMIT, moved, {
+        maxDiscount: result.maxDiscount,
+        discountCap: settings.discountCap,
+        requiresValidation,
+        grantedAboveCap: requiresValidation && mayExceed,
+      }, quote.organizationId);
+      return moved;
+    });
+
+    return { id, number: quote.number, status: change.quote.to, requiresValidation };
+  }
+
+  /** US-02-05 — la direction approuve : le devis part au client. */
+  async validate(
+    id: string,
+    projectId: string,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+    if (quote.status !== QuoteStatus.PENDING_VALIDATION) throw apiError.conflict('QUOTE_NOT_PENDING', quote.status);
+
+    const change = await this.prisma.$transaction(async (tx) => {
+      const moved = await applyQuoteStatus(tx, projectId, this.contextOf(quote), QuoteStatus.SENT, user.id, {
+        validatedById: user.id,
+      });
+      await this.logLifecycle(tx, projectId, user, quote.number, id, QUOTES_AUDIT.VALIDATE, moved, {
+        maxDiscount: quote.maxDiscount,
+      }, quote.organizationId);
+      return moved;
+    });
+
+    return { id, number: quote.number, status: change.quote.to, requiresValidation: false };
+  }
+
+  /**
+   * US-02-05 — la direction renvoie le devis au brouillon. Ses lignes figées sont supprimées :
+   * il redevient un devis vivant, recalculé depuis la grille active, et une nouvelle soumission
+   * ne peut pas empiler deux jeux de lignes.
+   */
+  async reject(
+    id: string,
+    projectId: string,
+    dto: RejectQuoteDto,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+    if (quote.status !== QuoteStatus.PENDING_VALIDATION) throw apiError.conflict('QUOTE_NOT_PENDING', quote.status);
+
+    const change = await this.prisma.$transaction(async (tx) => {
+      const moved = await applyQuoteStatus(tx, projectId, this.contextOf(quote), QuoteStatus.DRAFT, user.id, {
+        rejectionReason: dto.reason ?? null,
+        validatedById: null,
+      });
+      await tx.quoteLine.deleteMany({ where: { quoteId: id } });
+      await this.logLifecycle(tx, projectId, user, quote.number, id, QUOTES_AUDIT.REJECT, moved, {
+        reason: dto.reason ?? null,
+      }, quote.organizationId);
+      return moved;
+    });
+
+    return { id, number: quote.number, status: change.quote.to, requiresValidation: true };
+  }
+
+  /**
+   * US-02-06 — la relance. Elle laisse une trace côté fiche : une activité `FOLLOW_UP`
+   * réalisée, pour que le prochain qui ouvre l'organisme sache que le devis a été relancé.
+   */
+  async followUp(
+    id: string,
+    projectId: string,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+
+    const change = await this.prisma.$transaction(async (tx) => {
+      const moved = await applyQuoteStatus(tx, projectId, this.contextOf(quote), QuoteStatus.FOLLOWED_UP, user.id);
+      const today = todayUtc();
+      await tx.activity.create({
+        data: {
+          projectId,
+          organizationId: quote.organizationId,
+          userId: user.id,
+          type: FOLLOW_UP_ACTIVITY_TYPE,
+          date: today,
+          status: ActivityStatus.DONE,
+          completedAt: new Date(),
+          report: labels.quoteFollowUpReport(quote.number),
+        },
+      });
+      await recomputeActivityMarks(tx, quote.organizationId);
+      await this.logLifecycle(tx, projectId, user, quote.number, id, QUOTES_AUDIT.FOLLOW_UP, moved, {}, quote.organizationId);
+      return moved;
+    });
+
+    return { id, number: quote.number, status: change.quote.to, requiresValidation: false };
+  }
+
+  /** US-02-06 — on discute le prix, le périmètre ou le calendrier. */
+  async negotiate(
+    id: string,
+    projectId: string,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+
+    const change = await this.prisma.$transaction(async (tx) => {
+      const moved = await applyQuoteStatus(tx, projectId, this.contextOf(quote), QuoteStatus.NEGOTIATING, user.id);
+      await this.logLifecycle(tx, projectId, user, quote.number, id, QUOTES_AUDIT.NEGOTIATE, moved, {}, quote.organizationId);
+      return moved;
+    });
+
+    return { id, number: quote.number, status: change.quote.to, requiresValidation: false };
+  }
+
+  /** US-02-06 — le client dit non : le devis est refusé et l'affaire est perdue. */
+  async decline(
+    id: string,
+    projectId: string,
+    dto: RejectQuoteDto,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+
+    const change = await this.prisma.$transaction(async (tx) => {
+      const moved = await applyQuoteStatus(tx, projectId, this.contextOf(quote), QuoteStatus.REJECTED, user.id, {
+        declineReason: dto.reason ?? null,
+        lossReason: LOSS_REASON_ON_DECLINE,
+      });
+      await this.logLifecycle(tx, projectId, user, quote.number, id, QUOTES_AUDIT.DECLINE, moved, {
+        reason: dto.reason ?? null,
+      }, quote.organizationId);
+      return moved;
+    });
+
+    return { id, number: quote.number, status: change.quote.to, requiresValidation: false };
+  }
+
+  /**
+   * US-02-06 — rouvrir un devis expiré. Il n'est pas ressuscité : un **nouveau** brouillon
+   * naît de sa configuration, avec son propre numéro, et pointe vers lui (`sourceQuoteId`).
+   * L'historique commercial garde ainsi la trace des deux tentatives.
+   */
+  async reopen(
+    id: string,
+    projectId: string,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<QuoteIdResponseDto> {
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+    if (quote.status !== QuoteStatus.EXPIRED) throw apiError.conflict('QUOTE_NOT_REOPENABLE', quote.status);
+    if (!quote.config) throw apiError.conflict('QUOTE_NOT_REOPENABLE', quote.origin);
+    await this.assertWritableOrganization(quote.organizationId, projectId, user);
+
+    const settings = await this.loadSettings(projectId);
+    const { content } = await this.loadGrid(projectId);
+    const issueDate = todayUtc();
+    const result = this.pricing.computeQuote({
+      grid: content,
+      population: quote.organization.population,
+      vatRate: Number(settings.vatRate),
+      startDate: formatDateField(quote.startDate),
+      config: quote.config as unknown as QuoteConfig,
+    });
+    const initials = await this.initialsOf(user.id, projectId);
+
+    return this.prisma.$transaction(async (tx) => {
+      const [number] = await nextDocumentNumbers(tx, {
+        projectId,
+        type: DocumentType.QUOTE,
+        initials,
+        day: issueDate,
+      });
+      const created = await tx.quote.create({
+        data: reopenData(
+          quote,
+          number,
+          user.id,
+          issueDate,
+          validUntilFrom(issueDate, settings.quoteValidityDays),
+          amountsOf(result),
+        ),
+        select: { id: true, number: true },
+      });
+      await this.audit.log(tx, {
+        projectId,
+        userId: user.id,
+        action: QUOTES_AUDIT.CREATE,
+        objectType: AUDIT_OBJECTS.QUOTE,
+        objectId: created.id,
+        metadata: { status: QuoteStatus.DRAFT, number: created.number, reopenedFrom: quote.number },
+      });
+      await this.audit.log(tx, {
+        projectId,
+        userId: user.id,
+        action: QUOTES_AUDIT.REOPEN,
+        objectType: AUDIT_OBJECTS.QUOTE,
+        objectId: id,
+        metadata: { number: quote.number, newQuote: created.number },
+      });
+      return created;
+    });
+  }
+
   // -------------------------------------------------------------------------------- helpers
+  /** Le devis et son entourage, dans la forme que le writer unique attend. */
+  private contextOf(quote: QuoteWithLines): QuoteWithContext {
+    return {
+      id: quote.id,
+      status: quote.status,
+      organization: { id: quote.organization.id, salesStatus: quote.organization.salesStatus },
+      opportunity: quote.opportunity ? { id: quote.opportunity.id, stage: quote.opportunity.stage } : null,
+    };
+  }
+
+  /** Journalise une transition : le statut atteint va dans les métadonnées, l'historique s'y lit. */
+  private async logLifecycle(
+    tx: Prisma.TransactionClient,
+    projectId: string,
+    user: AuthenticatedUser,
+    number: string,
+    quoteId: string,
+    action: string,
+    change: QuoteStatusChange,
+    extra: Record<string, unknown>,
+    organizationId?: string,
+  ): Promise<void> {
+    await this.audit.log(tx, {
+      projectId,
+      userId: user.id,
+      action,
+      objectType: AUDIT_OBJECTS.QUOTE,
+      objectId: quoteId,
+      metadata: { status: change.quote.to, from: change.quote.from, number, ...extra },
+    });
+    if (change.organization) {
+      await this.audit.log(tx, {
+        projectId,
+        userId: user.id,
+        action: ORGANIZATION_AUDIT.SALES_STATUS,
+        objectType: AUDIT_OBJECTS.ORGANIZATION,
+        objectId: organizationId ?? '',
+        metadata: { ...change.organization, trigger: action },
+      });
+    }
+  }
+
 
   private defaultsOf(settings: Settings) {
     return {
@@ -435,20 +748,28 @@ export class QuotesService {
   /** L'historique des statuts se relit dans le journal — pas de table de plus (SPEC-14 §2.5). */
   private async loadHistory(projectId: string, quoteId: string): Promise<QuoteDetailDto['history']> {
     const entries = await this.prisma.auditLog.findMany({
-      where: { projectId, objectType: AUDIT_OBJECTS.QUOTE, objectId: quoteId, action: { in: Object.keys(STATUS_BY_AUDIT_ACTION) } },
+      where: { projectId, objectType: AUDIT_OBJECTS.QUOTE, objectId: quoteId, action: { in: [...QUOTE_LIFECYCLE_ACTIONS] } },
       orderBy: { createdAt: 'asc' },
-      select: { action: true, createdAt: true, userId: true },
+      select: { action: true, createdAt: true, userId: true, metadata: true },
     });
     const actors = await loadUsersWithInitials(
       this.prisma,
       projectId,
       [...new Set(entries.map((e) => e.userId).filter((id): id is string => !!id))],
     );
-    return entries.map((entry) => ({
-      status: STATUS_BY_AUDIT_ACTION[entry.action],
-      at: entry.createdAt,
-      by: entry.userId ? userRef(actors.get(entry.userId), entry.userId) : null,
-    }));
+    // Le statut atteint est écrit dans les métadonnées de l'entrée : l'historique est exact,
+    // là où une correspondance figée action → statut se tromperait sur `submit`.
+    const history: QuoteDetailDto['history'] = [];
+    for (const entry of entries) {
+      const status = (entry.metadata as { status?: QuoteStatus } | null)?.status;
+      if (!status) continue;
+      history.push({
+        status,
+        at: entry.createdAt,
+        by: entry.userId ? userRef(actors.get(entry.userId), entry.userId) : null,
+      });
+    }
+    return history;
   }
 
   // -------------------------------------------------------------------------------- mapping

@@ -21,7 +21,9 @@ import {
   QuoteIdResponseDto,
   QuoteListQueryDto,
   QuoteResultDto,
+  QuoteStatusResponseDto,
   QuotesListResponseDto,
+  RejectQuoteDto,
   SimulateQuoteDto,
   UpdateQuoteDto,
 } from './dto/quote.dto';
@@ -108,6 +110,116 @@ export class QuotesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<QuoteDetailDto> {
     return this.quotesService.update(id, projectId, dto, scopeWhere, user);
+  }
+
+
+  // ------------------------------------------------------------------ cycle de vie (US-02-04 à 06)
+
+  @Post(':id/submit')
+  @Permissions({ code: 'quotes:submit' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation(swagger.quotes.submit)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiPatchResponse(QuoteStatusResponseDto)
+  submit(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @ScopeFilter('quotes:submit') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    return this.quotesService.submit(id, projectId, scopeWhere, user);
+  }
+
+  @Post(':id/validate')
+  @Permissions({ code: 'quotes:validate' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation(swagger.quotes.validate)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiPatchResponse(QuoteStatusResponseDto)
+  validate(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @ScopeFilter('quotes:validate') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    return this.quotesService.validate(id, projectId, scopeWhere, user);
+  }
+
+  @Post(':id/reject')
+  @Permissions({ code: 'quotes:validate' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation(swagger.quotes.reject)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiPatchResponse(QuoteStatusResponseDto)
+  reject(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @Body() dto: RejectQuoteDto,
+    @ScopeFilter('quotes:validate') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    return this.quotesService.reject(id, projectId, dto, scopeWhere, user);
+  }
+
+  @Post(':id/follow-up')
+  @Permissions({ code: 'quotes:update' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation(swagger.quotes.followUp)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiPatchResponse(QuoteStatusResponseDto)
+  followUp(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @ScopeFilter('quotes:update') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    return this.quotesService.followUp(id, projectId, scopeWhere, user);
+  }
+
+  @Post(':id/negotiate')
+  @Permissions({ code: 'quotes:update' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation(swagger.quotes.negotiate)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiPatchResponse(QuoteStatusResponseDto)
+  negotiate(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @ScopeFilter('quotes:update') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    return this.quotesService.negotiate(id, projectId, scopeWhere, user);
+  }
+
+  @Post(':id/decline')
+  @Permissions({ code: 'quotes:update' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation(swagger.quotes.decline)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiPatchResponse(QuoteStatusResponseDto)
+  decline(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @Body() dto: RejectQuoteDto,
+    @ScopeFilter('quotes:update') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<QuoteStatusResponseDto> {
+    return this.quotesService.decline(id, projectId, dto, scopeWhere, user);
+  }
+
+  @Post(':id/reopen')
+  @Permissions({ code: 'quotes:create' })
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation(swagger.quotes.reopen)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiPostResponse(QuoteIdResponseDto)
+  reopen(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @ScopeFilter('quotes:create') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<QuoteIdResponseDto> {
+    return this.quotesService.reopen(id, projectId, scopeWhere, user);
   }
 
   @Delete(':id')
