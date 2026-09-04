@@ -1,5 +1,20 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PROJECT_ID_HEADER } from '@/auth/auth.constants';
 import { CurrentProjectId } from '@/auth/decorators/current-project.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
@@ -14,6 +29,8 @@ import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
 import { ApiAuthResponses, ApiCuidParam, ApiDeleteResponse, ApiGetResponse, ApiListResponse, ApiPatchResponse, ApiPostResponse } from '@/common/decorators';
 import { ApiMessages } from '@/common/messages';
 import { ParseCuidPipe } from '@/common/pipes';
+import { MAX_SIZE_BY_CATEGORY, UPLOAD_FIELD } from '@/files/files.constants';
+import { UploadedFileLike } from '@/files/uploaded-file.interface';
 import { QuotesService } from './quotes.service';
 import {
   CreateQuoteDto,
@@ -24,6 +41,9 @@ import {
   QuoteStatusResponseDto,
   QuotesListResponseDto,
   RejectQuoteDto,
+  SignQuoteDto,
+  SignResponseDto,
+  SignedReturnResponseDto,
   SimulateQuoteDto,
   UpdateQuoteDto,
 } from './dto/quote.dto';
@@ -220,6 +240,40 @@ export class QuotesController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<QuoteIdResponseDto> {
     return this.quotesService.reopen(id, projectId, scopeWhere, user);
+  }
+
+  @Post(':id/sign')
+  @Permissions({ code: 'quotes:sign' })
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation(swagger.quotes.sign)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiPatchResponse(SignResponseDto)
+  sign(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @Body() dto: SignQuoteDto,
+    @ScopeFilter('quotes:sign') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<SignResponseDto> {
+    return this.quotesService.sign(id, projectId, dto, scopeWhere, user);
+  }
+
+  @Post(':id/signed-return')
+  @Permissions({ code: 'quotes:update' })
+  @HttpCode(HttpStatus.CREATED)
+  @UseInterceptors(FileInterceptor(UPLOAD_FIELD, { limits: { fileSize: MAX_SIZE_BY_CATEGORY.SIGNED_RETURN } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation(swagger.quotes.signedReturn)
+  @ApiCuidParam('id', swagger.params.quoteId)
+  @ApiPostResponse(SignedReturnResponseDto)
+  signedReturn(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @UploadedFile() file: UploadedFileLike | undefined,
+    @ScopeFilter('quotes:update') scopeWhere: Record<string, unknown>,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<SignedReturnResponseDto> {
+    return this.quotesService.signedReturn(id, projectId, file, scopeWhere, user);
   }
 
   @Delete(':id')

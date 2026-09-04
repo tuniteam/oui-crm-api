@@ -222,11 +222,15 @@ enum BillingMode {
 }
 
 /// Seul ACTIVE est écrit au L2 ; le cycle de vie arrive au L3 (SPEC-14 §2.4).
+/// Seuls les trois états que le L2 écrit (KISS, 04/09) : `ACTIVE` à la signature, `AMENDING`
+/// quand un avenant est ouvert — le contrat court toujours —, `CLOSED` quand le job
+/// `contracts.close` le remplace par son successeur. Un contrat se **clôt**, il n'expire pas :
+/// `EXPIRED` reste le mot du devis. Le cycle de vie du L3 (préavis, résiliation) ajoutera ce
+/// dont il aura besoin, en sachant alors s'il veut d'autres statuts ou un motif de clôture.
 enum ContractStatus {
   ACTIVE
-  NOTICE_RECEIVED
-  TERMINATED
-  EXPIRED
+  AMENDING
+  CLOSED
 }
 
 // ============================================
@@ -318,6 +322,7 @@ model User {
   organizationsAsTrainer    Organization[]           @relation("OrganizationTrainer")
   opportunitiesOwned        Opportunity[]            @relation("OpportunityOwner")
   quotesOwned               Quote[]                  @relation("QuoteOwner")
+  contractsOwned            Contract[]               @relation("ContractOwner")
   quotesValidated           Quote[]                  @relation("QuoteValidatedBy")
 
   @@index([status])
@@ -971,8 +976,11 @@ model Quote {
   maxDiscount  Int     @default(0) @map("max_discount")
 
   /// Devis d'origine d'un renouvellement ou d'une réouverture après expiration.
-  sourceQuoteId String? @map("source_quote_id")
-  importBatchId String? @map("import_batch_id")
+  sourceQuoteId    String? @map("source_quote_id")
+  /// Contrat que ce devis vient amender (SPEC-14 D16). Porté par le devis tant que l'avenant
+  /// est en cours : c'est par lui qu'un avenant abandonné rend le contrat à ACTIVE.
+  sourceContractId String? @map("source_contract_id")
+  importBatchId    String? @map("import_batch_id")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -994,6 +1002,7 @@ model Quote {
   @@index([opportunityId])
   @@index([projectId, validUntil])
   @@index([importBatchId])
+  @@index([sourceContractId])
   @@map("quotes")
 }
 
@@ -1047,15 +1056,29 @@ model Contract {
   status      ContractStatus @default(ACTIVE)
   notes       String?
 
+  /// Le commercial du devis signé. Sans lui, la portée OWN de `contracts:read` — que le
+  /// catalogue donne au commercial (seedAuth) — n'aurait aucun champ où s'appliquer.
+  ownerId String? @map("owner_id")
+
+  /// Contrat que celui-ci remplace, recopié du devis d'avenant à la signature (SPEC-14 D16).
+  /// Redondant avec `quote.sourceContractId` et voulu tel quel : la chaîne des contrats se lit
+  /// sans passer par les devis, et le job d'extinction n'a qu'une table à joindre.
+  sourceContractId String? @map("source_contract_id")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   quote        Quote        @relation(fields: [quoteId], references: [id], onDelete: Cascade)
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  owner        User?        @relation("ContractOwner", fields: [ownerId], references: [id], onDelete: SetNull)
 
   @@unique([projectId, number])
   @@index([projectId, status])
   @@index([organizationId])
   @@index([projectId, endDate])
+  @@index([projectId, ownerId])
+  /// Le job `contracts.close` lit les AMENDING dont le successeur démarre aujourd'hui.
+  @@index([projectId, status, startDate])
+  @@index([sourceContractId])
   @@map("contracts")
 }

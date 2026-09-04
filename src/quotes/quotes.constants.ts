@@ -2,7 +2,7 @@
 // OUI-CRM - Quotes constants (US-02-02, US-02-03)
 // ============================================
 
-import { BillingMode, OpportunityStageCode, QuoteStatus, QuoteType, SalesStatus } from '@prisma/client';
+import { BillingMode, CustomerStatus, OpportunityStageCode, QuoteStatus, QuoteType, SalesStatus } from '@prisma/client';
 
 /** Actions du journal (AUDIT_OBJECTS.QUOTE). */
 export const QUOTES_AUDIT = {
@@ -10,6 +10,8 @@ export const QUOTES_AUDIT = {
   UPDATE: 'quote.update',
   DELETE: 'quote.delete',
   SUBMIT: 'quote.submit',
+  SIGN: 'quote.sign',
+  SIGNED_RETURN: 'quote.signedReturn',
   VALIDATE: 'quote.validate',
   REJECT: 'quote.reject',
   FOLLOW_UP: 'quote.followUp',
@@ -39,6 +41,7 @@ export const QUOTE_LIFECYCLE_ACTIONS: readonly string[] = [
   QUOTES_AUDIT.FOLLOW_UP,
   QUOTES_AUDIT.NEGOTIATE,
   QUOTES_AUDIT.DECLINE,
+  QUOTES_AUDIT.SIGN,
   QUOTES_AUDIT.EXPIRE,
 ];
 
@@ -82,6 +85,25 @@ export const QUOTE_TRANSITIONS: Record<QuoteStatus, readonly QuoteStatus[]> = {
 export function canTransition(from: QuoteStatus, to: QuoteStatus): boolean {
   return QUOTE_TRANSITIONS[from].includes(to);
 }
+
+/**
+ * On ne signe que ce qui est parti chez le client : la table des transitions le dit déjà, cette
+ * liste sert à le dire **avec le bon message** plutôt qu'un `QUOTE_INVALID_TRANSITION` générique.
+ */
+export const SIGNABLE_STATUSES: readonly QuoteStatus[] = [
+  QuoteStatus.SENT,
+  QuoteStatus.FOLLOWED_UP,
+  QuoteStatus.NEGOTIATING,
+];
+
+/** Ce que la signature fait de la fiche : elle devient cliente, en cours de déploiement (D14). */
+export const CUSTOMER_STATUS_ON_SIGN = CustomerStatus.DEPLOYING;
+
+/**
+ * Statuts terminaux d'échec : le devis ne reviendra pas. Ce sont eux qui rendent à sa vie
+ * normale le contrat qu'un avenant tenait (D16).
+ */
+export const QUOTE_DEAD_STATUSES: readonly QuoteStatus[] = [QuoteStatus.REJECTED, QuoteStatus.EXPIRED];
 
 /**
  * Ce que le statut d'un devis impose à son opportunité (SPEC-01 §3.8). `null` = l'opportunité

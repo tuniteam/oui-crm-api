@@ -31,6 +31,7 @@ import { ReferenceItemsModule } from './reference-items/reference-items.module';
 import { PricingModule } from './pricing/pricing.module';
 import { OpportunitiesModule } from './opportunities/opportunities.module';
 import { QuotesModule } from './quotes/quotes.module';
+import { ContractsModule } from './contracts/contracts.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { QuotesModule } from './quotes/quotes.module';
     PricingModule,
     OpportunitiesModule,
     QuotesModule,
+    ContractsModule,
     OrganizationsModule,
     ContactsModule,
     ActivitiesModule,

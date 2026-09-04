@@ -3,6 +3,8 @@
 // ============================================
 
 import {
+  ContractStatus,
+  CustomerStatus,
   OpportunityStageCode,
   Prisma,
   PrismaClient,
@@ -15,19 +17,23 @@ import {
 import { apiError } from '@/common/api-error';
 import { MS_PER_DAY, formatDateField } from '@/common/utils/date.utils';
 import { applyOpportunityStage } from '@/opportunities/opportunities.utils';
-import { applySalesStatus } from '@/organizations/organizations.utils';
+import { releaseAmendedContract } from '@/contracts/contracts.utils';
+import { applyCustomerStatus, applySalesStatus } from '@/organizations/organizations.utils';
 import { PricingService } from '@/pricing/pricing.service';
 import { ComputedQuoteLine, PricingGridContent, QuoteConfig, QuoteResult } from '@/pricing/pricing.types';
 import { money, sumMoney } from '@/pricing/pricing.utils';
 import {
   BUMPS_TO_IN_PROGRESS_FROM,
+  CUSTOMER_STATUS_ON_SIGN,
   DEFAULT_BILLING,
   DEFAULT_CANCELLABLE,
   DEFAULT_START_OFFSET_DAYS,
   DEFAULT_TRIAL_CLAUSE,
   EDITABLE_STATUSES,
   OPPORTUNITY_STAGE_BY_QUOTE_STATUS,
+  QUOTE_DEAD_STATUSES,
   QUOTE_SENT_STATUSES,
+  SIGNABLE_STATUSES,
   canTransition,
 } from './quotes.constants';
 
@@ -224,6 +230,11 @@ export function assertEditable(quote: { status: QuoteStatus }): void {
   if (!EDITABLE_STATUSES.includes(quote.status)) throw apiError.conflict('QUOTE_NOT_EDITABLE', quote.status);
 }
 
+/** Seul un devis parti chez le client se signe (US-02-07). */
+export function assertSignable(quote: { status: QuoteStatus }): void {
+  if (!SIGNABLE_STATUSES.includes(quote.status)) throw apiError.conflict('QUOTE_NOT_SIGNABLE', quote.status);
+}
+
 /** Seul un brouillon se soumet — les gardes d'état vivent ici, avec la table des transitions. */
 export function assertSubmittable(quote: { status: QuoteStatus }): void {
   if (quote.status !== QuoteStatus.DRAFT) throw apiError.conflict('QUOTE_ALREADY_SUBMITTED', quote.status);
@@ -325,14 +336,20 @@ export interface QuoteStatusChange {
   quote: { from: QuoteStatus; to: QuoteStatus };
   opportunity: { from: OpportunityStageCode; to: OpportunityStageCode } | null;
   organization: { from: SalesStatus; to: SalesStatus } | null;
+  /** Statut **client** de la fiche : seule la signature le bouge (SPEC-14 D14). */
+  customer: { from: CustomerStatus; to: CustomerStatus } | null;
+  /** Contrat rendu à `ACTIVE` parce que l'avenant qui le tenait vient de mourir (D16). */
+  releasedContract: { id: string; from: ContractStatus; to: ContractStatus } | null;
 }
 
 /** Le devis et son entourage, tels que le writer a besoin de les connaître. */
 export interface QuoteWithContext {
   id: string;
   status: QuoteStatus;
-  organization: { id: string; salesStatus: SalesStatus };
+  organization: { id: string; salesStatus: SalesStatus; customerStatus: CustomerStatus };
   opportunity: { id: string; stage: OpportunityStageCode } | null;
+  /** Renseigné sur un devis d'avenant : le contrat qu'il doit rendre s'il meurt (D16). */
+  sourceContractId: string | null;
 }
 
 /**
@@ -377,7 +394,13 @@ export async function applyQuoteStatus(
   });
   if (count === 0) throw apiError.notFound('QUOTE_NOT_FOUND', quote.id);
 
-  const change: QuoteStatusChange = { quote: { from: quote.status, to }, opportunity: null, organization: null };
+  const change: QuoteStatusChange = {
+    quote: { from: quote.status, to },
+    opportunity: null,
+    organization: null,
+    customer: null,
+    releasedContract: null,
+  };
 
   const stage = OPPORTUNITY_STAGE_BY_QUOTE_STATUS[to];
   if (stage && quote.opportunity) {
@@ -388,6 +411,18 @@ export async function applyQuoteStatus(
 
   if (QUOTE_SENT_STATUSES.includes(to) && BUMPS_TO_IN_PROGRESS_FROM.includes(quote.organization.salesStatus)) {
     change.organization = await applySalesStatus(tx, projectId, quote.organization, SalesStatus.IN_PROGRESS);
+  }
+
+  // Signature : la fiche devient cliente. Son statut **commercial** ne bouge pas — c'est le
+  // commercial qui déplace sa carte quand il juge l'affaire close (SPEC-14 D14).
+  if (to === QuoteStatus.SIGNED) {
+    change.customer = await applyCustomerStatus(tx, projectId, quote.organization, CUSTOMER_STATUS_ON_SIGN);
+  }
+
+  // Un avenant qui meurt rend son contrat à la vie normale : sans ce chemin, un contrat
+  // resterait `AMENDING` pour toujours (D16).
+  if (QUOTE_DEAD_STATUSES.includes(to)) {
+    change.releasedContract = await releaseAmendedContract(tx, projectId, quote.sourceContractId);
   }
 
   return change;

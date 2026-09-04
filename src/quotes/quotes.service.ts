@@ -6,20 +6,28 @@ import { Injectable } from '@nestjs/common';
 import {
   ActivityStatus,
   DocumentType,
+  FileCategory,
   FileOwnerType,
   Organization,
   Prisma,
   QuoteLineNature,
   QuoteStatus,
+  QuoteType,
   Settings,
 } from '@prisma/client';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
+import { CONTRACTS_AUDIT } from '@/contracts/contracts.constants';
+import { contractData, releaseAmendedContract } from '@/contracts/contracts.utils';
+import { FileService } from '@/files/file.service';
+import { assertFilePresent } from '@/files/files.utils';
+import { UploadedFileLike } from '@/files/uploaded-file.interface';
 import { OPPORTUNITIES_AUDIT } from '@/opportunities/opportunities.constants';
-import { ORGANIZATION_AUDIT } from '@/organizations/organizations.constants';
+import { CONTRACT_BLOCKING_FIELDS, ORGANIZATION_AUDIT } from '@/organizations/organizations.constants';
+import { computeCompleteness } from '@/organizations/organizations.utils';
 import { loadUsersWithInitials } from '@/audit-log/audit-log-labels';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
-import { apiError } from '@/common/api-error';
+import { apiError, withDetails } from '@/common/api-error';
 import { labels } from '@/common/messages';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { formatDateField, parseDayOrThrow, todayUtc } from '@/common/utils/date.utils';
@@ -63,6 +71,7 @@ import {
   assertEditable,
   assertPending,
   assertReopenable,
+  assertSignable,
   assertSubmittable,
   exceedsDiscountCap,
   assertSetupShape,
@@ -85,11 +94,20 @@ import {
   QuoteStatusResponseDto,
   QuotesListResponseDto,
   RejectQuoteDto,
+  SignQuoteDto,
+  SignResponseDto,
+  SignedReturnResponseDto,
   SimulateQuoteDto,
   UpdateQuoteDto,
 } from './dto/quote.dto';
 
-const ORGANIZATION_SELECT = { id: true, name: true, population: true, salesStatus: true } as const;
+const ORGANIZATION_SELECT = {
+  id: true,
+  name: true,
+  population: true,
+  salesStatus: true,
+  customerStatus: true,
+} as const;
 
 const QUOTE_INCLUDE = {
   organization: { select: ORGANIZATION_SELECT },
@@ -109,6 +127,7 @@ export class QuotesService {
     private readonly pricing: PricingService,
     private readonly scopeService: ScopeService,
     private readonly audit: AuditLogService,
+    private readonly fileService: FileService,
   ) {}
 
   // -------------------------------------------------------------------------------- simulate
@@ -243,28 +262,94 @@ export class QuotesService {
   ): Promise<QuoteIdResponseDto> {
     const organization = await this.assertWritableOrganization(dto.organizationId, projectId, user);
     const settings = await this.loadSettings(projectId);
-    const { id: gridId, content } = await this.loadGrid(projectId, dto.pricingGridId);
 
     assertSetupShape((dto.config as unknown as QuoteConfigInput).setup);
     const config = normalizeQuoteConfig(
       dto.config as unknown as QuoteConfigInput,
       this.defaultsOf(settings),
     );
+
+    const { id, number } = await this.createDraft(projectId, user, {
+      organization,
+      settings,
+      config,
+      pricingGridId: dto.pricingGridId,
+      startDate: dto.startDate ? parseDayOrThrow(dto.startDate) : null,
+      type: dto.type,
+      opportunityId: dto.opportunityId,
+    });
+    return { id, number };
+  }
+
+  /**
+   * US-02-10 — le brouillon d'un avenant, créé par `POST /contracts/:id/amend`. Il passe par le
+   * **même** chemin qu'un devis ordinaire : rien ne le distingue ensuite, sinon son type et le
+   * contrat qu'il vient remplacer. `onCreated` laisse l'appelant écrire, dans la même
+   * transaction, ce qui relève de son domaine — le passage du contrat en `AMENDING`.
+   */
+  async createAmendmentDraft(
+    projectId: string,
+    user: AuthenticatedUser,
+    input: {
+      organizationId: string;
+      type: QuoteType;
+      config: QuoteConfig;
+      startDate: Date | null;
+      sourceContractId: string;
+      sourceQuoteId: string;
+      onCreated: (tx: Prisma.TransactionClient) => Promise<void>;
+    },
+  ): Promise<{ id: string; number: string; opportunityId: string }> {
+    const organization = await this.assertWritableOrganization(input.organizationId, projectId, user);
+    const settings = await this.loadSettings(projectId);
+
+    return this.createDraft(projectId, user, {
+      organization,
+      settings,
+      config: input.config,
+      startDate: input.startDate,
+      type: input.type,
+      sourceContractId: input.sourceContractId,
+      sourceQuoteId: input.sourceQuoteId,
+      onCreated: input.onCreated,
+    });
+  }
+
+  /**
+   * **Le chemin unique de naissance d'un devis** : calcul d'abord — une population absente ou
+   * une formule inconnue refuse le devis avant qu'un numéro ne soit consommé —, puis numéro,
+   * rattachement à l'affaire ouverte de la fiche, et journal.
+   */
+  private async createDraft(
+    projectId: string,
+    user: AuthenticatedUser,
+    input: {
+      organization: Organization;
+      settings: Settings;
+      config: QuoteConfig;
+      pricingGridId?: string;
+      startDate: Date | null;
+      type?: QuoteType;
+      opportunityId?: string;
+      sourceContractId?: string;
+      sourceQuoteId?: string;
+      onCreated?: (tx: Prisma.TransactionClient) => Promise<void>;
+    },
+  ): Promise<{ id: string; number: string; opportunityId: string }> {
+    const { organization, settings, config } = input;
+    const { id: gridId, content } = await this.loadGrid(projectId, input.pricingGridId);
+
     const issueDate = todayUtc();
-    const startDate = dto.startDate ? parseDayOrThrow(dto.startDate) : defaultStartDate(issueDate);
-
-    // Le calcul d'abord : une population absente ou une formule inconnue refuse le devis avant
-    // qu'un numéro ne soit consommé.
+    const startDate = input.startDate ?? defaultStartDate(issueDate);
     const result = this.price(content, organization.population, settings, startDate, config);
-
     const initials = await this.initialsOf(user.id, projectId);
 
-    const quote = await this.prisma.$transaction(async (tx) => {
-      const opportunityId = dto.opportunityId
+    return this.prisma.$transaction(async (tx) => {
+      const opportunityId = input.opportunityId
         ? (
             await this.assertOpportunityOfOrganization(
               tx,
-              dto.opportunityId,
+              input.opportunityId,
               projectId,
               organization.id,
             )
@@ -285,12 +370,14 @@ export class QuotesService {
           opportunityId,
           pricingGridId: gridId,
           number,
-          type: dto.type ?? undefined,
+          type: input.type ?? undefined,
           ownerId: user.id,
           issueDate,
           validUntil: validUntilFrom(issueDate, settings.quoteValidityDays),
           startDate,
           config: config as unknown as Prisma.InputJsonValue,
+          sourceContractId: input.sourceContractId ?? null,
+          sourceQuoteId: input.sourceQuoteId ?? null,
           ...amountsOf(result),
         },
         select: { id: true, number: true },
@@ -307,12 +394,13 @@ export class QuotesService {
           number: created.number,
           organizationId: organization.id,
           opportunityId,
+          ...(input.sourceContractId ? { type: input.type, sourceContractId: input.sourceContractId } : {}),
         },
       });
-      return created;
-    });
 
-    return quote;
+      await input.onCreated?.(tx);
+      return { ...created, opportunityId };
+    });
   }
 
   async update(
@@ -377,6 +465,9 @@ export class QuotesService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.quote.delete({ where: { id } });
+      // Supprimer le brouillon d'un avenant, c'est y renoncer : le contrat reprend sa vie
+      // normale (D16), comme s'il avait été refusé ou expiré.
+      const released = await releaseAmendedContract(tx, projectId, quote.sourceContractId);
       await this.audit.log(tx, {
         projectId,
         userId: user.id,
@@ -385,6 +476,16 @@ export class QuotesService {
         objectId: id,
         metadata: { number: quote.number, status: quote.status },
       });
+      if (released) {
+        await this.audit.log(tx, {
+          projectId,
+          userId: user.id,
+          action: CONTRACTS_AUDIT.RELEASE,
+          objectType: AUDIT_OBJECTS.CONTRACT,
+          objectId: released.id,
+          metadata: { ...released, trigger: QUOTES_AUDIT.DELETE, quoteNumber: quote.number },
+        });
+      }
     });
   }
 
@@ -440,6 +541,132 @@ export class QuotesService {
     });
 
     return { id, number: quote.number, status: change.quote.to, requiresValidation };
+  }
+
+  /**
+   * US-02-07 — la signature. C'est le point où le CRM crée de la valeur durable : le devis
+   * devient un **contrat**, dans la même transaction (SPEC-14 D1).
+   *
+   * Trois gardes avant d'écrire : le devis doit être parti chez le client, la fiche doit être
+   * **complète** au sens contractuel du L1 (`blocks.contract` — sans SIRET ni contact, on ne
+   * signe pas), et l'organisme doit être accessible en écriture.
+   *
+   * La cascade est celle du writer unique : opportunité `WON`, fiche `DEPLOYING`. Le statut
+   * **commercial** ne bouge pas (D14) : c'est le commercial qui déplace sa carte.
+   */
+  async sign(
+    id: string,
+    projectId: string,
+    dto: SignQuoteDto,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<SignResponseDto> {
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+    assertSignable(quote);
+    if (!quote.config) throw apiError.conflict('QUOTE_IMPORTED_NO_CONTRACT');
+    await this.assertWritableOrganization(quote.organizationId, projectId, user);
+    await this.assertCompleteForContract(quote.organizationId);
+
+    const settings = await this.loadSettings(projectId);
+    const signedAt = parseDayOrThrow(dto.signedAt);
+    const config = quote.config as unknown as QuoteConfig;
+
+    const contract = await this.prisma.$transaction(async (tx) => {
+      const moved = await applyQuoteStatus(tx, projectId, this.contextOf(quote), QuoteStatus.SIGNED, user.id, {
+        signedAt,
+      });
+
+      const created = await tx.contract.create({
+        data: {
+          ...contractData(quote, config, signedAt, settings.noticeMonths),
+          ownerId: quote.ownerId,
+        },
+        select: { id: true, number: true },
+      });
+
+      await this.logLifecycle(tx, projectId, user, quote, QUOTES_AUDIT.SIGN, moved, {
+        signedAt: formatDateField(signedAt),
+        contractId: created.id,
+        contractNumber: created.number,
+      });
+      await this.audit.log(tx, {
+        projectId,
+        userId: user.id,
+        action: CONTRACTS_AUDIT.CREATE,
+        objectType: AUDIT_OBJECTS.CONTRACT,
+        objectId: created.id,
+        metadata: { number: created.number, quoteNumber: quote.number, quoteId: quote.id },
+      });
+      return created;
+    });
+
+    // Le déploiement appartient au L4 : la clé est au contrat d'API, sa valeur viendra avec lui.
+    return { contractId: contract.id, contractNumber: contract.number, deploymentId: null };
+  }
+
+  /**
+   * US-02-07 — le retour signé. Une pièce contractuelle : elle est archivée telle quelle et
+   * n'est jamais supprimable (`NEVER_DELETABLE` du L0).
+   */
+  async signedReturn(
+    id: string,
+    projectId: string,
+    file: UploadedFileLike | undefined,
+    scopeWhere: Record<string, unknown>,
+    user: AuthenticatedUser,
+  ): Promise<SignedReturnResponseDto> {
+    const quote = await this.loadVisible(id, projectId, scopeWhere, user);
+    await this.assertWritableOrganization(quote.organizationId, projectId, user);
+    assertFilePresent(file);
+
+    const saved = await this.fileService.upload({
+      projectId,
+      ownerType: FileOwnerType.QUOTE,
+      ownerId: quote.id,
+      category: FileCategory.SIGNED_RETURN,
+      buffer: file.buffer,
+      fileName: file.originalname,
+      declaredMimeType: file.mimetype,
+      uploadedBy: user.id,
+    });
+
+    await this.audit.log(this.prisma, {
+      projectId,
+      userId: user.id,
+      action: QUOTES_AUDIT.SIGNED_RETURN,
+      objectType: AUDIT_OBJECTS.QUOTE,
+      objectId: quote.id,
+      metadata: { number: quote.number, fileId: saved.id, fileName: saved.fileName },
+    });
+
+    return { fileId: saved.id };
+  }
+
+  /**
+   * La complétude du L1 sert enfin de garde (US-02-07) : sans identité légale ni interlocuteur,
+   * il n'y a pas de contrat à signer. Le détail nomme les champs manquants — le front renvoie
+   * vers la fiche.
+   */
+  private async assertCompleteForContract(organizationId: string): Promise<void> {
+    const organization = await this.prisma.organization.findUniqueOrThrow({
+      where: { id: organizationId },
+      select: {
+        siret: true,
+        address: true,
+        postalCode: true,
+        population: true,
+        email: true,
+        contacts: { where: { isPrimary: true, deletedAt: null }, select: { id: true }, take: 1 },
+      },
+    });
+    const completeness = computeCompleteness({
+      ...organization,
+      hasPrimaryContact: organization.contacts.length > 0,
+    });
+    if (!completeness.blocks.contract) return;
+
+    const missing = completeness.missing.filter((field) => CONTRACT_BLOCKING_FIELDS.includes(field));
+    throw withDetails(apiError.conflict('ORGANIZATION_INCOMPLETE', missing.join(', ')), missing);
   }
 
   /**
@@ -671,10 +898,15 @@ export class QuotesService {
     return {
       id: quote.id,
       status: quote.status,
-      organization: { id: quote.organization.id, salesStatus: quote.organization.salesStatus },
+      organization: {
+        id: quote.organization.id,
+        salesStatus: quote.organization.salesStatus,
+        customerStatus: quote.organization.customerStatus,
+      },
       opportunity: quote.opportunity
         ? { id: quote.opportunity.id, stage: quote.opportunity.stage }
         : null,
+      sourceContractId: quote.sourceContractId,
     };
   }
 
@@ -743,6 +975,30 @@ export class QuotesService {
         objectType: AUDIT_OBJECTS.ORGANIZATION,
         objectId: quote.organizationId,
         metadata: { ...change.organization, trigger: action },
+      });
+    }
+
+    // La signature fait de la fiche une cliente : c'est un mouvement à part, sur son propre axe.
+    if (change.customer) {
+      await this.audit.log(tx, {
+        projectId,
+        userId: user.id,
+        action: ORGANIZATION_AUDIT.CUSTOMER_STATUS,
+        objectType: AUDIT_OBJECTS.ORGANIZATION,
+        objectId: quote.organizationId,
+        metadata: { ...change.customer, trigger: action },
+      });
+    }
+
+    // Un avenant abandonné rend son contrat : le détail du contrat doit pouvoir l'expliquer.
+    if (change.releasedContract) {
+      await this.audit.log(tx, {
+        projectId,
+        userId: user.id,
+        action: CONTRACTS_AUDIT.RELEASE,
+        objectType: AUDIT_OBJECTS.CONTRACT,
+        objectId: change.releasedContract.id,
+        metadata: { ...change.releasedContract, trigger: action, quoteNumber: quote.number },
       });
     }
   }
