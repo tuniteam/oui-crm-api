@@ -12,7 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { IsCuid } from '@/common/decorators/is-cuid.decorator';
-import { BULK_ACTIONS, BULK_BATCH_MAX, BulkAction, BulkSkipReason } from '../organizations.constants';
+import { BULK_ACTIONS, BULK_BATCH_MAX, BULK_SKIP_REASONS, BulkAction, BulkSkipReason } from '../organizations.constants';
 import { OrganizationListQueryDto } from './query-organization-list.dto';
 
 /** The list filters, replayed server-side for a "select all" (no paging or sorting). */
@@ -76,7 +76,11 @@ export class BulkSkippedDto {
   @ApiProperty({ example: 'cmtj…' })
   id: string;
 
-  @ApiProperty({ enum: ['NOT_FOUND', 'OUT_OF_SCOPE'], example: 'OUT_OF_SCOPE' })
+  @ApiProperty({
+    enum: BULK_SKIP_REASONS,
+    example: 'OUT_OF_SCOPE',
+    description: 'HAS_ENGAGEMENTS: DELETE only — the record carries quotes, contracts, opportunities or documents',
+  })
   reason: BulkSkipReason;
 }
 

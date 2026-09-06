@@ -32,7 +32,7 @@ export class ImportService {
       }),
       this.prisma.contact.findMany({
         where: { importBatchId: batchId },
-        select: { id: true, organizationId: true, createdAt: true, updatedAt: true, deletedAt: true },
+        select: { id: true, organizationId: true, createdAt: true, updatedAt: true },
       }),
       this.prisma.activity.findMany({
         where: { importBatchId: batchId },
@@ -53,9 +53,12 @@ export class ImportService {
       appliedAt
         ? row.updatedAt.getTime() > appliedAt.getTime()
         : row.updatedAt.getTime() - row.createdAt.getTime() > IMPORT_BATCH_MODIFIED_TOLERANCE_MS;
+    // La suppression étant physique (SPEC-15), un contact effacé depuis l'import n'est plus
+    // dans cette liste : il n'y a plus de « supprimé mais présent » à détecter, seule la dérive
+    // d'une ligne encore là compte.
     if (
       organizations.some(drifted) ||
-      contacts.some((c) => drifted(c) || c.deletedAt !== null) ||
+      contacts.some(drifted) ||
       activities.some(drifted)
     ) {
       throw apiError.conflict('IMPORT_BATCH_MODIFIED');

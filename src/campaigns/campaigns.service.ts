@@ -51,8 +51,8 @@ export class CampaignsService {
     ]);
     const ids = rows.map((c) => c.id);
     const [orgCounts, activityCounts, owners] = await Promise.all([
-      this.prisma.campaignOrganization.groupBy({ by: ['campaignId'], where: { campaignId: { in: ids }, organization: { deletedAt: null } }, _count: { _all: true } }),
-      // Correlated per campaign: only activities of records still targeted and alive count
+      this.prisma.campaignOrganization.groupBy({ by: ['campaignId'], where: { campaignId: { in: ids } }, _count: { _all: true } }),
+      // Correlated per campaign: only activities of records still targeted count
       Promise.all(ids.map((cid) => this.countCampaignActivities(cid).then((n) => ({ campaignId: cid, _count: { _all: n } })))),
       loadUsersWithInitials(this.prisma, projectId, [...new Set(rows.map((c) => c.ownerId).filter((id): id is string => !!id))]),
     ]);
@@ -199,7 +199,7 @@ export class CampaignsService {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
 
     const candidates = await this.prisma.organization.findMany({
-      where: { id: { in: dto.ids }, projectId, deletedAt: null },
+      where: { id: { in: dto.ids }, projectId },
     });
     const eligible = candidates.filter((org) => this.scopeService.access(ctx, org) === 'FULL');
     const skipped = dto.ids.length - eligible.length;
@@ -264,10 +264,10 @@ export class CampaignsService {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const { page, limit } = query;
 
-    const where: Prisma.CampaignOrganizationWhereInput = { campaignId: id, organization: { deletedAt: null } };
+    const where: Prisma.CampaignOrganizationWhereInput = { campaignId: id };
     if (this.hidesOutOfScope(ctx)) {
       const scopeWhere = this.scopeService.whereVisible(ctx) as Prisma.OrganizationWhereInput;
-      if (Object.keys(scopeWhere).length) where.organization = { deletedAt: null, AND: [scopeWhere] };
+      if (Object.keys(scopeWhere).length) where.organization = scopeWhere;
     }
     const [total, rows] = await Promise.all([
       this.prisma.campaignOrganization.count({ where }),
@@ -313,10 +313,10 @@ export class CampaignsService {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const { page, limit } = query;
 
-    const where: Prisma.CampaignOrganizationWhereInput = { campaignId: id, organization: { deletedAt: null } };
+    const where: Prisma.CampaignOrganizationWhereInput = { campaignId: id };
     if (this.hidesOutOfScope(ctx)) {
       const scopeWhere = this.scopeService.whereVisible(ctx) as Prisma.OrganizationWhereInput;
-      if (Object.keys(scopeWhere).length) where.organization = { deletedAt: null, AND: [scopeWhere] };
+      if (Object.keys(scopeWhere).length) where.organization = scopeWhere;
     }
 
     const [total, links, perOrg] = await Promise.all([
@@ -404,9 +404,7 @@ export class CampaignsService {
       SELECT count(*)::bigint AS count
       FROM activities a
       JOIN campaign_organizations co ON co.organization_id = a.organization_id
-      JOIN organizations o ON o.id = a.organization_id
       WHERE co.campaign_id = ${campaignId}
-        AND o.deleted_at IS NULL
         AND a.status = 'DONE'
         AND a.completed_at >= co.added_at`;
     return Number(row?.count ?? 0);
@@ -418,9 +416,7 @@ export class CampaignsService {
       SELECT a.organization_id, count(*)::bigint AS count
       FROM activities a
       JOIN campaign_organizations co ON co.organization_id = a.organization_id
-      JOIN organizations o ON o.id = a.organization_id
       WHERE co.campaign_id = ${campaignId}
-        AND o.deleted_at IS NULL
         AND a.status = 'DONE'
         AND a.completed_at >= co.added_at
       GROUP BY a.organization_id`;

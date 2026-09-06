@@ -2,6 +2,7 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CustomerStatus, Priority, SalesStatus } from '@prisma/client';
 import { PaginationMetaDto } from '@/common/dto/pagination.dto';
 import { COMPLETENESS_FIELDS } from '../organizations.constants';
+import { OpeningHoursDto } from './opening-hours.dto';
 
 /** Minimal reference to a user, as exposed everywhere an owner is returned. */
 export class UserRefDto {
@@ -147,6 +148,15 @@ export class OrganizationDetailDto extends OrganizationListItemDto {
 
   @ApiPropertyOptional({ example: 'https://www.joigny.fr' })
   website?: string | null;
+
+  @ApiPropertyOptional({ type: OpeningHoursDto, nullable: true, description: 'Town-hall opening hours, filled by the territory import then editable' })
+  openingHours?: OpeningHoursDto | null;
+
+  @ApiPropertyOptional({ example: 47.9811, nullable: true, description: 'Town-hall latitude (WGS 84), filled by the territory import' })
+  latitude?: number | null;
+
+  @ApiPropertyOptional({ example: 3.3996, nullable: true, description: 'Town-hall longitude (WGS 84)' })
+  longitude?: number | null;
 
   @ApiPropertyOptional({ example: 4 })
   schoolCount?: number | null;

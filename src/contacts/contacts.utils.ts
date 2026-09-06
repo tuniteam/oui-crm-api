@@ -14,10 +14,10 @@ export async function getContactOrThrow(
   projectId: string,
 ): Promise<Contact & { organization: Organization }> {
   const contact = await db.contact.findFirst({
-    where: { id: contactId, projectId, deletedAt: null },
+    where: { id: contactId, projectId },
     include: { organization: true },
   });
-  if (!contact || contact.organization.deletedAt) throw apiError.notFound('CONTACT_NOT_FOUND', contactId);
+  if (!contact) throw apiError.notFound('CONTACT_NOT_FOUND', contactId);
   return contact;
 }
 

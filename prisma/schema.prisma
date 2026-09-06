@@ -669,7 +669,8 @@ model EmailLog {
 
 // ============================================
 // L1 — BASE COMMERCIALE (SPEC-02 §2.4, SPEC-13 phase A)
-// projectId NOT NULL partout. Suppression logique (deletedAt) sur Organization et Contact.
+// projectId NOT NULL partout. Suppression physique partout (SPEC-15, 06/09/2026) : les
+// dépendances descriptives partent en cascade, les dépendances engageantes bloquent (409).
 // Index partiels et GIN : dans la migration, Prisma ne les exprime pas.
 // ============================================
 
@@ -693,6 +694,11 @@ model Organization {
   phone         String? @db.VarChar(20)
   email         String? @db.VarChar(255)
   website       String? @db.VarChar(255)
+  openingHours  Json?   @map("opening_hours") // horaires de la mairie, source Annuaire de l'administration
+  // Point de la mairie (repli : centroïde de la commune), source geo.api.gouv.fr — pour la carte.
+  // Float et non Decimal : une coordonnée n'est pas un montant, et une carte veut un nombre JSON.
+  latitude      Float?
+  longitude     Float?
 
   // Environnement produit
   solution    String?  @db.VarChar(60) // clé du référentiel SOLUTION
@@ -721,7 +727,6 @@ model Organization {
   // Traçabilité
   importBatchId     String?   @map("import_batch_id")
   productCustomerId String?   @map("product_customer_id") @db.VarChar(60) // réservé, décision 11
-  deletedAt         DateTime? @map("deleted_at")
   createdBy         String?   @map("created_by")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
@@ -765,7 +770,6 @@ model Contact {
   /// true = contact extrait d'une note à l'import : à vérifier par un humain (US-01-04).
   extractedFromNote Boolean   @default(false) @map("extracted_from_note")
   importBatchId     String?   @map("import_batch_id")
-  deletedAt         DateTime? @map("deleted_at")
   createdAt         DateTime  @default(now()) @map("created_at")
   updatedAt         DateTime  @updatedAt @map("updated_at")
 

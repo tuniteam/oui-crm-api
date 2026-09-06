@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Priority, SalesStatus } from '@prisma/client';
 import { Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import {
   PAGINATION_MAX_LIMIT,
   PaginationMetaDto,
@@ -16,6 +16,14 @@ import { UserRefDto } from './response-organization.dto';
  * recharger les quatre autres.
  */
 export class BoardQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    example: '1 001 – 2 500 hab.',
+    description: 'Exact label of a bracket of the active pricing grid — unknown label answers 400 (V8 kStrate)',
+  })
+  @IsOptional()
+  @IsString()
+  bracket?: string;
+
   @ApiPropertyOptional({ enum: SalesStatus, description: 'Narrow the answer to one column' })
   @IsOptional()
   @IsEnum(SalesStatus)

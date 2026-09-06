@@ -12,6 +12,11 @@ export interface GeoCommune {
   code: string; // code INSEE — the matching key, never the name
   codesPostaux?: string[];
   population?: number;
+  /** L'objet EPCI porte le libellé ; `codeEpci` seul ne remplit pas un champ nommé « EPCI ». */
+  epci?: { nom?: string };
+  /** GeoJSON Point, [longitude, latitude] — la mairie ; `centre` sert de repli. */
+  mairie?: { coordinates?: number[] };
+  centre?: { coordinates?: number[] };
   codeEpci?: string;
 }
 

@@ -150,7 +150,7 @@ export class ContractsService {
     projectId: string,
   ): Promise<Prisma.OrganizationWhereInput> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
-    const where: Prisma.OrganizationWhereInput = { deletedAt: null };
+    const where: Prisma.OrganizationWhereInput = {};
     mergeVisibilityWhere(where, ctx, this.scopeService);
     return where;
   }

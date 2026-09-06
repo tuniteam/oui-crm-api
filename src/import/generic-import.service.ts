@@ -87,7 +87,7 @@ export class GenericImportService {
       loadReferenceKeys(this.prisma, projectId),
       this.loadMembers(projectId),
       this.prisma.organization.findMany({
-        where: { projectId, deletedAt: null },
+        where: { projectId },
         select: {
           id: true,
           name: true,
@@ -112,11 +112,11 @@ export class GenericImportService {
         },
       }),
       this.prisma.contact.findMany({
-        where: { projectId, deletedAt: null, isPrimary: true },
+        where: { projectId, isPrimary: true },
         select: { organizationId: true },
       }),
       this.prisma.contact.findMany({
-        where: { projectId, deletedAt: null },
+        where: { projectId },
         select: { organizationId: true, firstName: true, lastName: true },
       }),
     ]);

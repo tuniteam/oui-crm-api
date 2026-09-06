@@ -30,7 +30,8 @@
     "docker:rebuild:fast:dev": "docker-compose -f docker-compose.dev.yml build api && docker-compose -f docker-compose.dev.yml up -d",
     "docker:logs": "docker-compose logs -f api",
     "swagger:check": "node -e \"require('dotenv/config');const p=process.env.PORT||3001;require('http').get('http://localhost:'+p+'/api/docs-json',r=>{let d='';r.on('data',c=>d+=c).on('end',()=>{const j=JSON.parse(d);console.log('swagger OK,',Object.keys(j.paths).length,'paths');});}).on('error',e=>{console.error(e.message);process.exit(1);});\"",
-    "verify": "npm run build && npm test && npm run typecheck:seed"
+    "verify": "npm run build && npm test && npm run typecheck:seed",
+    "db:seed-communes": "npx tsx prisma/seedCommunes.ts"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

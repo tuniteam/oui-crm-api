@@ -7,16 +7,20 @@ import {
   IsEmail,
   IsEnum,
   IsInt,
+  IsLatitude,
+  IsLongitude,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { IsCuid } from '@/common/decorators';
 import { DAY_PATTERN } from '@/common/utils/date.utils';
 import { INSEE_PATTERN, SIRET_PATTERN } from '../organizations.constants';
+import { OpeningHoursDto } from './opening-hours.dto';
 
 /** SIRET: 14 digits. SIREN: 9. Both optional — the territory import never provides them. */
 
@@ -110,6 +114,24 @@ export class CreateOrganizationDto {
   @IsString()
   @MaxLength(255)
   website?: string;
+
+  @ApiPropertyOptional({ type: OpeningHoursDto, nullable: true, description: 'Town-hall opening hours; null clears them' })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => OpeningHoursDto)
+  openingHours?: OpeningHoursDto | null;
+
+  @ApiPropertyOptional({ example: 47.9811, description: 'Town-hall latitude, WGS 84 — for the map' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLatitude()
+  latitude?: number;
+
+  @ApiPropertyOptional({ example: 3.3996, description: 'Town-hall longitude, WGS 84' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsLongitude()
+  longitude?: number;
 
   @ApiPropertyOptional({ example: 'BL_ENFANCE', description: 'Key of the SOLUTION reference list' })
   @IsOptional()
