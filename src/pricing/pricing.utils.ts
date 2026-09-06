@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient, QuoteLineNature } from '@prisma/client';
+import { apiError, withMeta } from '@/common/api-error';
 import {
   DISCOUNT_MAX,
   DISCOUNT_MIN,
@@ -151,6 +152,28 @@ function checkPriceTable(issues: string[], path: string, prices: unknown, bracke
  * (`normaliserStrates`) : c'est un raccourci de démonstration acceptable dans une maquette,
  * pas dans un outil qui chiffre des contrats. Le serveur refuse la grille et dit **où**.
  */
+/**
+ * **Le garde-fou de filiation** (SPEC-14 D21). Une version préparée à partir d'une grille qui
+ * n'est plus active porte des prix périmés : l'activer efface, sans le dire, tout ce qui a été
+ * fait entre-temps. Le cas est refusé, avec les deux numéros dans `meta` pour que l'écran puisse
+ * l'expliquer sans analyser une phrase.
+ *
+ * Exempts : une grille écrite de zéro (`basedOnVersion === null`, elle ne dérive de rien) et un
+ * projet sans grille active. `force` couvre le retour volontaire à une grille antérieure.
+ */
+export function assertBaseUpToDate(
+  basedOnVersion: number | null,
+  activeVersion: number | null,
+  force: boolean,
+): void {
+  if (force || basedOnVersion === null || activeVersion === null) return;
+  if (basedOnVersion === activeVersion) return;
+  throw withMeta(apiError.conflict('PRICING_GRID_BASE_OUTDATED', String(basedOnVersion), String(activeVersion)), {
+    activeVersion,
+    basedOnVersion,
+  });
+}
+
 export function validateGridContent(raw: unknown): string[] {
   const issues: string[] = [];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return ['content: must be an object'];

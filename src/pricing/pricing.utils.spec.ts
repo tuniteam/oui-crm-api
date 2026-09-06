@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { PERISCOLIA_PRICING_GRID_V1 } from './periscolia-grid.constants';
 import { PopulationBracket } from './pricing.types';
 import {
+  assertBaseUpToDate,
   applyDiscount,
   clampDiscount,
   money,
@@ -192,5 +193,38 @@ describe('validateGridContent (US-02-01)', () => {
         subscription: { STANDARD: [0] },
       }),
     ).toEqual([]);
+  });
+});
+
+describe('assertBaseUpToDate — le garde-fou de filiation (SPEC-14 D21)', () => {
+  it('laisse passer une version préparée sur la grille active', () => {
+    expect(() => assertBaseUpToDate(5, 5, false)).not.toThrow();
+  });
+
+  it('laisse passer une grille écrite de zéro : elle ne dérive de rien', () => {
+    expect(() => assertBaseUpToDate(null, 5, false)).not.toThrow();
+  });
+
+  it('laisse passer quand le projet n’a pas encore de grille active', () => {
+    expect(() => assertBaseUpToDate(1, null, false)).not.toThrow();
+  });
+
+  it('refuse une version préparée sur une grille périmée', () => {
+    // C'est le cas qui effaçait trois mois de travail sans rien dire.
+    expect(() => assertBaseUpToDate(1, 5, false)).toThrow(/version 1 while version 5 is active/);
+  });
+
+  it('porte les deux numéros en meta, pour que l’écran n’ait pas à lire une phrase', () => {
+    try {
+      assertBaseUpToDate(1, 5, false);
+      throw new Error('aurait dû refuser');
+    } catch (error) {
+      const body = (error as { getResponse: () => Record<string, unknown> }).getResponse();
+      expect(body.meta).toEqual({ activeVersion: 5, basedOnVersion: 1 });
+    }
+  });
+
+  it('cède à une demande explicite : revenir à une grille antérieure est légitime', () => {
+    expect(() => assertBaseUpToDate(1, 5, true)).not.toThrow();
   });
 });

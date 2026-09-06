@@ -192,6 +192,9 @@ const errorDefinitions = {
   CONTRACT_NOT_FOUND: (id: string) => `Contract ${id} not found`,
   CONTRACT_NOT_AMENDABLE: (status: string) => `Contract is ${status}: only an active contract can be amended`,
 
+  PRICING_GRID_BASE_OUTDATED: (basedOn: string, active: string) =>
+    `Version derives from grid version ${basedOn} while version ${active} is active: activating it would drop everything done since`,
+
   // Documents (L2 phase H — US-02-08)
   TEMPLATE_NOT_CONFIGURED: (type: string) => `No ${type} template uploaded for this project yet`,
   QUOTE_IMPORTED_NO_DOCUMENT:

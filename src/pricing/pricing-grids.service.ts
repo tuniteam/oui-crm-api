@@ -17,8 +17,9 @@ import { recomputeDraftQuotes } from '@/quotes/quotes.utils';
 import { PRICING_AUDIT } from './pricing.constants';
 import { PricingService } from './pricing.service';
 import { PricingGridContent } from './pricing.types';
-import { validateGridContent } from './pricing.utils';
+import { assertBaseUpToDate, validateGridContent } from './pricing.utils';
 import {
+  ActivatePricingGridDto,
   CreatePricingGridDto,
   PricingGridDetailDto,
   PricingGridIdResponseDto,
@@ -31,6 +32,7 @@ type GridRow = {
   version: number;
   effectiveDate: Date;
   active: boolean;
+  basedOnVersion: number | null;
   createdById: string | null;
   createdAt: Date;
 };
@@ -55,7 +57,16 @@ export class PricingGridsService {
         skip: paginationSkip(page, limit),
         take: limit,
         orderBy: { version: 'desc' },
-        select: { id: true, version: true, effectiveDate: true, active: true, createdById: true, createdAt: true, _count: { select: { quotes: true } } },
+        select: {
+          id: true,
+          version: true,
+          effectiveDate: true,
+          active: true,
+          basedOnVersion: true,
+          createdById: true,
+          createdAt: true,
+          _count: { select: { quotes: true } },
+        },
       }),
     ]);
 
@@ -93,6 +104,7 @@ export class PricingGridsService {
   async create(projectId: string, dto: CreatePricingGridDto, user: AuthenticatedUser): Promise<PricingGridIdResponseDto> {
     const effectiveDate = parseDayOrThrow(dto.effectiveDate);
     const content = await this.resolveContent(projectId, dto);
+    const identicalToBase = await this.isIdenticalToBase(projectId, dto, content);
 
     const issues = validateGridContent(content);
     if (issues.length) throw withDetails(apiError.badRequest('PRICING_GRID_INVALID', issues.join('; ')), issues);
@@ -115,6 +127,8 @@ export class PricingGridsService {
           effectiveDate,
           active: false,
           content: content as Prisma.InputJsonValue,
+          // Déclarée par le client, jamais devinée (D21) : le serveur ne reçoit qu'un contenu.
+          basedOnVersion: dto.fromVersion ?? null,
           createdById: user.id,
         },
         select: { id: true, version: true },
@@ -125,7 +139,13 @@ export class PricingGridsService {
         action: PRICING_AUDIT.GRID_CREATE,
         objectType: AUDIT_OBJECTS.PRICING_GRID,
         objectId: created.id,
-        metadata: { version, effectiveDate: dto.effectiveDate, fromVersion: dto.fromVersion ?? null },
+        metadata: {
+          version,
+          effectiveDate: dto.effectiveDate,
+          basedOnVersion: dto.fromVersion ?? null,
+          // Une copie conforme se distingue d'une copie corrigée : utile en relecture, gratuit ici.
+          identicalToBase: identicalToBase ?? null,
+        },
       });
       return created;
     });
@@ -140,13 +160,27 @@ export class PricingGridsService {
    * Les devis déjà soumis portent leur propre `pricingGridId` et ne bougent pas ; les
    * brouillons sont recalculés à la lecture depuis la grille active, donc suivent d'eux-mêmes.
    */
-  async activate(id: string, projectId: string, user: AuthenticatedUser): Promise<PricingGridDetailDto> {
+  async activate(
+    id: string,
+    projectId: string,
+    dto: ActivatePricingGridDto,
+    user: AuthenticatedUser,
+  ): Promise<PricingGridDetailDto> {
     const grid = await this.getOrThrow(id, projectId);
 
     const issues = validateGridContent(grid.content);
     if (issues.length) throw withDetails(apiError.badRequest('PRICING_GRID_INVALID', issues.join('; ')), issues);
 
     if (grid.active) return this.toDetail(projectId, grid, grid.content);
+
+    const previous = await this.prisma.pricingGrid.findFirst({
+      where: { projectId, active: true },
+      select: { version: true },
+    });
+    // Le garde-fou de filiation (D21). Une version préparée depuis une grille qui n'est plus
+    // active porte des prix périmés : l'activer efface silencieusement tout ce qui a été fait
+    // depuis. On refuse, sauf demande explicite — revenir en arrière est un cas légitime.
+    assertBaseUpToDate(grid.basedOnVersion, previous?.version ?? null, dto.force === true);
 
     const settings = await this.prisma.settings.findUnique({
       where: { projectId },
@@ -175,7 +209,15 @@ export class PricingGridsService {
         action: PRICING_AUDIT.GRID_ACTIVATE,
         objectType: AUDIT_OBJECTS.PRICING_GRID,
         objectId: id,
-        metadata: { version: grid.version, draftsRecomputed: recomputed },
+        metadata: {
+          version: grid.version,
+          draftsRecomputed: recomputed,
+          basedOnVersion: grid.basedOnVersion,
+          previousActiveVersion: previous?.version ?? null,
+          // Le garde-fou empêche la perte silencieuse ; quand quelqu'un force légitimement, le
+          // post-mortem doit pouvoir le relire (D21).
+          forced: dto.force === true && grid.basedOnVersion !== null && grid.basedOnVersion !== (previous?.version ?? null),
+        },
       });
     });
 
@@ -202,6 +244,25 @@ export class PricingGridsService {
     return source.content;
   }
 
+  /**
+   * Le contenu envoyé est-il **identique** à celui de la version déclarée ? `null` quand la
+   * question ne se pose pas — pas de filiation déclarée, ou pas de contenu envoyé (c'est alors
+   * une copie par construction).
+   */
+  private async isIdenticalToBase(
+    projectId: string,
+    dto: CreatePricingGridDto,
+    content: unknown,
+  ): Promise<boolean | null> {
+    if (dto.fromVersion === undefined) return null;
+    if (!dto.content) return true;
+    const base = await this.prisma.pricingGrid.findFirst({
+      where: { projectId, version: dto.fromVersion },
+      select: { content: true },
+    });
+    return base ? JSON.stringify(base.content) === JSON.stringify(content) : null;
+  }
+
   private mapToListItem(row: GridRow, author: UserWithInitials | undefined, quotesCount: number): PricingGridListItemDto {
     return {
       id: row.id,
@@ -211,6 +272,7 @@ export class PricingGridsService {
       createdBy: author ? userRef(author, author.id) : null,
       createdAt: row.createdAt.toISOString(),
       quotesCount,
+      basedOnVersion: row.basedOnVersion,
     };
   }
 
