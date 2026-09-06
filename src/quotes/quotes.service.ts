@@ -682,7 +682,7 @@ export class QuotesService {
         postalCode: true,
         population: true,
         email: true,
-        contacts: { where: { isPrimary: true, deletedAt: null }, select: { id: true }, take: 1 },
+        contacts: { where: { isPrimary: true }, select: { id: true }, take: 1 },
       },
     });
     const completeness = computeCompleteness({
@@ -1160,7 +1160,7 @@ export class QuotesService {
     projectId: string,
   ): Promise<Prisma.OrganizationWhereInput> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
-    const where: Prisma.OrganizationWhereInput = { deletedAt: null };
+    const where: Prisma.OrganizationWhereInput = {};
     mergeVisibilityWhere(where, ctx, this.scopeService);
     return where;
   }
@@ -1206,7 +1206,7 @@ export class QuotesService {
     user: AuthenticatedUser,
   ): Promise<Organization> {
     const organization = await this.prisma.organization.findFirst({
-      where: { id: organizationId, projectId, deletedAt: null },
+      where: { id: organizationId, projectId },
     });
     if (!organization) throw apiError.notFound('ORGANIZATION_NOT_FOUND', organizationId);
     const ctx = await loadScopeContext(this.prisma, user, projectId);

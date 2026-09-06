@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsObject, IsOptional, Matches, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsObject, IsOptional, Matches, Min } from 'class-validator';
 import { PaginationMetaDto, PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { DAY_PATTERN } from '@/common/utils/date.utils';
 import { UserRefDto } from '@/organizations/dto';
@@ -19,13 +19,20 @@ const CONTENT_EXAMPLE = {
 };
 
 /**
- * Nouvelle version de grille. Le contenu est fourni tel quel, ou copié d'une version
- * existante par `fromVersion` puis, si `content` est présent, remplacé par celui-ci.
+ * Nouvelle version de grille. Le contenu est fourni tel quel, ou copié d'une version existante
+ * par `fromVersion`.
+ *
+ * `fromVersion` porte **deux** rôles depuis la demande front du 06/09 (SPEC-14 D21) : il dit de
+ * quelle version le contenu est copié **et** de laquelle la nouvelle dérive. Il reste donc utile
+ * avec un `content` modifié — c'est là qu'il déclare la filiation, que le serveur ne peut pas
+ * deviner : il ne reçoit qu'un contenu, et une copie corrigée ne correspond exactement à aucune
+ * version.
  */
 export class CreatePricingGridDto {
   @ApiPropertyOptional({
     example: INITIAL_PRICING_GRID_VERSION,
-    description: 'Version to copy the content from when `content` is omitted',
+    description:
+      'Version the content comes from. Copied from it when `content` is omitted; with a `content`, it declares the lineage — the server never guesses it',
   })
   @IsOptional()
   @IsInt()
@@ -64,6 +71,28 @@ export class PricingGridListItemDto {
 
   @ApiProperty({ example: 12, description: 'Quotes frozen on this version — it can no longer be edited' })
   quotesCount: number;
+
+  @ApiProperty({
+    example: 1,
+    nullable: true,
+    description:
+      'Version this one derives from, as declared at creation. null for a grid written from scratch and for the seeded one',
+  })
+  basedOnVersion: number | null;
+}
+
+/**
+ * Activation. `force` franchit le garde-fou de filiation, pour le cas légitime : revenir
+ * volontairement à une grille antérieure (SPEC-14 D21).
+ */
+export class ActivatePricingGridDto {
+  @ApiPropertyOptional({
+    example: true,
+    description: 'Activate even though the version derives from an outdated grid',
+  })
+  @IsOptional()
+  @IsBoolean()
+  force?: boolean;
 }
 
 export class PricingGridsListResponseDto {

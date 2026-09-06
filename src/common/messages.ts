@@ -115,7 +115,8 @@ const errorDefinitions = {
   ORGANIZATION_INSEE_CODE_EXISTS: 'An organization with this INSEE code already exists',
   ORGANIZATION_POSSIBLE_DUPLICATE:
     'An organization with a similar name already exists at this postal code',
-  ORGANIZATION_HAS_CONTRACTS: 'Organization has contracts and cannot be deleted',
+  ORGANIZATION_HAS_ENGAGEMENTS:
+    'Organization carries quotes, contracts, opportunities or documents and cannot be deleted',
   ORGANIZATION_INVALID_TRANSITION: (from: string) =>
     `Invalid sales status transition from ${from}`,
   INVALID_REFERENCE_VALUE: (category: string, key: string) =>
@@ -190,6 +191,9 @@ const errorDefinitions = {
   ORGANIZATION_INCOMPLETE: (missing: string) => `Organization record is incomplete: ${missing}`,
   CONTRACT_NOT_FOUND: (id: string) => `Contract ${id} not found`,
   CONTRACT_NOT_AMENDABLE: (status: string) => `Contract is ${status}: only an active contract can be amended`,
+
+  PRICING_GRID_BASE_OUTDATED: (basedOn: string, active: string) =>
+    `Version derives from grid version ${basedOn} while version ${active} is active: activating it would drop everything done since`,
 
   // Documents (L2 phase H — US-02-08)
   TEMPLATE_NOT_CONFIGURED: (type: string) => `No ${type} template uploaded for this project yet`,
@@ -482,7 +486,7 @@ export const ApiMessages = {
         description: 'A new primary demotes the previous one (at most one per organization, enforced by the database)',
       },
       update: { summary: 'Update a contact', description: 'Nullable free-text fields are cleared with null; isPrimary true demotes the current one' },
-      delete: { summary: 'Delete a contact', description: 'Soft delete; refused while activities reference the contact' },
+      delete: { summary: 'Delete a contact', description: 'Physical delete; refused while activities reference the contact' },
     },
 
     organizations: {
@@ -490,7 +494,7 @@ export const ApiMessages = {
       bulk: {
         summary: 'Bulk action on organizations',
         description:
-          'ASSIGN_SALES_REP, SET_SALES_STATUS, SET_PRIORITY, ADD_TO_CAMPAIGN, DELETE on an explicit selection or selectAll with the list filters; out-of-scope records are skipped, never a global failure',
+          'ASSIGN_SALES_REP, SET_SALES_STATUS, SET_PRIORITY, ADD_TO_CAMPAIGN, DELETE on an explicit selection or selectAll with the list filters; out-of-scope records are skipped (OUT_OF_SCOPE), and on DELETE a record carrying engagements is skipped too (HAS_ENGAGEMENTS) — never a global failure',
       },
       board: {
         summary: 'Prospection board',
@@ -528,7 +532,8 @@ export const ApiMessages = {
       },
       remove: {
         summary: 'Delete organization',
-        description: 'Soft delete. The SIRET and INSEE code become available again for a new record.',
+        description:
+          'Physical delete. Contacts, activities and campaign memberships go with the record; quotes, contracts, opportunities and attached documents hold it back (409 ORGANIZATION_HAS_ENGAGEMENTS, counts in messages.meta). The SIRET and INSEE code become available again.',
       },
     },
 

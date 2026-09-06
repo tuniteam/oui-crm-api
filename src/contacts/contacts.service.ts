@@ -47,7 +47,7 @@ export class ContactsService {
   ): Promise<ContactsListResponseDto> {
     await this.getOrganizationWithFullAccess(organizationId, projectId, user);
     const { page, limit } = query;
-    const where = { organizationId, deletedAt: null };
+    const where = { organizationId };
     const [total, contacts] = await Promise.all([
       this.prisma.contact.count({ where }),
       this.prisma.contact.findMany({
@@ -103,7 +103,7 @@ export class ContactsService {
     return mapToContact(contact);
   }
 
-  /** Soft delete. A contact referenced by activities stays (409): history must keep its actors. */
+  /** Physical delete (SPEC-15). A contact referenced by activities stays (409): history keeps its actors. */
   async remove(contactId: string, projectId: string, user: AuthenticatedUser): Promise<void> {
     const existing = await getContactOrThrow(this.prisma, contactId, projectId);
     await this.assertFullAccess(existing.organization, projectId, user);
@@ -112,7 +112,7 @@ export class ContactsService {
     if (activities > 0) throw apiError.conflict('CONTACT_HAS_ACTIVITIES');
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.contact.update({ where: { id: contactId }, data: { deletedAt: new Date(), isPrimary: false } });
+      await tx.contact.delete({ where: { id: contactId } });
       await recomputeCompleteness(tx, existing.organizationId);
       await this.audit.log(tx, {
         projectId,
@@ -141,7 +141,7 @@ export class ContactsService {
   /** "The new one replaces the previous one" (SPEC-07): demotion and promotion share the transaction. */
   private demoteCurrentPrimary(tx: Prisma.TransactionClient, organizationId: string, exceptId?: string) {
     return tx.contact.updateMany({
-      where: { organizationId, isPrimary: true, deletedAt: null, ...(exceptId ? { id: { not: exceptId } } : {}) },
+      where: { organizationId, isPrimary: true, ...(exceptId ? { id: { not: exceptId } } : {}) },
       data: { isPrimary: false },
     });
   }

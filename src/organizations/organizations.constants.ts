@@ -101,7 +101,10 @@ export const INSEE_PATTERN = /^(?:\d{5}|2[ABab]\d{3})$/;
 
 export const BULK_ACTIONS = ['ASSIGN_SALES_REP', 'SET_SALES_STATUS', 'SET_PRIORITY', 'ADD_TO_CAMPAIGN', 'DELETE'] as const;
 export type BulkAction = (typeof BULK_ACTIONS)[number];
-export type BulkSkipReason = 'NOT_FOUND' | 'OUT_OF_SCOPE';
+/** HAS_ENGAGEMENTS n'existe que pour DELETE : la fiche porte un devis, un contrat,
+ *  une opportunité ou un document joint (SPEC-15 §3.1). */
+export const BULK_SKIP_REASONS = ['NOT_FOUND', 'OUT_OF_SCOPE', 'HAS_ENGAGEMENTS'] as const;
+export type BulkSkipReason = (typeof BULK_SKIP_REASONS)[number];
 export const BULK_BATCH_MAX = 500;
 /** The payload field each action requires — anything else in the payload is a mistake. */
 export const BULK_PAYLOAD_FIELD: Record<BulkAction, 'salesRepId' | 'salesStatus' | 'priority' | 'campaignId' | null> = {

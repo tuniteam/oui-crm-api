@@ -52,8 +52,10 @@ import {
   assertIdentifiersAvailable,
   assertReferencesKnown,
   buildOrganizationOrderBy,
+  bracketPopulationFilter,
   buildOrganizationWhere,
   computeCompleteness,
+  countEngagements,
   findPossibleDuplicates,
   getOrganizationOrThrow,
   loadActiveBrackets,
@@ -66,6 +68,11 @@ import {
   OrganizationWithRefs,
   ORGANIZATION_REFS,
 } from './organizations.mapper';
+
+/** A JSON column is cleared with `DbNull`: a plain `null` would store the JSON value `null`. */
+function jsonOrClear(value: unknown): Prisma.InputJsonValue | typeof Prisma.DbNull {
+  return value === null ? Prisma.DbNull : (value as Prisma.InputJsonValue);
+}
 
 @Injectable()
 export class OrganizationsService {
@@ -92,10 +99,13 @@ export class OrganizationsService {
     const { page, limit, sort, order, ...filters } = query;
     const ctx = await loadScopeContext(this.prisma, user, projectId);
 
-    const where: Prisma.OrganizationWhereInput = buildOrganizationWhere(projectId, filters);
+    // La grille est lue d'abord : elle sert au libellé de strate de chaque ligne, et au filtre
+    // `bracket` qui traduit ce libellé en intervalle de population (SPEC-16 §3).
+    const brackets = await loadActiveBrackets(this.prisma, projectId);
+    const where: Prisma.OrganizationWhereInput = buildOrganizationWhere(projectId, filters, brackets);
     mergeVisibilityWhere(where, ctx, this.scopeService);
 
-    const [total, rows, brackets] = await Promise.all([
+    const [total, rows] = await Promise.all([
       this.prisma.organization.count({ where }),
       this.prisma.organization.findMany({
         where,
@@ -104,7 +114,6 @@ export class OrganizationsService {
         take: limit,
         include: ORGANIZATION_REFS,
       }),
-      loadActiveBrackets(this.prisma, projectId),
     ]);
     await hydrateCampaignMembership(this.prisma, ctx, rows);
 
@@ -116,7 +125,6 @@ export class OrganizationsService {
           where: {
             organizationId: { in: rows.map((r) => r.id) },
             isPrimary: true,
-            deletedAt: null,
           },
           select: { organizationId: true },
         })
@@ -170,9 +178,14 @@ export class OrganizationsService {
     }
 
     const ctx = await loadScopeContext(this.prisma, user, projectId);
+    // selectAll rejoue les filtres de la liste : le filtre par strate a besoin de la grille.
     const where: Prisma.OrganizationWhereInput = dto.selectAll
-      ? buildOrganizationWhere(projectId, dto.filters ?? {})
-      : { projectId, deletedAt: null, id: { in: dto.ids } };
+      ? buildOrganizationWhere(
+          projectId,
+          dto.filters ?? {},
+          dto.filters?.bracket ? await loadActiveBrackets(this.prisma, projectId) : [],
+        )
+      : { projectId, id: { in: dto.ids } };
     const candidates = await this.prisma.organization.findMany({
       where,
       // Only what access classification, the actions and their audits read — never the wide row
@@ -214,7 +227,7 @@ export class OrganizationsService {
     }
 
     const processed = await this.prisma.$transaction(async (tx) => {
-      const count = await this.applyBulk(tx, projectId, dto, eligible, user);
+      const count = await this.applyBulk(tx, projectId, dto, eligible, user, skipped);
       await this.audit.log(tx, {
         projectId,
         userId: user.id,
@@ -241,6 +254,8 @@ export class OrganizationsService {
     dto: BulkActionDto,
     eligible: Pick<Organization, 'id' | 'name' | 'salesStatus'>[],
     user: AuthenticatedUser,
+    /** Enrichi sur place : seul DELETE y ajoute des refus (SPEC-15 §5.2). */
+    skipped: BulkResultDto['skipped'],
   ): Promise<number> {
     const ids = eligible.map((o) => o.id);
     switch (dto.action) {
@@ -274,7 +289,7 @@ export class OrganizationsService {
               action: ORGANIZATION_AUDIT.SALES_STATUS,
               objectType: AUDIT_OBJECTS.ORGANIZATION,
               objectId: org.id,
-              metadata: { ...change, trigger: 'bulk' },
+              metadata: { ...change, trigger: 'bulk', name: org.name },
             });
           }
         }
@@ -303,6 +318,7 @@ export class OrganizationsService {
                 ...change,
                 trigger: 'campaign.targeted',
                 campaignId: dto.payload.campaignId,
+                name: org.name,
               },
             });
           }
@@ -310,11 +326,15 @@ export class OrganizationsService {
         return ids.length;
       }
       case 'DELETE': {
-        await tx.organization.updateMany({
-          where: { id: { in: ids } },
-          data: { deletedAt: new Date() },
-        });
+        // SPEC-15 §5.2 : jamais de refus global. Les fiches retenues par un engagement sont
+        // rendues dans `skipped`, les autres sont supprimées. Quatre groupBy, pas N requêtes.
+        const engagements = await countEngagements(tx, projectId, ids);
+        const deletable = eligible.filter((org) => !engagements.has(org.id));
         for (const org of eligible) {
+          if (engagements.has(org.id)) skipped.push({ id: org.id, reason: 'HAS_ENGAGEMENTS' });
+        }
+        await tx.organization.deleteMany({ where: { projectId, id: { in: deletable.map((o) => o.id) } } });
+        for (const org of deletable) {
           await this.audit.log(tx, {
             projectId,
             userId: user.id,
@@ -324,7 +344,7 @@ export class OrganizationsService {
             metadata: { name: org.name, bulk: true },
           });
         }
-        return ids.length;
+        return deletable.length;
       }
     }
   }
@@ -347,7 +367,14 @@ export class OrganizationsService {
     user: AuthenticatedUser,
   ): Promise<BoardResponseDto> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
-    const base: Prisma.OrganizationWhereInput = { projectId, deletedAt: null };
+    const base: Prisma.OrganizationWhereInput = { projectId };
+    // La V8 filtre le kanban par strate (`kStrate`) : même règle que la liste (SPEC-16 §5).
+    if (query.bracket) {
+      base.population = bracketPopulationFilter(
+        await loadActiveBrackets(this.prisma, projectId),
+        query.bracket,
+      );
+    }
     mergeVisibilityWhere(base, ctx, this.scopeService);
 
     const wanted = query.salesStatus ? [query.salesStatus] : BOARD_COLUMNS;
@@ -415,7 +442,7 @@ export class OrganizationsService {
         action: ORGANIZATION_AUDIT.SALES_STATUS,
         objectType: AUDIT_OBJECTS.ORGANIZATION,
         objectId: id,
-        metadata: { ...change, trigger: 'manual', ...(dto.reason ? { reason: dto.reason } : {}) },
+        metadata: { ...change, trigger: 'manual', name: organization.name, ...(dto.reason ? { reason: dto.reason } : {}) },
       });
     });
     return { id, salesStatus: dto.salesStatus };
@@ -496,7 +523,7 @@ export class OrganizationsService {
   ): Promise<OrganizationDetailDto | OrganizationListItemDto> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const organization = await this.prisma.organization.findFirst({
-      where: { id, projectId, deletedAt: null },
+      where: { id, projectId },
       include: ORGANIZATION_REFS,
     });
     if (!organization) throw apiError.notFound('ORGANIZATION_NOT_FOUND', id);
@@ -516,10 +543,10 @@ export class OrganizationsService {
   ): Promise<OrganizationDetailDto> {
     const id = organization.id;
     const [contacts, activities, hasPrimaryContact] = await Promise.all([
-      this.prisma.contact.count({ where: { organizationId: id, deletedAt: null } }),
-      this.prisma.activity.count({ where: { organizationId: id } }),
+      this.prisma.contact.count({ where: { projectId, organizationId: id } }),
+      this.prisma.activity.count({ where: { projectId, organizationId: id } }),
       this.prisma.contact
-        .count({ where: { organizationId: id, isPrimary: true, deletedAt: null } })
+        .count({ where: { projectId, organizationId: id, isPrimary: true } })
         .then((n) => n > 0),
     ]);
 
@@ -544,7 +571,7 @@ export class OrganizationsService {
     projectId: string,
     user: AuthenticatedUser,
   ): Promise<CreateOrganizationResponseDto> {
-    const { force, goLiveTarget, ...data } = dto;
+    const { force, goLiveTarget, openingHours, ...data } = dto;
 
     await assertReferencesKnown(this.prisma, projectId, data);
     await assertAssigneesAreMembers(this.prisma, projectId, data);
@@ -572,6 +599,7 @@ export class OrganizationsService {
             projectId,
             createdBy: user.id,
             ...(goLiveTarget && { goLiveTarget: parseDayOrThrow(goLiveTarget) }),
+            ...(openingHours !== undefined && { openingHours: jsonOrClear(openingHours) }),
           },
         });
         // A brand-new record has no contact yet: the score is computed on its own columns.
@@ -609,7 +637,7 @@ export class OrganizationsService {
     const existing = await getOrganizationOrThrow(this.prisma, id, projectId);
     await this.assertWritable(ctx, existing, id);
 
-    const { goLiveTarget, ...data } = dto;
+    const { goLiveTarget, openingHours, ...data } = dto;
     await assertReferencesKnown(this.prisma, projectId, data);
     await assertAssigneesAreMembers(this.prisma, projectId, data);
     await assertIdentifiersAvailable(this.prisma, projectId, data, id);
@@ -624,6 +652,7 @@ export class OrganizationsService {
             ...(goLiveTarget !== undefined && {
               goLiveTarget: goLiveTarget === null ? null : parseDayOrThrow(goLiveTarget),
             }),
+            ...(openingHours !== undefined && { openingHours: jsonOrClear(openingHours) }),
           },
         });
         await recomputeCompleteness(tx, id);
@@ -633,7 +662,7 @@ export class OrganizationsService {
           action: ORGANIZATION_AUDIT.UPDATE,
           objectType: AUDIT_OBJECTS.ORGANIZATION,
           objectId: id,
-          metadata: { fields: Object.keys(dto) },
+          metadata: { fields: Object.keys(dto), name: dto.name ?? existing.name },
         });
       }),
     );
@@ -664,21 +693,39 @@ export class OrganizationsService {
 
   // -------------------------------------------------------------------------------- delete
 
-  /** US-01-13. Soft delete: the row stays, its identifiers are freed by the partial indexes. */
+  /**
+   * US-01-13, SPEC-15. Physical delete: contacts, activities and campaign memberships go with
+   * the record through the schema cascades; quotes, contracts, opportunities and attached
+   * documents hold it back (409). The SIRET and INSEE code become available again.
+   */
   async remove(id: string, projectId: string, user: AuthenticatedUser): Promise<void> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     const existing = await getOrganizationOrThrow(this.prisma, id, projectId);
     await this.assertWritable(ctx, existing, id);
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.organization.update({ where: { id }, data: { deletedAt: new Date() } });
+      // SPEC-15 §3.1 : ce qui engage retient la fiche ; le décompte dit au front quoi retirer.
+      // Le contrôle est DANS la transaction : hors d'elle, un devis créé entre la vérification
+      // et la suppression serait emporté par la cascade sans que personne ne le sache.
+      const engagements = (await countEngagements(tx, projectId, [id])).get(id);
+      if (engagements) {
+        throw withMeta(apiError.conflict('ORGANIZATION_HAS_ENGAGEMENTS'), { ...engagements });
+      }
+
+      // Contacts, activités et appartenances aux campagnes partent par les cascades du schéma :
+      // on ne les compte que pour le journal, un seul geste valant un seul récit (SPEC-15 §6).
+      const [activities, contacts] = await Promise.all([
+        tx.activity.count({ where: { projectId, organizationId: id } }),
+        tx.contact.count({ where: { projectId, organizationId: id } }),
+      ]);
+      await tx.organization.delete({ where: { id } });
       await this.audit.log(tx, {
         projectId,
         userId: user.id,
         action: ORGANIZATION_AUDIT.DELETE,
         objectType: AUDIT_OBJECTS.ORGANIZATION,
         objectId: id,
-        metadata: { name: existing.name },
+        metadata: { name: existing.name, activities, contacts },
       });
     });
   }

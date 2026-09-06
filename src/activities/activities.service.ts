@@ -459,7 +459,7 @@ export class ActivitiesService {
   ): Promise<void> {
     if (!contactId) return;
     const contact = await this.prisma.contact.findFirst({
-      where: { id: contactId, organizationId, deletedAt: null },
+      where: { id: contactId, organizationId },
       select: { id: true },
     });
     if (!contact) throw apiError.notFound('CONTACT_NOT_FOUND', contactId);

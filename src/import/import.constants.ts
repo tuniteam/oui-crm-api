@@ -6,7 +6,7 @@
 export const TERRITORY = {
   GEO_API_URL: 'https://geo.api.gouv.fr',
   /** One request returns every commune of a department with these fields (~43 KB for 423 rows). */
-  COMMUNE_FIELDS: 'nom,code,codesPostaux,population,codeEpci',
+  COMMUNE_FIELDS: 'nom,code,codesPostaux,population,codeEpci,epci,mairie,centre',
   TIMEOUT_MS: 10_000,
   /** Hard cap on the communes of one call — beyond it the request is refused (413), not queued. */
   MAX_ROWS: 2000,

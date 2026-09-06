@@ -2,7 +2,16 @@
 // OUI-CRM - Organizations utils: pure rules + reusable Prisma fragments
 // ============================================
 
-import { CustomerStatus, Organization, Prisma, PrismaClient, Priority, RelationshipStatus, SalesStatus } from '@prisma/client';
+import {
+  CustomerStatus,
+  FileOwnerType,
+  Organization,
+  Prisma,
+  PrismaClient,
+  Priority,
+  RelationshipStatus,
+  SalesStatus,
+} from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { PopulationBracket } from '@/pricing/pricing.types';
 import { loadActiveGridContent } from '@/pricing/pricing.utils';
@@ -85,7 +94,7 @@ export async function recomputeCompleteness(db: Db, organizationId: string): Pro
       postalCode: true,
       population: true,
       email: true,
-      contacts: { where: { isPrimary: true, deletedAt: null }, select: { id: true }, take: 1 },
+      contacts: { where: { isPrimary: true }, select: { id: true }, take: 1 },
     },
   });
   if (!org) return 0;
@@ -103,7 +112,7 @@ export async function getOrganizationOrThrow(
   id: string,
   projectId: string,
 ): Promise<Organization> {
-  const organization = await db.organization.findFirst({ where: { id, projectId, deletedAt: null } });
+  const organization = await db.organization.findFirst({ where: { id, projectId } });
   if (!organization) throw apiError.notFound('ORGANIZATION_NOT_FOUND', id);
   return organization;
 }
@@ -115,7 +124,7 @@ export async function assertIdentifiersAvailable(
   identifiers: { siret?: string | null; inseeCode?: string | null },
   excludeId?: string,
 ): Promise<void> {
-  const base = { projectId, deletedAt: null, ...(excludeId && { id: { not: excludeId } }) };
+  const base = { projectId, ...(excludeId && { id: { not: excludeId } }) };
 
   if (identifiers.siret) {
     const clash = await db.organization.findFirst({ where: { ...base, siret: identifiers.siret } });
@@ -141,13 +150,63 @@ export async function findPossibleDuplicates(
   return db.organization.findMany({
     where: {
       projectId,
-      deletedAt: null,
       postalCode,
       name: { equals: name.trim(), mode: 'insensitive' },
     },
     select: { id: true, name: true, city: true },
     take: DUPLICATE_CHECK_LIMIT,
   });
+}
+
+// ---------------------------------------------------------------- engagements (SPEC-15 §3.1)
+
+/** Ce qui retient une fiche : chaque nature porte son décompte, pour que le front dise quoi retirer. */
+export interface OrganizationEngagements {
+  quotes: number;
+  contracts: number;
+  opportunities: number;
+  files: number;
+}
+
+/**
+ * SPEC-15 §3.1 — les dépendances **engageantes** bloquent la suppression, contrairement aux
+ * dépendances descriptives (contacts, activités, appartenances aux campagnes) que la base
+ * emporte en cascade. Devis, contrats et opportunités sont numérotés ou porteurs d'un
+ * historique ; les documents joints ne sont reliés par aucune clé étrangère, donc la cascade
+ * ne les emporterait pas et un effacement implicite détruirait des pièces déposées à la main.
+ *
+ * Quatre `groupBy` pour un lot entier, jamais N requêtes (action groupée de US-01-05). Une
+ * fiche absente de la Map n'a aucun engagement : elle est supprimable.
+ */
+export async function countEngagements(
+  db: Db,
+  projectId: string,
+  organizationIds: string[],
+): Promise<Map<string, OrganizationEngagements>> {
+  if (!organizationIds.length) return new Map();
+  const scope = { projectId, organizationId: { in: organizationIds } };
+  const [quotes, contracts, opportunities, files] = await Promise.all([
+    db.quote.groupBy({ by: ['organizationId'], where: scope, _count: { _all: true } }),
+    db.contract.groupBy({ by: ['organizationId'], where: scope, _count: { _all: true } }),
+    db.opportunity.groupBy({ by: ['organizationId'], where: scope, _count: { _all: true } }),
+    db.file.groupBy({
+      by: ['ownerId'],
+      where: { projectId, ownerType: FileOwnerType.ORGANIZATION, ownerId: { in: organizationIds } },
+      _count: { _all: true },
+    }),
+  ]);
+
+  const engagements = new Map<string, OrganizationEngagements>();
+  const add = (id: string, key: keyof OrganizationEngagements, n: number): void => {
+    const current = engagements.get(id) ?? { quotes: 0, contracts: 0, opportunities: 0, files: 0 };
+    current[key] = n;
+    engagements.set(id, current);
+  };
+  for (const row of quotes) add(row.organizationId, 'quotes', row._count._all);
+  for (const row of contracts) add(row.organizationId, 'contracts', row._count._all);
+  for (const row of opportunities) add(row.organizationId, 'opportunities', row._count._all);
+  for (const row of files) add(row.ownerId, 'files', row._count._all);
+  return engagements;
 }
 
 // ---------------------------------------------------------------------------- list query
@@ -165,6 +224,25 @@ export interface OrganizationFilters {
   salesRepId?: string;
   leadSource?: string;
   completenessMax?: number;
+  /** Libellé d'une strate de la grille active (SPEC-16 §3). */
+  bracket?: string;
+  /** MONDAY..SUNDAY — la mairie déclare une ouverture ce jour-là (SPEC-16 §4). */
+  openOn?: string;
+}
+
+/**
+ * SPEC-16 §3 — la strate n'est pas stockée : elle se déduit de la population par la grille
+ * active. On traduit donc le libellé reçu en intervalle de population, poussé en SQL. Un
+ * libellé inconnu est une demande fausse, pas un résultat vide : `400` plutôt qu'une liste
+ * vide qui laisserait croire qu'aucune commune ne correspond (D2).
+ */
+export function bracketPopulationFilter(
+  brackets: PopulationBracket[],
+  label: string,
+): Prisma.IntFilter {
+  const bracket = brackets.find((b) => b.label === label);
+  if (!bracket) throw apiError.badRequest('INVALID_DATA');
+  return bracket.max === null ? { gte: bracket.min } : { gte: bracket.min, lte: bracket.max };
 }
 
 /**
@@ -190,9 +268,19 @@ export function organizationSearchOr(rawSearch: string): Prisma.OrganizationWher
 export function buildOrganizationWhere(
   projectId: string,
   filters: OrganizationFilters,
+  /** Strates de la grille active — requises seulement si `filters.bracket` est posé. */
+  brackets: PopulationBracket[] = [],
 ): Prisma.OrganizationWhereInput {
-  const where: Prisma.OrganizationWhereInput = { projectId, deletedAt: null };
+  const where: Prisma.OrganizationWhereInput = { projectId };
   const and: Prisma.OrganizationWhereInput[] = [];
+
+  // Une commune sans population ne relève d'aucune strate : le filtre l'écarte (D3).
+  if (filters.bracket) where.population = bracketPopulationFilter(brackets, filters.bracket);
+
+  // Une commune sans horaires n'est jamais retenue : on ignore si elle ouvre ce jour-là (D4).
+  if (filters.openOn) {
+    where.openingHours = { path: ['days'], array_contains: [{ day: filters.openOn }] };
+  }
 
   if (filters.search) {
     and.push({ OR: organizationSearchOr(filters.search) });

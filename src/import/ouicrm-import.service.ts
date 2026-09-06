@@ -87,7 +87,7 @@ export class OuicrmImportService {
         select: { userId: true },
       }),
       this.prisma.organization.findMany({
-        where: { projectId, deletedAt: null },
+        where: { projectId },
         select: {
           id: true,
           name: true,
@@ -100,15 +100,15 @@ export class OuicrmImportService {
         },
       }),
       this.prisma.contact.findMany({
-        where: { projectId, deletedAt: null, isPrimary: true },
+        where: { projectId, isPrimary: true },
         select: { organizationId: true },
       }),
       this.prisma.contact.findMany({
-        where: { projectId, deletedAt: null },
+        where: { projectId },
         select: { organizationId: true, lastName: true },
       }),
       this.prisma.activity.findMany({
-        where: { projectId, organization: { deletedAt: null } },
+        where: { projectId },
         select: { organizationId: true, type: true, date: true },
       }),
     ]);

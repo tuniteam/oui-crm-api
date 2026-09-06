@@ -39,16 +39,23 @@ export class ExportsService {
     user: AuthenticatedUser,
   ): Promise<{ buffer: Buffer; filename: string; contentType: string }> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
-    const where: Prisma.OrganizationWhereInput = buildOrganizationWhere(projectId, (dto.filters ?? {}) as BulkFiltersDto);
+    // La grille sert au libellé de strate de chaque ligne exportée et au filtre `bracket`.
+    const brackets = await loadActiveBrackets(this.prisma, projectId);
+    const where: Prisma.OrganizationWhereInput = buildOrganizationWhere(
+      projectId,
+      (dto.filters ?? {}) as BulkFiltersDto,
+      brackets,
+    );
     mergeVisibilityWhere(where, ctx, this.scopeService);
 
     const total = await this.prisma.organization.count({ where });
     if (total > EXPORT_MAX_ROWS) throw apiError.payloadTooLarge('EXPORT_TOO_LARGE', EXPORT_MAX_ROWS);
 
-    const [rows, brackets] = await Promise.all([
-      this.prisma.organization.findMany({ where, orderBy: { name: 'asc' }, include: ORGANIZATION_REFS }),
-      loadActiveBrackets(this.prisma, projectId),
-    ]);
+    const rows = await this.prisma.organization.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      include: ORGANIZATION_REFS,
+    });
     await hydrateCampaignMembership(this.prisma, ctx, rows);
 
     const keys: readonly ExportColumnKey[] = dto.columns?.length

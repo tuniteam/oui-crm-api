@@ -16,6 +16,7 @@ import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { ParseCuidPipe } from '@/common/pipes';
 import { PricingGridsService } from './pricing-grids.service';
 import {
+  ActivatePricingGridDto,
   CreatePricingGridDto,
   PricingGridDetailDto,
   PricingGridIdResponseDto,
@@ -85,8 +86,9 @@ export class PricingGridsController {
   activate(
     @Param('id', ParseCuidPipe) id: string,
     @CurrentProjectId() projectId: string,
+    @Body() dto: ActivatePricingGridDto,
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<PricingGridDetailDto> {
-    return this.pricingGridsService.activate(id, projectId, user);
+    return this.pricingGridsService.activate(id, projectId, dto, user);
   }
 }

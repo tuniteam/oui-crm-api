@@ -1,6 +1,11 @@
 import { CustomerStatus, Priority, SalesStatus } from '@prisma/client';
 import { regionOfDepartment } from '@/scopes/geo.constants';
-import { buildOrganizationWhere, completenessScore, computeCompleteness } from './organizations.utils';
+import {
+  bracketPopulationFilter,
+  buildOrganizationWhere,
+  completenessScore,
+  computeCompleteness,
+} from './organizations.utils';
 
 const complete = {
   siret: '10298517300016',
@@ -57,8 +62,8 @@ describe('completeness (V8 rule: 6 criteria)', () => {
 });
 
 describe('buildOrganizationWhere', () => {
-  it('always scopes to the project and hides soft-deleted records', () => {
-    expect(buildOrganizationWhere('p1', {})).toEqual({ projectId: 'p1', deletedAt: null });
+  it('always scopes to the project', () => {
+    expect(buildOrganizationWhere('p1', {})).toEqual({ projectId: 'p1' });
   });
 
   it('searches name and city on a text input, and trims it', () => {
@@ -118,6 +123,54 @@ describe('buildOrganizationWhere', () => {
   it('keeps a completenessMax of 0, which is a real filter', () => {
     const where = buildOrganizationWhere('p1', { completenessMax: 0 });
     expect(where.AND).toEqual([{ completenessScore: { lte: 0 } }]);
+  });
+});
+
+describe('bracketPopulationFilter (SPEC-16: the bracket is a population range)', () => {
+  const brackets = [
+    { label: '0 – 500 hab.', min: 0, max: 500 },
+    { label: '1 001 – 2 500 hab.', min: 1001, max: 2500 },
+    { label: 'Plus de 10 000 hab.', min: 10001, max: null },
+  ];
+
+  it('turns a closed bracket into an inclusive range', () => {
+    expect(bracketPopulationFilter(brackets, '1 001 – 2 500 hab.')).toEqual({ gte: 1001, lte: 2500 });
+  });
+
+  it('leaves the open-ended bracket without an upper bound', () => {
+    expect(bracketPopulationFilter(brackets, 'Plus de 10 000 hab.')).toEqual({ gte: 10001 });
+  });
+
+  it('keeps the first bracket starting at zero, not at one', () => {
+    expect(bracketPopulationFilter(brackets, '0 – 500 hab.')).toEqual({ gte: 0, lte: 500 });
+  });
+
+  it('refuses a label the active grid does not know — a wrong ask, not an empty result', () => {
+    expect(() => bracketPopulationFilter(brackets, 'Strate inventée')).toThrow();
+  });
+
+  it('refuses any label when the project has no active grid', () => {
+    expect(() => bracketPopulationFilter([], '0 – 500 hab.')).toThrow();
+  });
+});
+
+describe('buildOrganizationWhere with the SPEC-16 filters', () => {
+  const brackets = [{ label: 'Plus de 10 000 hab.', min: 10001, max: null }];
+
+  it('pushes the bracket down as a population range', () => {
+    const where = buildOrganizationWhere('p1', { bracket: 'Plus de 10 000 hab.' }, brackets);
+    expect(where.population).toEqual({ gte: 10001 });
+  });
+
+  it('queries the JSON column for the opening day', () => {
+    const where = buildOrganizationWhere('p1', { openOn: 'WEDNESDAY' });
+    expect(where.openingHours).toEqual({ path: ['days'], array_contains: [{ day: 'WEDNESDAY' }] });
+  });
+
+  it('adds nothing when neither filter is asked for', () => {
+    const where = buildOrganizationWhere('p1', {});
+    expect(where.population).toBeUndefined();
+    expect(where.openingHours).toBeUndefined();
   });
 });
 

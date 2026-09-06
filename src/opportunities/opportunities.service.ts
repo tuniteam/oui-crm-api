@@ -382,7 +382,7 @@ export class OpportunitiesService {
   /** Fiches visibles de l'appelant : le périmètre porte sur l'organisme, poussé en SQL. */
   private async visibleOrganizations(user: AuthenticatedUser, projectId: string): Promise<Prisma.OrganizationWhereInput> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
-    const where: Prisma.OrganizationWhereInput = { deletedAt: null };
+    const where: Prisma.OrganizationWhereInput = {};
     mergeVisibilityWhere(where, ctx, this.scopeService);
     return where;
   }
@@ -404,7 +404,7 @@ export class OpportunitiesService {
 
   /** Écrire sur une opportunité suppose l'accès complet à sa fiche (US-01-03). */
   private async assertWritableOrganization(organizationId: string, projectId: string, user: AuthenticatedUser): Promise<Organization> {
-    const organization = await this.prisma.organization.findFirst({ where: { id: organizationId, projectId, deletedAt: null } });
+    const organization = await this.prisma.organization.findFirst({ where: { id: organizationId, projectId } });
     if (!organization) throw apiError.notFound('ORGANIZATION_NOT_FOUND', organizationId);
     const ctx = await loadScopeContext(this.prisma, user, projectId);
     await assertFullOrganizationAccess(this.prisma, this.scopeService, ctx, organization, organizationId);

@@ -58,7 +58,7 @@ export class TerritoryService {
     }
 
     const existing = await this.prisma.organization.findMany({
-      where: { projectId, deletedAt: null, inseeCode: { in: requested.map((c) => c.code) } },
+      where: { projectId, inseeCode: { in: requested.map((c) => c.code) } },
       select: { id: true, inseeCode: true, population: true },
     });
     const populationByInsee = new Map(existing.map((o) => [o.inseeCode as string, o.population]));
@@ -205,6 +205,8 @@ export class TerritoryService {
   ): Prisma.OrganizationCreateManyInput {
     const population = commune.population ?? null;
     const postalCode = commune.codesPostaux?.[0] ?? null;
+    // GeoJSON donne [longitude, latitude] : la mairie d'abord, le centroïde en repli.
+    const [longitude, latitude] = commune.mairie?.coordinates ?? commune.centre?.coordinates ?? [];
     return {
       projectId,
       importBatchId,
@@ -216,7 +218,10 @@ export class TerritoryService {
       city: commune.nom,
       postalCode,
       population,
-      epci: commune.codeEpci ?? null,
+      // Le champ porte un libellé (« CC du Jovinien »), pas un code : le code ne sert que de repli.
+      epci: commune.epci?.nom ?? commune.codeEpci ?? null,
+      latitude: latitude ?? null,
+      longitude: longitude ?? null,
       salesRepId: dto.salesRepId ?? null,
       // Targeted at creation: the record starts TO_CONTACT — a state, not a transition to journal
       salesStatus: dto.campaignId ? SalesStatus.TO_CONTACT : SalesStatus.NOT_CONTACTED,

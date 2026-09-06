@@ -4,6 +4,7 @@ import { Type } from 'class-transformer';
 import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 import { IsCuid } from '@/common/decorators';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
+import { OPENING_DAYS, OpeningDay } from './opening-hours.dto';
 import {
   DEFAULT_ORGANIZATION_SORT,
   ORGANIZATION_SORT_FIELDS,
@@ -72,6 +73,23 @@ export class OrganizationListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsCuid()
   salesRepId?: string;
+
+  @ApiPropertyOptional({
+    example: '1 001 – 2 500 hab.',
+    description: 'Exact label of a bracket of the active pricing grid — unknown label answers 400',
+  })
+  @IsOptional()
+  @IsString()
+  bracket?: string;
+
+  @ApiPropertyOptional({
+    enum: OPENING_DAYS,
+    example: 'WEDNESDAY',
+    description: 'Keeps the records whose town hall declares an opening that day',
+  })
+  @IsOptional()
+  @IsIn(OPENING_DAYS)
+  openOn?: OpeningDay;
 
   @ApiPropertyOptional({
     example: 99,

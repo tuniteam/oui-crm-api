@@ -45,7 +45,7 @@ export class SearchService {
     ctx: Awaited<ReturnType<typeof loadScopeContext>>,
   ): Promise<SearchOrgDto[]> {
     // The one search fragment, shared with the list (US-01-01) — same fields, same SIRET rule
-    const where: Prisma.OrganizationWhereInput = { projectId, deletedAt: null, OR: organizationSearchOr(term) };
+    const where: Prisma.OrganizationWhereInput = { projectId, OR: organizationSearchOr(term) };
     mergeVisibilityWhere(where, ctx, this.scopeService);
     const rows = await this.prisma.organization.findMany({
       where,
@@ -64,10 +64,9 @@ export class SearchService {
     const rows = await this.prisma.contact.findMany({
       where: {
         projectId,
-        deletedAt: null,
         // A contact lives behind FULL access only (US-01-04): pushed into SQL so the limit
         // never eats in-scope results (closure review L1)
-        organization: { deletedAt: null, ...(this.scopeService.whereFullAccess(ctx) as Prisma.OrganizationWhereInput) },
+        organization: this.scopeService.whereFullAccess(ctx) as Prisma.OrganizationWhereInput,
         OR: [
           { firstName: { contains: term, mode: 'insensitive' } },
           { lastName: { contains: term, mode: 'insensitive' } },
