@@ -162,13 +162,21 @@ function checkPriceTable(issues: string[], path: string, prices: unknown, bracke
  * Exempts : une grille écrite de zéro (`basedOnVersion === null`, elle ne dérive de rien) et un
  * projet sans grille active. `force` couvre le retour volontaire à une grille antérieure.
  */
+export function isBaseOutdated(basedOnVersion: number | null, activeVersion: number | null): boolean {
+  if (basedOnVersion === null || activeVersion === null) return false;
+  return basedOnVersion !== activeVersion;
+}
+
+/**
+ * Le même garde-fou, levé en erreur. La liste des versions a besoin du prédicat sans erreur,
+ * pour dire au front ce qui est activable (SPEC-18 §6) : une seule règle, deux usages.
+ */
 export function assertBaseUpToDate(
   basedOnVersion: number | null,
   activeVersion: number | null,
   force: boolean,
 ): void {
-  if (force || basedOnVersion === null || activeVersion === null) return;
-  if (basedOnVersion === activeVersion) return;
+  if (force || !isBaseOutdated(basedOnVersion, activeVersion)) return;
   throw withMeta(apiError.conflict('PRICING_GRID_BASE_OUTDATED', String(basedOnVersion), String(activeVersion)), {
     activeVersion,
     basedOnVersion,

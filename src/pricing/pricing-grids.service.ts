@@ -17,7 +17,7 @@ import { recomputeDraftQuotes } from '@/quotes/quotes.utils';
 import { PRICING_AUDIT } from './pricing.constants';
 import { PricingService } from './pricing.service';
 import { PricingGridContent } from './pricing.types';
-import { assertBaseUpToDate, assertEffectiveDateValid, validateGridContent } from './pricing.utils';
+import { assertBaseUpToDate, assertEffectiveDateValid, isBaseOutdated, validateGridContent } from './pricing.utils';
 import {
   ActivatePricingGridDto,
   CreatePricingGridDto,
@@ -262,7 +262,10 @@ export class PricingGridsService {
 
     await this.prisma.$transaction(async (tx) => {
       await this.assertNoBlockingQuote(tx, projectId, id, true);
-      await tx.pricingGrid.delete({ where: { id } });
+      // La condition est portée par le DELETE lui-même : une activation concurrente entre la
+      // lecture ci-dessus et l'écriture laisserait sinon le projet sans grille.
+      const { count } = await tx.pricingGrid.deleteMany({ where: { id, active: false } });
+      if (count === 0) throw apiError.conflict('PRICING_GRID_ACTIVE');
       await this.audit.log(tx, {
         projectId,
         userId: user.id,
@@ -429,8 +432,7 @@ export class PricingGridsService {
    */
   private activationOf(row: GridRow, activeVersion: number | null): PricingGridActivationDto {
     if (row.active) return { allowed: false, reason: 'ALREADY_ACTIVE', activeVersion };
-    const outdated =
-      row.basedOnVersion !== null && activeVersion !== null && row.basedOnVersion !== activeVersion;
+    const outdated = isBaseOutdated(row.basedOnVersion, activeVersion);
     return { allowed: !outdated, reason: outdated ? 'BASE_OUTDATED' : null, activeVersion };
   }
 
