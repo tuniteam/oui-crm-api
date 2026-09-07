@@ -2,7 +2,7 @@ import { Organization, Settings } from '@prisma/client';
 import { formatDateField } from '@/common/utils/date.utils';
 import { QuoteConfig, QuoteResult } from '@/pricing/pricing.types';
 import { vatOf } from '@/pricing/pricing.utils';
-import { frenchDate, money, moneyOrDash, percentOrDash, quantity } from './documents.utils';
+import { frenchDate, moneyLabel, moneyLabelOrDash, percentOrDash, quantity } from './documents.utils';
 
 /** Ce que le gabarit du devis reçoit — SPEC-01 §6.2, tous les montants déjà formatés. */
 export type QuoteTemplateData = Record<string, unknown>;
@@ -92,7 +92,7 @@ export function quoteTemplateData(
 
     // ---------------------------------------------------------------- offre
     formule: config.plan,
-    abo_ht_affiche: money(result.mrrNet),
+    abo_ht_affiche: moneyLabel(result.mrrNet),
     offre_items: [],
 
     // ---------------------------------------------------------------- lignes
@@ -100,16 +100,16 @@ export function quoteTemplateData(
       nom: line.label,
       sous: line.sublabel,
       qte: quantity(line.qty),
-      pu: money(line.unitPrice),
+      pu: moneyLabel(line.unitPrice),
       remise: percentOrDash(line.discount),
-      total: money(line.total),
+      total: moneyLabel(line.total),
     })),
     lignes_frais: result.setupLines.map((line) => ({
       nom: line.label,
       qte: quantity(line.qty),
-      pu: money(line.unitPrice),
+      pu: moneyLabel(line.unitPrice),
       remise: percentOrDash(line.discount),
-      total: money(line.total),
+      total: moneyLabel(line.total),
     })),
 
     // ---------------------------------------------------------------- remise globale
@@ -117,16 +117,16 @@ export function quoteTemplateData(
     remise_titre: discount > 0 ? 'Remise commerciale' : '',
     remise_sous: discount > 0 ? `Sur l'abonnement mensuel, formule ${config.plan}` : '',
     remise_badge: discount > 0 ? `-${discount} %` : '',
-    remise_valeur: discount > 0 ? money(result.mrrList.minus(result.mrrNet)) : '',
+    remise_valeur: discount > 0 ? moneyLabel(result.mrrList.minus(result.mrrNet)) : '',
     mention_abo: discount > 0 ? `Montant après remise de ${discount} %` : '',
 
     // ---------------------------------------------------------------- totaux
-    total_ht_abo: money(result.mrrNet),
-    total_tva_abo: money(vatOf(result.mrrNet, vatRate)),
-    total_ttc_abo: money(result.mrrNet.plus(vatOf(result.mrrNet, vatRate))),
-    total_ht_frais: money(result.oneShot.total),
-    total_tva_frais: money(vatOf(result.oneShot.total, vatRate)),
-    total_ttc_frais: money(result.oneShot.total.plus(vatOf(result.oneShot.total, vatRate))),
+    total_ht_abo: moneyLabel(result.mrrNet),
+    total_tva_abo: moneyLabel(vatOf(result.mrrNet, vatRate)),
+    total_ttc_abo: moneyLabel(result.mrrNet.plus(vatOf(result.mrrNet, vatRate))),
+    total_ht_frais: moneyLabel(result.oneShot.total),
+    total_tva_frais: moneyLabel(vatOf(result.oneShot.total, vatRate)),
+    total_ttc_frais: moneyLabel(result.oneShot.total.plus(vatOf(result.oneShot.total, vatRate))),
 
     // ---------------------------------------------------------------- pluriannuel
     ...multiYearFields(result),
@@ -151,12 +151,12 @@ function multiYearFields(result: QuoteResult): QuoteTemplateData {
   years.forEach((year, index) => {
     const rank = index + 1;
     fields[`py_annee${rank}`] = String(year);
-    fields[`py_frais_${rank}`] = moneyOrDash(setup[index]);
-    fields[`py_formation_${rank}`] = moneyOrDash(training[index]);
-    fields[`py_materiel_${rank}`] = moneyOrDash(hardware[index]);
-    fields[`py_abo_${rank}`] = moneyOrDash(subscription[index]);
-    fields[`py_total_ht_${rank}`] = moneyOrDash(totalHt[index]);
-    fields[`py_total_ttc_${rank}`] = moneyOrDash(totalTtc[index]);
+    fields[`py_frais_${rank}`] = moneyLabelOrDash(setup[index]);
+    fields[`py_formation_${rank}`] = moneyLabelOrDash(training[index]);
+    fields[`py_materiel_${rank}`] = moneyLabelOrDash(hardware[index]);
+    fields[`py_abo_${rank}`] = moneyLabelOrDash(subscription[index]);
+    fields[`py_total_ht_${rank}`] = moneyLabelOrDash(totalHt[index]);
+    fields[`py_total_ttc_${rank}`] = moneyLabelOrDash(totalTtc[index]);
   });
   return fields;
 }

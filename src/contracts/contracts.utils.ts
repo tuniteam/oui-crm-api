@@ -1,11 +1,10 @@
-import { Contract, ContractStatus, Prisma, PrismaClient, Quote, QuoteType } from '@prisma/client';
+import { Contract, ContractStatus, Prisma, Quote, QuoteType } from '@prisma/client';
+import { Db } from '@/prisma/prisma.types';
 import { apiError } from '@/common/api-error';
 import { addMonths, nextDay } from '@/common/utils/date.utils';
 import { contractNumber } from '@/common/utils/document-number.utils';
 import { QuoteConfig } from '@/pricing/pricing.types';
 import { ADDITIONAL_INCLUDES_SETUP, AMENDABLE_STATUSES } from './contracts.constants';
-
-type Db = Pick<PrismaClient, 'contract'> | Prisma.TransactionClient;
 
 /** Le devis signé, tel que la création d'un contrat a besoin de le connaître. */
 export type SignedQuote = Pick<

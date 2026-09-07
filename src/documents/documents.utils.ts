@@ -2,10 +2,13 @@ import { Prisma } from '@prisma/client';
 import { EMPTY_AMOUNT, MONEY_LOCALE, NBSP, PAGE_BREAK_MARKER } from './documents.constants';
 
 /**
- * Montant imprimé : `fr-FR`, deux décimales, espace insécable fine pour les milliers. Le gabarit
- * ne calcule ni ne formate rien (SPEC-01 §6.2) — tout arrive prêt à poser.
+ * Montant **imprimé** : `fr-FR`, deux décimales, espace insécable fine pour les milliers. Le
+ * gabarit ne calcule ni ne formate rien (SPEC-01 §6.2) — tout arrive prêt à poser.
+ *
+ * Le suffixe `Label` distingue cette fonction de `pricing.utils.money`, qui arrondit un montant
+ * et rend un `Decimal` : même nom, sorties opposées, on s'y trompait.
  */
-export function money(value: Prisma.Decimal | number): string {
+export function moneyLabel(value: Prisma.Decimal | number): string {
   const amount = typeof value === 'number' ? value : Number(value);
   const formatted = amount.toLocaleString(MONEY_LOCALE, {
     minimumFractionDigits: 2,
@@ -18,9 +21,9 @@ export function money(value: Prisma.Decimal | number): string {
 }
 
 /** Un zéro ne s'imprime pas dans le tableau pluriannuel : il se raye. */
-export function moneyOrDash(value: Prisma.Decimal | number): string {
+export function moneyLabelOrDash(value: Prisma.Decimal | number): string {
   const amount = typeof value === 'number' ? value : Number(value);
-  return amount === 0 ? EMPTY_AMOUNT : money(amount);
+  return amount === 0 ? EMPTY_AMOUNT : moneyLabel(amount);
 }
 
 /** Pourcentage de remise : « 10 % », et un tiret quand il n'y en a pas. */
@@ -31,7 +34,7 @@ export function percentOrDash(value: number): string {
 /** Quantité : entière quand elle l'est, sinon deux décimales (une ligne au prorata). */
 export function quantity(value: Prisma.Decimal | number): string {
   const amount = typeof value === 'number' ? value : Number(value);
-  return Number.isInteger(amount) ? String(amount) : money(amount);
+  return Number.isInteger(amount) ? String(amount) : moneyLabel(amount);
 }
 
 /** Date imprimée en toutes lettres françaises : « 4 septembre 2026 ». */

@@ -9,7 +9,7 @@ import {
   assertAssigneesAreMembers,
   assertReferencesKnown,
   completenessScore,
-  recomputeCompleteness,
+  recomputeCompletenessMany,
 } from '@/organizations/organizations.utils';
 import { IMPORT_AUDIT, TERRITORY, stampAppliedAt } from './import.constants';
 import { TerritoryImportDto, TerritoryReportDto } from './dto/territory.dto';
@@ -163,12 +163,22 @@ export class TerritoryService {
           });
         }
 
-        // The census refresh is the only write on existing records (D6) — score follows population
-        for (const item of items.filter((i) => i.status === 'UPDATED')) {
-          const id = idByInsee.get(item.inseeCode)!;
-          await tx.organization.update({ where: { id }, data: { population: item.population } });
-          await recomputeCompleteness(tx, id);
-        }
+        // The census refresh is the only write on existing records (D6) — score follows population.
+        // Jamais une écriture par tour de boucle : un rafraîchissement touche des milliers de
+        // communes, et trois aller-retours chacune tiendraient la transaction ouverte trop longtemps.
+        const refreshed = items.filter((i) => i.status === 'UPDATED');
+        await Promise.all(
+          refreshed.map((item) =>
+            tx.organization.update({
+              where: { id: idByInsee.get(item.inseeCode)! },
+              data: { population: item.population },
+            }),
+          ),
+        );
+        await recomputeCompletenessMany(
+          tx,
+          refreshed.map((item) => idByInsee.get(item.inseeCode)!),
+        );
 
         // Même règle que l'import de fichier : l'instant de référence est posé une fois les
         // fiches écrites, dans la même transaction.

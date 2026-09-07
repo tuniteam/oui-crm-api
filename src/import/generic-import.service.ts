@@ -406,9 +406,17 @@ export class GenericImportService {
         });
         const idByKey = new Map(created.map((o) => [normalizeOrgKey(o.department, o.name), o.id]));
 
-        for (const update of plan.updates) {
-          await tx.organization.update({ where: { id: update.id }, data: update.data as Prisma.OrganizationUncheckedUpdateInput });
-        }
+        // Jamais une écriture par tour de boucle : sur un fichier de plusieurs milliers de
+        // lignes, les aller-retours séquentiels tiennent la transaction ouverte assez longtemps
+        // pour la faire expirer.
+        await Promise.all(
+          plan.updates.map((update) =>
+            tx.organization.update({
+              where: { id: update.id },
+              data: update.data as Prisma.OrganizationUncheckedUpdateInput,
+            }),
+          ),
+        );
 
         const contactRows = plan.contacts.map((c) => ({
           ...c.data,
@@ -431,7 +439,6 @@ export class GenericImportService {
   }
 
   // ------------------------------------------------------------------------------ loads
-
 
   /** Active members addressed by email in the salesRep column. */
   private async loadMembers(projectId: string): Promise<Map<string, string>> {

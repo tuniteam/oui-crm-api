@@ -1,10 +1,7 @@
-import { Prisma } from '@prisma/client';
 import { labels } from '@/common/messages';
-import { PrismaService } from '@/prisma/prisma.service';
 import { fullName } from '@/common/utils/user.utils';
 import { AUDIT_OBJECTS, AuditObjectType } from './audit-log.constants';
-
-type Db = PrismaService | Prisma.TransactionClient;
+import { Db } from '@/prisma/prisma.types';
 
 /** objectId → human label for the rows of one object type (one query per type and page). */
 export type LabelResolver = (db: Db, projectId: string, ids: string[]) => Promise<Map<string, string>>;

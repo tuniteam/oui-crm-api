@@ -1,11 +1,10 @@
-import { Campaign, Prisma, PrismaClient } from '@prisma/client';
+import { Campaign } from '@prisma/client';
+import { Db } from '@/prisma/prisma.types';
 import { apiError } from '@/common/api-error';
 import { formatDateField, parseDayOrThrow } from '@/common/utils/date.utils';
 import { UserWithInitials } from '@/audit-log/audit-log-labels';
 import { userRef } from '@/common/utils/user.utils';
 import { CampaignDto, CampaignResultsDto } from './dto/campaign.dto';
-
-type Db = Pick<PrismaClient, 'campaign'> | Prisma.TransactionClient;
 
 export async function getCampaignOrThrow(db: Db, id: string, projectId: string): Promise<Campaign> {
   const campaign = await db.campaign.findFirst({ where: { id, projectId } });

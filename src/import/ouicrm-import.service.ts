@@ -328,9 +328,11 @@ export class OuicrmImportService {
           select: { id: true, name: true, department: true },
         });
         const idByKey = new Map(created.map((o) => [normalizeOrgKey(o.department, o.name), o.id]));
-        for (const update of plan.updates) {
-          await tx.organization.update({ where: { id: update.id }, data: update.data });
-        }
+        // Même règle que l'import générique : les mises à jour partent ensemble, pas une par
+        // tour de boucle — la transaction ne doit pas rester ouverte le temps de N aller-retours.
+        await Promise.all(
+          plan.updates.map((update) => tx.organization.update({ where: { id: update.id }, data: update.data })),
+        );
 
         const createdContacts = await tx.contact.createManyAndReturn({
           data: plan.contacts.map((c) => ({
