@@ -1,12 +1,5 @@
-import {
-  Activity,
-  ActivityStatus,
-  Campaign,
-  Contact,
-  Organization,
-  Prisma,
-  PrismaClient,
-} from '@prisma/client';
+import { Activity, ActivityStatus, Campaign, Contact, Organization, Prisma } from '@prisma/client';
+import { Db } from '@/prisma/prisma.types';
 import { apiError } from '@/common/api-error';
 import { REFERENCE_CATEGORIES } from '@/common/messages';
 import { endOfDayUtc, parseDayOrThrow, formatDateField, toDate } from '@/common/utils/date.utils';
@@ -16,10 +9,6 @@ import { ReferenceRefDto, UserRefDto } from '@/organizations/dto';
 import { ICS } from './activities.constants';
 import { ActivityDto } from './dto/response-activity.dto';
 import { ActivityListQueryDto } from './dto/query-activity-list.dto';
-
-type Db =
-  | Pick<PrismaClient, 'activity' | 'referenceItem' | 'organization'>
-  | Prisma.TransactionClient;
 
 export const ACTIVITY_REFS = {
   organization: { select: { id: true, name: true, salesStatus: true } },

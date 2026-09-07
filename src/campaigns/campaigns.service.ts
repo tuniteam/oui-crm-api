@@ -3,7 +3,7 @@
 // ============================================
 
 import { Injectable } from '@nestjs/common';
-import { CampaignStatus, OutOfScopeAccess, Prisma, SalesStatus } from '@prisma/client';
+import { ActivityStatus, CampaignStatus, OutOfScopeAccess, Prisma, SalesStatus } from '@prisma/client';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { loadUsersWithInitials } from '@/audit-log/audit-log-labels';
@@ -52,12 +52,13 @@ export class CampaignsService {
     const ids = rows.map((c) => c.id);
     const [orgCounts, activityCounts, owners] = await Promise.all([
       this.prisma.campaignOrganization.groupBy({ by: ['campaignId'], where: { campaignId: { in: ids } }, _count: { _all: true } }),
-      // Correlated per campaign: only activities of records still targeted count
-      Promise.all(ids.map((cid) => this.countCampaignActivities(cid).then((n) => ({ campaignId: cid, _count: { _all: n } })))),
+      // Correlated per campaign: only activities of records still targeted count. Comptées
+      // pour toute la page en une requête — une par campagne faisait N aller-retours SQL.
+      this.countActivitiesByCampaign(ids),
       loadUsersWithInitials(this.prisma, projectId, [...new Set(rows.map((c) => c.ownerId).filter((id): id is string => !!id))]),
     ]);
     const orgsBy = new Map(orgCounts.map((c) => [c.campaignId, c._count._all]));
-    const actsBy = new Map(activityCounts.map((c) => [c.campaignId, c._count._all]));
+    const actsBy = activityCounts;
     return {
       data: rows.map((c) =>
         mapToCampaign(c, c.ownerId ? owners.get(c.ownerId) : undefined, orgsBy.get(c.id) ?? 0, actsBy.get(c.id) ?? 0),
@@ -399,13 +400,26 @@ export class CampaignsService {
    *
    * Raw SQL because the time bound differs per record: it lives on the join row.
    */
+  private async countActivitiesByCampaign(campaignIds: string[]): Promise<Map<string, number>> {
+    if (!campaignIds.length) return new Map();
+    const rows = await this.prisma.$queryRaw<{ campaign_id: string; count: bigint }[]>`
+      SELECT co.campaign_id, count(*)::bigint AS count
+      FROM activities a
+      JOIN campaign_organizations co ON co.organization_id = a.organization_id
+      WHERE co.campaign_id IN (${Prisma.join(campaignIds)})
+        AND a.status = ${ActivityStatus.DONE}::"ActivityStatus"
+        AND a.completed_at >= co.added_at
+      GROUP BY co.campaign_id`;
+    return new Map(rows.map((r) => [r.campaign_id, Number(r.count)]));
+  }
+
   private async countCampaignActivities(campaignId: string): Promise<number> {
     const [row] = await this.prisma.$queryRaw<{ count: bigint }[]>`
       SELECT count(*)::bigint AS count
       FROM activities a
       JOIN campaign_organizations co ON co.organization_id = a.organization_id
       WHERE co.campaign_id = ${campaignId}
-        AND a.status = 'DONE'
+        AND a.status = ${ActivityStatus.DONE}::"ActivityStatus"
         AND a.completed_at >= co.added_at`;
     return Number(row?.count ?? 0);
   }
@@ -417,7 +431,7 @@ export class CampaignsService {
       FROM activities a
       JOIN campaign_organizations co ON co.organization_id = a.organization_id
       WHERE co.campaign_id = ${campaignId}
-        AND a.status = 'DONE'
+        AND a.status = ${ActivityStatus.DONE}::"ActivityStatus"
         AND a.completed_at >= co.added_at
       GROUP BY a.organization_id`;
     return new Map(rows.map((r) => [r.organization_id, Number(r.count)]));

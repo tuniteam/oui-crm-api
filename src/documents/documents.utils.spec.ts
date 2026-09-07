@@ -5,8 +5,8 @@ import {
   dataUri,
   documentFileName,
   frenchDate,
-  money,
-  moneyOrDash,
+  moneyLabel,
+  moneyLabelOrDash,
   percentOrDash,
   quantity,
   splitPages,
@@ -15,14 +15,14 @@ import {
 describe('formatage des montants (SPEC-01 §6.2 — le gabarit ne calcule rien)', () => {
   it('imprime deux décimales et sépare les milliers par une insécable imprimable', () => {
     // U+00A0, jamais l'espace fine U+202F de `fr-FR` : les polices PDF standard ne la portent pas.
-    expect(money(new Prisma.Decimal('1750'))).toBe(`1${NBSP}750,00`);
-    expect(money(79.9)).toBe('79,90');
-    expect(money(0)).toBe('0,00');
+    expect(moneyLabel(new Prisma.Decimal('1750'))).toBe(`1${NBSP}750,00`);
+    expect(moneyLabel(79.9)).toBe('79,90');
+    expect(moneyLabel(0)).toBe('0,00');
   });
 
   it('raye un zéro du tableau pluriannuel plutôt que d’imprimer 0,00', () => {
-    expect(moneyOrDash(0)).toBe('—');
-    expect(moneyOrDash(new Prisma.Decimal('2478.6'))).toBe(`2${NBSP}478,60`);
+    expect(moneyLabelOrDash(0)).toBe('—');
+    expect(moneyLabelOrDash(new Prisma.Decimal('2478.6'))).toBe(`2${NBSP}478,60`);
   });
 
   it('n’imprime une remise que s’il y en a une', () => {

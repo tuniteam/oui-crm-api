@@ -1,8 +1,7 @@
-import { Contact, Organization, Prisma, PrismaClient } from '@prisma/client';
+import { Contact, Organization } from '@prisma/client';
+import { Db } from '@/prisma/prisma.types';
 import { apiError } from '@/common/api-error';
 import { ContactDto } from './dto/response-contact.dto';
-
-type Db = Pick<PrismaClient, 'contact'> | Prisma.TransactionClient;
 
 /**
  * 404 CONTACT_NOT_FOUND for an unknown, deleted or other-project contact (no leak). The

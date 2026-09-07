@@ -8,13 +8,13 @@ import {
   FileCategory,
   OpportunityStageCode,
   Prisma,
-  PrismaClient,
   QuoteLine,
   QuoteLineNature,
   QuoteStatus,
   QuoteType,
   SalesStatus,
 } from '@prisma/client';
+import { Db } from '@/prisma/prisma.types';
 import { apiError } from '@/common/api-error';
 import { MS_PER_DAY, formatDateField } from '@/common/utils/date.utils';
 import { applyOpportunityStage } from '@/opportunities/opportunities.utils';
@@ -38,8 +38,6 @@ import {
   SIGNABLE_STATUSES,
   canTransition,
 } from './quotes.constants';
-
-type Db = PrismaClient | Prisma.TransactionClient;
 
 // ---------------------------------------------------------------------------- configuration
 

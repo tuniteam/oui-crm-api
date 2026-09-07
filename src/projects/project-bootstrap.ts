@@ -14,6 +14,11 @@ import {
   ReferenceCategory,
 } from './project-config.constants';
 
+/**
+ * Volontairement **plus étroit** que `@/prisma/prisma.types` : le bootstrap ne s'exécute que
+ * dans une transaction — la création du projet, ses paramètres, son référentiel et sa grille
+ * v1 sont indissociables. Le type l'impose au lieu de le recommander.
+ */
 export type Db = Prisma.TransactionClient;
 
 /**

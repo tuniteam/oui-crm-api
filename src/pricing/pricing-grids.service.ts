@@ -3,7 +3,8 @@
 // ============================================
 
 import { Injectable } from '@nestjs/common';
-import { Prisma, PrismaClient, QuoteStatus } from '@prisma/client';
+import { Prisma, QuoteStatus } from '@prisma/client';
+import { Db } from '@/prisma/prisma.types';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { UserWithInitials, loadUsersWithInitials } from '@/audit-log/audit-log-labels';
 import { AuditLogService } from '@/audit-log/audit-log.service';
@@ -49,7 +50,6 @@ type GridRow = {
 };
 
 /** Le client Prisma ou une transaction : les gardes se posent dans la transaction. */
-type Db = PrismaClient | Prisma.TransactionClient;
 
 @Injectable()
 export class PricingGridsService {

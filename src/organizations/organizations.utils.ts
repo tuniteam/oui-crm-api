@@ -12,6 +12,7 @@ import {
   RelationshipStatus,
   SalesStatus,
 } from '@prisma/client';
+import { Db } from '@/prisma/prisma.types';
 import { apiError } from '@/common/api-error';
 import { PopulationBracket } from '@/pricing/pricing.types';
 import { loadActiveGridContent } from '@/pricing/pricing.utils';
@@ -27,8 +28,6 @@ import {
   OrganizationSortField,
   QUOTE_BLOCKING_FIELDS,
 } from './organizations.constants';
-
-type Db = PrismaClient | Prisma.TransactionClient;
 
 // ---------------------------------------------------------------------------- completeness
 
@@ -102,6 +101,38 @@ export async function recomputeCompleteness(db: Db, organizationId: string): Pro
   const score = completenessScore({ ...org, hasPrimaryContact: org.contacts.length > 0 });
   await db.organization.update({ where: { id: organizationId }, data: { completenessScore: score } });
   return score;
+}
+
+/**
+ * La même règle, pour un lot de fiches — le rafraîchissement du recensement en touche des
+ * milliers. Une lecture, un calcul en mémoire, puis un `updateMany` par score distinct : les
+ * scores sont bornés, donc quelques écritures au lieu de deux par fiche.
+ */
+export async function recomputeCompletenessMany(db: Db, organizationIds: string[]): Promise<void> {
+  if (!organizationIds.length) return;
+  const rows = await db.organization.findMany({
+    where: { id: { in: organizationIds } },
+    select: {
+      id: true,
+      siret: true,
+      address: true,
+      postalCode: true,
+      population: true,
+      email: true,
+      contacts: { where: { isPrimary: true }, select: { id: true }, take: 1 },
+    },
+  });
+
+  const idsByScore = new Map<number, string[]>();
+  for (const row of rows) {
+    const score = completenessScore({ ...row, hasPrimaryContact: row.contacts.length > 0 });
+    (idsByScore.get(score) ?? idsByScore.set(score, []).get(score)!).push(row.id);
+  }
+  await Promise.all(
+    [...idsByScore].map(([score, ids]) =>
+      db.organization.updateMany({ where: { id: { in: ids } }, data: { completenessScore: score } }),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------- lookups

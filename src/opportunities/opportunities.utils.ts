@@ -2,14 +2,13 @@
 // OUI-CRM - Opportunities utils: pure rules + the single stage writer (US-02-09)
 // ============================================
 
-import { OpportunityStageCode, Prisma, PrismaClient } from '@prisma/client';
+import { OpportunityStageCode, Prisma } from '@prisma/client';
+import { Db } from '@/prisma/prisma.types';
 import { apiError } from '@/common/api-error';
 import { MONTHS_PER_YEAR } from '@/pricing/pricing.constants';
 import { PricingGridContent } from '@/pricing/pricing.types';
 import { money, priceAt, resolveBracketIndex, setupFeePrices, sumMoney } from '@/pricing/pricing.utils';
 import { CLOSED_STAGE_CODES, PROBABILITY_MAX, isOpenStage } from './opportunities.constants';
-
-type Db = PrismaClient | Prisma.TransactionClient;
 
 // ---------------------------------------------------------------------------- probabilité
 
