@@ -148,8 +148,10 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
 };
 
 /**
- * Empty pricing grid v1: one bracket, one plan at 0 — the project cannot issue quotes until
- * the grid is configured (PRICING_GRID_EMPTY at simulation, SPEC-10 §3.1).
+ * Empty pricing grid v1, created active so the project always has one (SPEC-10 §3.1): a single
+ * open-ended bracket and a single plan at 0. It is a valid skeleton, not a working grid — a
+ * quote priced on it comes out at 0, and any plan other than STANDARD answers
+ * PRICING_PLAN_UNKNOWN. Nothing refuses to simulate: the grid is corrected in place (SPEC-18).
  */
 export const EMPTY_PRICING_GRID_CONTENT = {
   brackets: [{ label: 'Tous', min: 0, max: null }],
