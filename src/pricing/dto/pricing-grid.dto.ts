@@ -49,6 +49,39 @@ export class CreatePricingGridDto {
   effectiveDate: string;
 }
 
+/**
+ * SPEC-18 §2 — corriger une version au lieu d'en créer une. Les deux champs sont indépendants :
+ * on peut ne changer que la date. Le numéro, la filiation et l'auteur ne se modifient pas — ils
+ * décrivent d'où vient cette version, ce qui est un fait historique.
+ */
+export class UpdatePricingGridDto {
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true, example: CONTENT_EXAMPLE })
+  @IsOptional()
+  @IsObject()
+  content?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ example: '2027-01-01' })
+  @IsOptional()
+  @Matches(DAY_PATTERN)
+  effectiveDate?: string;
+}
+
+/** SPEC-18 §6 — l'état d'activabilité, pour que le front grise le bouton sans rejouer la règle. */
+export class PricingGridActivationDto {
+  @ApiProperty({ example: false })
+  allowed: boolean;
+
+  @ApiPropertyOptional({
+    enum: ['BASE_OUTDATED', 'ALREADY_ACTIVE'],
+    nullable: true,
+    description: 'BASE_OUTDATED: derived from a version that is no longer active',
+  })
+  reason: 'BASE_OUTDATED' | 'ALREADY_ACTIVE' | null;
+
+  @ApiPropertyOptional({ example: 1, nullable: true, description: 'Version currently active' })
+  activeVersion: number | null;
+}
+
 /** Une version dans la liste : ce qu'il faut pour choisir, sans le contenu complet. */
 export class PricingGridListItemDto {
   @ApiProperty({ example: 'cmth…' })
@@ -73,6 +106,12 @@ export class PricingGridListItemDto {
   quotesCount: number;
 
   @ApiProperty({
+    type: PricingGridActivationDto,
+    description: 'Whether this version can be activated, and why not — the rule stays server-side',
+  })
+  activation: PricingGridActivationDto;
+
+  @ApiProperty({
     example: 1,
     nullable: true,
     description:
@@ -86,6 +125,14 @@ export class PricingGridListItemDto {
  * volontairement à une grille antérieure (SPEC-14 D21).
  */
 export class ActivatePricingGridDto {
+  @ApiPropertyOptional({
+    example: '2027-01-01',
+    description: 'Day the grid starts applying. Defaults to the activation day (SPEC-18 §5)',
+  })
+  @IsOptional()
+  @Matches(DAY_PATTERN)
+  effectiveDate?: string;
+
   @ApiPropertyOptional({
     example: true,
     description: 'Activate even though the version derives from an outdated grid',

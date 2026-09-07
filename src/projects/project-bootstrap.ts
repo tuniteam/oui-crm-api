@@ -135,5 +135,11 @@ export async function bootstrapProject(
         content: EMPTY_PRICING_GRID_CONTENT,
       },
     });
+    // Le compteur porte le dernier numéro attribué (SPEC-18 D6) : sans cela, la première
+    // version créée par un utilisateur réutiliserait celui de cette v1.
+    await db.project.update({
+      where: { id: projectId },
+      data: { pricingGridSeq: INITIAL_PRICING_GRID_VERSION },
+    });
   }
 }
