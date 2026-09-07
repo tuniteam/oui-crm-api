@@ -1,19 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { PERISCOLIA_PRICING_GRID_V1 } from './periscolia-grid.constants';
 import { PopulationBracket } from './pricing.types';
-import {
-  assertBaseUpToDate,
-  applyDiscount,
-  clampDiscount,
-  money,
-  priceAt,
-  resolveBracketIndex,
-  resolveBracketLabel,
-  safeQty,
-  setupFeePrices,
-  sumMoney,
-  validateGridContent,
-} from './pricing.utils';
+import { applyDiscount, assertBaseUpToDate, assertEffectiveDateValid, clampDiscount, money, priceAt, resolveBracketIndex, resolveBracketLabel, safeQty, setupFeePrices, sumMoney, validateGridContent } from './pricing.utils';
 
 /** Règles pures du moteur — SPEC-04 §3 règle 1 et §4.7. */
 
@@ -226,5 +214,34 @@ describe('assertBaseUpToDate — le garde-fou de filiation (SPEC-14 D21)', () =>
 
   it('cède à une demande explicite : revenir à une grille antérieure est légitime', () => {
     expect(() => assertBaseUpToDate(1, 5, true)).not.toThrow();
+  });
+});
+
+describe('assertEffectiveDateValid (SPEC-18 §4)', () => {
+  const day = (iso: string): Date => new Date(`${iso}T00:00:00.000Z`);
+  const today = day('2026-09-07');
+
+  it('accepts today', () => {
+    expect(() => assertEffectiveDateValid(today, today, null)).not.toThrow();
+  });
+
+  it('accepts a future date', () => {
+    expect(() => assertEffectiveDateValid(day('2027-01-01'), today, null)).not.toThrow();
+  });
+
+  it('refuses a date in the past — a grid does not start applying before it exists', () => {
+    expect(() => assertEffectiveDateValid(day('2026-06-11'), today, null)).toThrow();
+  });
+
+  it('refuses a date earlier than the active version, whose date is still ahead', () => {
+    expect(() => assertEffectiveDateValid(day('2026-09-20'), today, day('2026-10-01'))).toThrow();
+  });
+
+  it('accepts a date on the active version day', () => {
+    expect(() => assertEffectiveDateValid(day('2026-10-01'), today, day('2026-10-01'))).not.toThrow();
+  });
+
+  it('ignores an active version dated in the past: today is then the floor', () => {
+    expect(() => assertEffectiveDateValid(today, today, day('2026-08-31'))).not.toThrow();
   });
 });

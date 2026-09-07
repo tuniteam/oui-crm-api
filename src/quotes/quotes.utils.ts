@@ -322,9 +322,20 @@ export async function recomputeDraftQuotes(
   grid: PricingGridContent,
   gridId: string,
   vatRate: number,
+  /**
+   * SPEC-18 §2 — restreint le recalcul aux brouillons d'UNE grille. À l'activation, tous les
+   * brouillons du projet basculent sur la nouvelle grille ; en corrigeant une version, seuls
+   * ceux qui la portent déjà sont concernés, et leur rattachement ne change pas.
+   */
+  onlyGridId?: string,
 ): Promise<number> {
   const drafts = await tx.quote.findMany({
-    where: { projectId, status: QuoteStatus.DRAFT, config: { not: Prisma.DbNull } },
+    where: {
+      projectId,
+      status: QuoteStatus.DRAFT,
+      config: { not: Prisma.DbNull },
+      ...(onlyGridId ? { pricingGridId: onlyGridId } : {}),
+    },
     select: { id: true, status: true, config: true, startDate: true, organization: { select: { population: true } } },
   });
 

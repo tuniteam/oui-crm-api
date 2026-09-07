@@ -3,28 +3,30 @@
 // ============================================
 
 import { Injectable } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, PrismaClient, QuoteStatus } from '@prisma/client';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { UserWithInitials, loadUsersWithInitials } from '@/audit-log/audit-log-labels';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
-import { apiError, withDetails } from '@/common/api-error';
+import { apiError, withDetails, withMeta } from '@/common/api-error';
 import { PaginationQueryDto, buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
-import { formatDateField, parseDayOrThrow } from '@/common/utils/date.utils';
+import { formatDateField, parseDayOrThrow, todayUtc } from '@/common/utils/date.utils';
 import { userRef } from '@/common/utils/user.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { recomputeDraftQuotes } from '@/quotes/quotes.utils';
 import { PRICING_AUDIT } from './pricing.constants';
 import { PricingService } from './pricing.service';
 import { PricingGridContent } from './pricing.types';
-import { assertBaseUpToDate, validateGridContent } from './pricing.utils';
+import { assertBaseUpToDate, assertEffectiveDateValid, isBaseOutdated, validateGridContent } from './pricing.utils';
 import {
   ActivatePricingGridDto,
   CreatePricingGridDto,
+  PricingGridActivationDto,
   PricingGridDetailDto,
   PricingGridIdResponseDto,
   PricingGridListItemDto,
   PricingGridsListResponseDto,
+  UpdatePricingGridDto,
 } from './dto/pricing-grid.dto';
 
 type GridRow = {
@@ -36,6 +38,9 @@ type GridRow = {
   createdById: string | null;
   createdAt: Date;
 };
+
+/** Le client Prisma ou une transaction : les gardes se posent dans la transaction. */
+type Db = PrismaClient | Prisma.TransactionClient;
 
 @Injectable()
 export class PricingGridsService {
@@ -50,7 +55,7 @@ export class PricingGridsService {
   async findAll(projectId: string, query: PaginationQueryDto): Promise<PricingGridsListResponseDto> {
     const { page, limit } = query;
     const where: Prisma.PricingGridWhereInput = { projectId };
-    const [total, rows] = await Promise.all([
+    const [total, rows, activeVersion] = await Promise.all([
       this.prisma.pricingGrid.count({ where }),
       this.prisma.pricingGrid.findMany({
         where,
@@ -68,6 +73,7 @@ export class PricingGridsService {
           _count: { select: { quotes: true } },
         },
       }),
+      this.activeVersion(projectId),
     ]);
 
     const authors = await loadUsersWithInitials(
@@ -77,7 +83,9 @@ export class PricingGridsService {
     );
 
     return {
-      data: rows.map((row) => this.mapToListItem(row, authors.get(row.createdById ?? ''), row._count.quotes)),
+      data: rows.map((row) =>
+        this.mapToListItem(row, authors.get(row.createdById ?? ''), row._count.quotes, activeVersion),
+      ),
       meta: buildPaginationMeta(total, page, limit),
     };
   }
@@ -110,15 +118,16 @@ export class PricingGridsService {
     if (issues.length) throw withDetails(apiError.badRequest('PRICING_GRID_INVALID', issues.join('; ')), issues);
 
     const grid = await this.prisma.$transaction(async (tx) => {
-      // Le numéro suit la dernière version DU PROJET, lu dans la transaction : deux
-      // préparations simultanées ne peuvent pas viser le même numéro sans que l'unicité
-      // (projectId, version) ne tranche.
-      const last = await tx.pricingGrid.findFirst({
-        where: { projectId },
-        orderBy: { version: 'desc' },
-        select: { version: true },
+      await this.assertEffectiveDate(tx, projectId, effectiveDate);
+
+      // Le numéro vient d'un compteur qui ne redescend jamais (SPEC-18 D6) : supprimer une
+      // version ne libère pas son numéro, sans quoi le journal désignerait deux objets par
+      // « Grille v4 ». L'incrément atomique tranche aussi deux préparations simultanées.
+      const { pricingGridSeq: version } = await tx.project.update({
+        where: { id: projectId },
+        data: { pricingGridSeq: { increment: 1 } },
+        select: { pricingGridSeq: true },
       });
-      const version = (last?.version ?? 0) + 1;
 
       const created = await tx.pricingGrid.create({
         data: {
@@ -160,6 +169,115 @@ export class PricingGridsService {
    * Les devis déjà soumis portent leur propre `pricingGridId` et ne bougent pas ; les
    * brouillons sont recalculés à la lecture depuis la grille active, donc suivent d'eux-mêmes.
    */
+  /**
+   * SPEC-18 §2 — corriger une version au lieu d'en créer une. C'est la cause racine des
+   * brouillons morts : sans cette route, chaque correction fabriquait une version de plus.
+   *
+   * Seuls les devis **émis** retiennent la grille ; les brouillons sont recalculés, comme à
+   * l'activation. Corriger la grille active est permis quand aucun devis n'y est attaché —
+   * c'est le cas d'un projet neuf dont la v1 porte une coquille — et change alors les prix
+   * immédiatement, sans geste d'activation.
+   */
+  async update(
+    id: string,
+    projectId: string,
+    dto: UpdatePricingGridDto,
+    user: AuthenticatedUser,
+  ): Promise<PricingGridDetailDto> {
+    if (dto.content === undefined && dto.effectiveDate === undefined) {
+      throw apiError.badRequest('EMPTY_UPDATE_PAYLOAD');
+    }
+    const existing = await this.getOrThrow(id, projectId);
+
+    if (dto.content) {
+      const issues = validateGridContent(dto.content);
+      if (issues.length) throw withDetails(apiError.badRequest('PRICING_GRID_INVALID', issues.join('; ')), issues);
+    }
+
+    const settings = await this.prisma.settings.findUnique({
+      where: { projectId },
+      select: { vatRate: true },
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      // Dans la transaction : un devis émis entre le contrôle et l'écriture passerait au travers.
+      await this.assertNoBlockingQuote(tx, projectId, id, false);
+      const effectiveDate = dto.effectiveDate ? parseDayOrThrow(dto.effectiveDate) : undefined;
+      if (effectiveDate) await this.assertEffectiveDate(tx, projectId, effectiveDate);
+
+      const updated = await tx.pricingGrid.update({
+        where: { id },
+        data: {
+          ...(dto.content && { content: dto.content as Prisma.InputJsonValue }),
+          ...(effectiveDate && { effectiveDate }),
+        },
+        select: { content: true },
+      });
+
+      // Les brouillons de cette grille portaient des montants calculés sur l'ancien contenu.
+      const recomputed = dto.content
+        ? await recomputeDraftQuotes(
+            tx,
+            this.pricing,
+            projectId,
+            updated.content as unknown as PricingGridContent,
+            id,
+            Number(settings?.vatRate ?? 0),
+            id,
+          )
+        : 0;
+
+      await this.audit.log(tx, {
+        projectId,
+        userId: user.id,
+        action: PRICING_AUDIT.GRID_UPDATE,
+        objectType: AUDIT_OBJECTS.PRICING_GRID,
+        objectId: id,
+        metadata: {
+          version: existing.version,
+          fields: Object.keys(dto),
+          wasActive: existing.active,
+          draftsRecomputed: recomputed,
+          // Le numéro ne bouge pas : sur une grille active, le journal est la seule trace de
+          // ce que valaient les prix avant (SPEC-18 §2).
+          ...(existing.active && dto.content
+            ? { previousContent: existing.content as Prisma.InputJsonValue }
+            : {}),
+        },
+      });
+    });
+
+    const grid = await this.getOrThrow(id, projectId);
+    return this.toDetail(projectId, grid, grid.content);
+  }
+
+  /**
+   * SPEC-18 §3 — renoncer à une version préparée. Plus strict que le `PATCH` : **tout** devis
+   * retient la grille, brouillon compris. Corriger répare un brouillon ; supprimer le
+   * détruirait, `Quote.pricingGrid` étant en `onDelete: Cascade`.
+   */
+  async remove(id: string, projectId: string, user: AuthenticatedUser): Promise<void> {
+    const existing = await this.getOrThrow(id, projectId);
+    if (existing.active) throw apiError.conflict('PRICING_GRID_ACTIVE');
+
+    await this.prisma.$transaction(async (tx) => {
+      await this.assertNoBlockingQuote(tx, projectId, id, true);
+      // La condition est portée par le DELETE lui-même : une activation concurrente entre la
+      // lecture ci-dessus et l'écriture laisserait sinon le projet sans grille.
+      const { count } = await tx.pricingGrid.deleteMany({ where: { id, active: false } });
+      if (count === 0) throw apiError.conflict('PRICING_GRID_ACTIVE');
+      await this.audit.log(tx, {
+        projectId,
+        userId: user.id,
+        action: PRICING_AUDIT.GRID_DELETE,
+        objectType: AUDIT_OBJECTS.PRICING_GRID,
+        objectId: id,
+        // Le numéro n'est pas rendu au compteur : il ne désignera jamais une autre version.
+        metadata: { version: existing.version, basedOnVersion: existing.basedOnVersion },
+      });
+    });
+  }
+
   async activate(
     id: string,
     projectId: string,
@@ -189,7 +307,12 @@ export class PricingGridsService {
 
     await this.prisma.$transaction(async (tx) => {
       await tx.pricingGrid.updateMany({ where: { projectId, active: true }, data: { active: false } });
-      await tx.pricingGrid.update({ where: { id }, data: { active: true } });
+      // SPEC-18 §5 — l'activation est le seul moment où l'on sait quand la grille s'applique
+      // vraiment : sans date déclarée, c'est aujourd'hui. La figer à la préparation garantit
+      // qu'elle sera fausse dès que l'activation glisse d'un jour.
+      const effectiveDate = dto.effectiveDate ? parseDayOrThrow(dto.effectiveDate) : todayUtc();
+      await this.assertEffectiveDate(tx, projectId, effectiveDate);
+      await tx.pricingGrid.update({ where: { id }, data: { active: true, effectiveDate } });
 
       // Les brouillons suivent la nouvelle grille : leur détail était déjà recalculé à la
       // lecture, ce sont leurs montants de liste — ceux qui se trient et se filtrent — qu'on
@@ -225,6 +348,45 @@ export class PricingGridsService {
   }
 
   // -------------------------------------------------------------------------------- helpers
+
+  private async activeVersion(projectId: string): Promise<number | null> {
+    const active = await this.prisma.pricingGrid.findFirst({
+      where: { projectId, active: true },
+      select: { version: true },
+    });
+    return active?.version ?? null;
+  }
+
+  /**
+   * SPEC-18 §4 — la borne basse d'une date d'effet : aujourd'hui, ou la date de la version
+   * active si elle est postérieure. Lue dans la transaction quand il y en a une.
+   */
+  private async assertEffectiveDate(db: Db, projectId: string, effectiveDate: Date): Promise<void> {
+    const active = await db.pricingGrid.findFirst({
+      where: { projectId, active: true },
+      select: { effectiveDate: true },
+    });
+    assertEffectiveDateValid(effectiveDate, todayUtc(), active?.effectiveDate ?? null);
+  }
+
+  /**
+   * SPEC-18 §2 et §3 — ce qui retient une version. Le `PATCH` tolère les brouillons, qu'il
+   * recalcule ; le `DELETE` les refuse, parce qu'il les détruirait (Quote.pricingGrid est en
+   * Cascade). Compté **dans la transaction** : hors d'elle, un devis créé entre le contrôle et
+   * l'écriture passerait au travers.
+   */
+  private async assertNoBlockingQuote(db: Db, projectId: string, gridId: string, draftsBlock: boolean): Promise<void> {
+    const count = await db.quote.count({
+      where: {
+        projectId,
+        pricingGridId: gridId,
+        ...(draftsBlock ? {} : { status: { not: QuoteStatus.DRAFT } }),
+      },
+    });
+    if (count > 0) {
+      throw withMeta(apiError.conflict('PRICING_GRID_HAS_QUOTES', String(count)), { quotes: count });
+    }
+  }
 
   private async getOrThrow(id: string, projectId: string) {
     const grid = await this.prisma.pricingGrid.findFirst({ where: { id, projectId } });
@@ -263,7 +425,23 @@ export class PricingGridsService {
     return base ? JSON.stringify(base.content) === JSON.stringify(content) : null;
   }
 
-  private mapToListItem(row: GridRow, author: UserWithInitials | undefined, quotesCount: number): PricingGridListItemDto {
+  /**
+   * SPEC-18 §6 — la règle d'activation vit ici, pas dans le front. Elle reprend exactement
+   * `assertBaseUpToDate` : une version dérivée d'une grille qui n'est plus active porte des prix
+   * périmés. Le front grise le bouton et affiche la raison, il ne décide pas.
+   */
+  private activationOf(row: GridRow, activeVersion: number | null): PricingGridActivationDto {
+    if (row.active) return { allowed: false, reason: 'ALREADY_ACTIVE', activeVersion };
+    const outdated = isBaseOutdated(row.basedOnVersion, activeVersion);
+    return { allowed: !outdated, reason: outdated ? 'BASE_OUTDATED' : null, activeVersion };
+  }
+
+  private mapToListItem(
+    row: GridRow,
+    author: UserWithInitials | undefined,
+    quotesCount: number,
+    activeVersion: number | null,
+  ): PricingGridListItemDto {
     return {
       id: row.id,
       version: row.version,
@@ -273,16 +451,18 @@ export class PricingGridsService {
       createdAt: row.createdAt.toISOString(),
       quotesCount,
       basedOnVersion: row.basedOnVersion,
+      activation: this.activationOf(row, activeVersion),
     };
   }
 
   private async toDetail(projectId: string, row: GridRow, content: Prisma.JsonValue): Promise<PricingGridDetailDto> {
-    const [authors, quotesCount] = await Promise.all([
+    const [authors, quotesCount, activeVersion] = await Promise.all([
       loadUsersWithInitials(this.prisma, projectId, row.createdById ? [row.createdById] : []),
       this.prisma.quote.count({ where: { projectId, pricingGridId: row.id } }),
+      this.activeVersion(projectId),
     ]);
     return {
-      ...this.mapToListItem(row, authors.get(row.createdById ?? ''), quotesCount),
+      ...this.mapToListItem(row, authors.get(row.createdById ?? ''), quotesCount, activeVersion),
       content: content as unknown as PricingGridContent,
     };
   }

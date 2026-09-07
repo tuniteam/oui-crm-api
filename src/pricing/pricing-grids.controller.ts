@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PROJECT_ID_HEADER } from '@/auth/auth.constants';
 import { CurrentProjectId } from '@/auth/decorators/current-project.decorator';
 import { CurrentUser } from '@/auth/decorators/current-user.decorator';
@@ -10,7 +10,7 @@ import { PermissionsGuard } from '@/auth/guards/permissions.guard';
 import { ProjectGuard } from '@/auth/guards/project.guard';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { SWAGGER_BEARER_AUTH } from '@/common/constants/app.constants';
-import { ApiAuthResponses, ApiCuidParam, ApiGetResponse, ApiListResponse, ApiPatchResponse, ApiPostResponse } from '@/common/decorators';
+import { ApiAuthResponses, ApiCuidParam, ApiDeleteResponse, ApiGetResponse, ApiListResponse, ApiPatchResponse, ApiPostResponse } from '@/common/decorators';
 import { ApiMessages } from '@/common/messages';
 import { PaginationQueryDto } from '@/common/dto/pagination.dto';
 import { ParseCuidPipe } from '@/common/pipes';
@@ -21,6 +21,7 @@ import {
   PricingGridDetailDto,
   PricingGridIdResponseDto,
   PricingGridsListResponseDto,
+  UpdatePricingGridDto,
 } from './dto/pricing-grid.dto';
 
 const swagger = ApiMessages.swagger;
@@ -75,6 +76,35 @@ export class PricingGridsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<PricingGridIdResponseDto> {
     return this.pricingGridsService.create(projectId, dto, user);
+  }
+
+  @Patch(':id')
+  @Permissions({ code: 'pricing:update' })
+  @ApiOperation(swagger.pricingGrids.update)
+  @ApiCuidParam('id', swagger.params.pricingGridId)
+  @ApiBody({ type: UpdatePricingGridDto })
+  @ApiGetResponse(PricingGridDetailDto)
+  update(
+    @Param('id', ParseCuidPipe) id: string,
+    @Body() dto: UpdatePricingGridDto,
+    @CurrentProjectId() projectId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<PricingGridDetailDto> {
+    return this.pricingGridsService.update(id, projectId, dto, user);
+  }
+
+  @Delete(':id')
+  @Permissions({ code: 'pricing:update' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation(swagger.pricingGrids.remove)
+  @ApiCuidParam('id', swagger.params.pricingGridId)
+  @ApiDeleteResponse()
+  remove(
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentProjectId() projectId: string,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.pricingGridsService.remove(id, projectId, user);
   }
 
   @Post(':id/activate')

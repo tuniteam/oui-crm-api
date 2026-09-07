@@ -31,6 +31,8 @@ export const EXTRA_QUANTITY_SUFFIX = '(supplémentaire)';
 /** Actions du journal (AUDIT_OBJECTS.PRICING_GRID) — US-02-01. */
 export const PRICING_AUDIT = {
   GRID_CREATE: 'pricingGrid.create',
+  GRID_UPDATE: 'pricingGrid.update',
+  GRID_DELETE: 'pricingGrid.delete',
   GRID_ACTIVATE: 'pricingGrid.activate',
 } as const;
 

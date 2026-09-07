@@ -246,6 +246,10 @@ model Project {
   status      ProjectStatus @default(DRAFT)
   activatedAt DateTime?     @map("activated_at")
 
+  /// Numéro de version de grille tarifaire déjà attribué (SPEC-18 D6). Ne redescend jamais :
+  /// supprimer une version ne libère pas son numéro, une référence ne désigne qu'un objet.
+  pricingGridSeq Int @default(0) @map("pricing_grid_seq")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

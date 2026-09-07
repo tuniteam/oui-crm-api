@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient, QuoteLineNature } from '@prisma/client';
 import { apiError, withMeta } from '@/common/api-error';
+import { formatDateField } from '@/common/utils/date.utils';
 import {
   DISCOUNT_MAX,
   DISCOUNT_MIN,
@@ -120,7 +121,7 @@ export async function loadActiveGridContent(
   db: Pick<PrismaClient, 'pricingGrid'>,
   projectId: string,
 ): Promise<PricingGridContent | null> {
-  const grid = await db.pricingGrid.findFirst({ where: { projectId, active: true }, select: { content: true } });
+  const grid = await db.pricingGrid.findFirst({ where: { projectId, active: true }, orderBy: { version: 'desc' }, select: { content: true } });
   return (grid?.content as unknown as PricingGridContent) ?? null;
 }
 
@@ -161,17 +162,42 @@ function checkPriceTable(issues: string[], path: string, prices: unknown, bracke
  * Exempts : une grille écrite de zéro (`basedOnVersion === null`, elle ne dérive de rien) et un
  * projet sans grille active. `force` couvre le retour volontaire à une grille antérieure.
  */
+export function isBaseOutdated(basedOnVersion: number | null, activeVersion: number | null): boolean {
+  if (basedOnVersion === null || activeVersion === null) return false;
+  return basedOnVersion !== activeVersion;
+}
+
+/**
+ * Le même garde-fou, levé en erreur. La liste des versions a besoin du prédicat sans erreur,
+ * pour dire au front ce qui est activable (SPEC-18 §6) : une seule règle, deux usages.
+ */
 export function assertBaseUpToDate(
   basedOnVersion: number | null,
   activeVersion: number | null,
   force: boolean,
 ): void {
-  if (force || basedOnVersion === null || activeVersion === null) return;
-  if (basedOnVersion === activeVersion) return;
+  if (force || !isBaseOutdated(basedOnVersion, activeVersion)) return;
   throw withMeta(apiError.conflict('PRICING_GRID_BASE_OUTDATED', String(basedOnVersion), String(activeVersion)), {
     activeVersion,
     basedOnVersion,
   });
+}
+
+/**
+ * SPEC-18 §4 — une grille ne prend pas effet dans le passé, ni avant celle qu'elle remplace.
+ * Règle pure : l'appelant fournit le jour de référence et la date de la version active, ce qui
+ * la rend testable sans base ni horloge.
+ */
+export function assertEffectiveDateValid(
+  effectiveDate: Date,
+  today: Date,
+  activeEffectiveDate: Date | null,
+): void {
+  const floor =
+    activeEffectiveDate && activeEffectiveDate.getTime() > today.getTime() ? activeEffectiveDate : today;
+  if (effectiveDate.getTime() < floor.getTime()) {
+    throw apiError.badRequest('PRICING_GRID_EFFECTIVE_DATE_INVALID', formatDateField(floor));
+  }
 }
 
 export function validateGridContent(raw: unknown): string[] {

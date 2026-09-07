@@ -163,6 +163,11 @@ const errorDefinitions = {
   PRICING_GRID_NO_ACTIVE: 'This project has no active pricing grid',
   PRICING_GRID_CONTENT_REQUIRED: 'Provide either content or fromVersion to copy',
   PRICING_GRID_INVALID: (issues: string) => `Pricing grid is invalid: ${issues}`,
+  PRICING_GRID_ACTIVE: 'The active version cannot be deleted: the project would have no grid left',
+  PRICING_GRID_HAS_QUOTES: (count: string) =>
+    `Pricing grid carries ${count} quote(s) and cannot be changed`,
+  PRICING_GRID_EFFECTIVE_DATE_INVALID: (bound: string) =>
+    `Effective date must not be earlier than ${bound}`,
 
   // Opportunities (L2 phase D — US-02-09)
   OPPORTUNITY_NOT_FOUND: (id: string) => `Opportunity ${id} not found`,
@@ -425,6 +430,16 @@ export const ApiMessages = {
         summary: 'Prepare a new version',
         description:
           'Content given as is, or copied from another version with fromVersion; created INACTIVE so prices can be prepared without changing what the sales team is quoting. A price table whose length does not match the brackets is refused, with the faulty paths in messages.details',
+      },
+      update: {
+        summary: 'Correct a pricing grid version',
+        description:
+          'Rewrites the content and/or the effective date in place, without creating a version. The number, the lineage and the author never change. Quotes that left the draft state hold the grid back (409 PRICING_GRID_HAS_QUOTES); drafts do not — they are recomputed. Correcting the active version is allowed when no quote is attached, and changes prices immediately.',
+      },
+      remove: {
+        summary: 'Delete a pricing grid version',
+        description:
+          'Only a version that is neither active nor referenced by any quote, draft included — deleting would cascade to its quotes. The version number is never reused.',
       },
       activate: {
         summary: 'Activate a version',
