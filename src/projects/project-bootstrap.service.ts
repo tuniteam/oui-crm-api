@@ -9,6 +9,7 @@ import {
   Db,
   upsertProjectFeatures,
 } from './project-bootstrap';
+import { nextItemSeq } from '@/pricing/pricing.utils';
 import { INITIAL_PRICING_GRID_VERSION } from './project-config.constants';
 import { getProjectOrThrow } from './projects.utils';
 
@@ -101,6 +102,13 @@ export class ProjectBootstrapService {
       await db.pricingGrid.update({
         where: { projectId_version: { projectId: targetId, version: INITIAL_PRICING_GRID_VERSION } },
         data: { content: activeGrid.content as Prisma.InputJsonValue, active: true, createdById: userId },
+      });
+      // La grille copiée porte des identifiants déjà attribués chez la source : le compteur du
+      // projet cible doit repartir au-dessus, sinon sa première correction les refuserait
+      // comme inconnus (SPEC-19 D4).
+      await db.project.update({
+        where: { id: targetId },
+        data: { pricingItemSeq: nextItemSeq(activeGrid.content) },
       });
     }
   }

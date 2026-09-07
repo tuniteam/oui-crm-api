@@ -4,6 +4,8 @@
 // Structure: SPEC-04 §2.1 (PricingGridContent). Prices in € HT.
 // ============================================
 
+import { SETUP_FEE_NATURE } from './pricing.constants';
+
 export const PERISCOLIA_PRICING_GRID_V1 = {
   brackets: [
     { label: '0 – 500 hab.', min: 0, max: 500 },
@@ -30,18 +32,21 @@ export const PERISCOLIA_PRICING_GRID_V1 = {
   setupFees: {
     deployment: {
       label: 'Déploiement',
+      nature: SETUP_FEE_NATURE.SETUP,
       ESSENTIEL: [375, 375, 375, 500, 500, 500],
       CONFORT: [375, 375, 375, 500, 500, 500],
       PREMIUM: [375, 375, 375, 500, 500, 500],
     },
     configuration: {
       label: 'Paramétrage',
+      nature: SETUP_FEE_NATURE.SETUP,
       ESSENTIEL: [375, 375, 750, 750, 750, 750],
       CONFORT: [750, 750, 1000, 1000, 1250, 1250],
       PREMIUM: [750, 750, 1000, 1000, 1250, 1250],
     },
     training: {
       label: 'Formation',
+      nature: SETUP_FEE_NATURE.TRAINING,
       ESSENTIEL: [375, 375, 500, 750, 1250, 1250],
       CONFORT: [750, 750, 750, 1250, 1875, 1875],
       PREMIUM: [750, 750, 750, 1250, 1875, 1875],

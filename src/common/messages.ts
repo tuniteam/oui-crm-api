@@ -168,6 +168,10 @@ const errorDefinitions = {
     `Pricing grid carries ${count} quote(s) and cannot be changed`,
   PRICING_GRID_EFFECTIVE_DATE_INVALID: (bound: string) =>
     `Effective date must not be earlier than ${bound}`,
+  PRICING_GRID_UNKNOWN_ITEM_ID: (path: string, id: string) =>
+    `${path} ${id} is unknown: leave the id out and the server assigns one`,
+  PRICING_GRID_ITEM_IN_USE: (items: string) =>
+    `Draft quotes still use ${items}: change or delete them first`,
 
   // Opportunities (L2 phase D — US-02-09)
   OPPORTUNITY_NOT_FOUND: (id: string) => `Opportunity ${id} not found`,

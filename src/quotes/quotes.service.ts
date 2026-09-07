@@ -52,7 +52,7 @@ import {
   loadActiveGridContent,
   splitOneShot,
   sumMoney,
-  trainingFeeLabel,
+  trainingFeeLabels,
 } from '@/pricing/pricing.utils';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ScopeService } from '@/scopes/scope.service';
@@ -243,7 +243,7 @@ export class QuotesService {
       config: (quote.config as unknown as QuoteDetailDto['config']) ?? null,
       result: result
         ? this.toResultDto(result, settings)
-        : this.frozenResultDto(quote, lines, settings, trainingFeeLabel(grid)),
+        : this.frozenResultDto(quote, lines, settings, trainingFeeLabels(grid)),
       lines: lines.map((line) => this.toLineDto(line)),
       documents: documents.map((f) => quoteDocumentDto(f)),
       history,
@@ -1362,7 +1362,7 @@ export class QuotesService {
     quote: QuoteAmounts & { status: QuoteStatus },
     lines: ComputedQuoteLine[],
     settings: Settings,
-    trainingLabel: string | undefined,
+    trainingLabels: ReadonlySet<string>,
   ): QuoteResultDto {
     const subscription = lines.filter(
       (l) => l.nature === QuoteLineNature.ABONNEMENT || l.nature === QuoteLineNature.OPTION,
@@ -1372,7 +1372,7 @@ export class QuotesService {
     );
     // Les frais se reventilent depuis les lignes figées, avec la règle du moteur : servir des
     // zéros serait plus faux qu'un champ absent — l'écran les afficherait comme des montants.
-    const oneShot = splitOneShot(setup, trainingLabel);
+    const oneShot = splitOneShot(setup, trainingLabels);
     return {
       bracketIndex: NO_BRACKET_INDEX,
       bracketLabel: subscription[0]?.sublabel ?? '',

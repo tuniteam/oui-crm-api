@@ -11,7 +11,6 @@ import {
   MONTHS_PER_YEAR,
   MULTI_YEAR_YEARS,
   SIMULATION_MONTHS,
-  TRAINING_FEE_KEY,
 } from './pricing.constants';
 import {
   ComputedQuoteLine,
@@ -30,7 +29,9 @@ import {
   resolveBracketIndex,
   safeQty,
   setupFeePrices,
+  splitOneShot,
   sumMoney,
+  trainingFeeLabels,
   vatOf,
 } from './pricing.utils';
 
@@ -64,7 +65,9 @@ export class PricingService {
     const setupLines = this.buildSetupLines(grid, config, bracketIndex);
 
     const mrrList = sumMoney(subscriptionLines.map((line) => line.total));
-    const oneShot = this.splitOneShot(grid, config, setupLines);
+    // Ventilation formation / mise en place / matériel : la règle vit dans `splitOneShot`,
+    // que le devis figé retraverse depuis ses lignes stockées (SPEC-01 §4.2, SPEC-19 D5).
+    const oneShot = splitOneShot(setupLines, trainingFeeLabels(grid));
 
     const discount = this.normalizeGlobalDiscount(config.globalDiscount);
     const monthly = (monthIndex: number): Prisma.Decimal =>
@@ -188,29 +191,6 @@ export class PricingService {
       });
     }
     return lines;
-  }
-
-  /** Ventilation des frais one-shot : formation, mise en place, matériel (SPEC-01 §4.2). */
-  private splitOneShot(
-    grid: PricingGridContent,
-    config: QuoteConfig,
-    setupLines: ComputedQuoteLine[],
-  ) {
-    const trainingLabel = grid.setupFees?.[TRAINING_FEE_KEY]?.label;
-    const training = sumMoney(
-      setupLines
-        .filter((line) => line.nature === QuoteLineNature.SETUP && line.label === trainingLabel)
-        .map((l) => l.total),
-    );
-    const setup = sumMoney(
-      setupLines
-        .filter((line) => line.nature === QuoteLineNature.SETUP && line.label !== trainingLabel)
-        .map((l) => l.total),
-    );
-    const hardware = sumMoney(
-      setupLines.filter((line) => line.nature === QuoteLineNature.EXTRA).map((l) => l.total),
-    );
-    return { setup, training, hardware, total: money(setup.plus(training).plus(hardware)) };
   }
 
   // -------------------------------------------------------------------------

@@ -6,13 +6,21 @@ import {
   DISCOUNT_MIN,
   GRID_LABEL_MAX_LENGTH,
   GRID_MAX_BRACKETS,
+  GRID_MAX_EXTRAS,
+  GRID_MAX_OPTIONS,
   GRID_MAX_PLANS,
+  GRID_MAX_SETUP_FEES,
   MONEY_ROUNDING,
   MONEY_SCALE,
   PERCENT_BASE,
-  TRAINING_FEE_KEY,
+  SETUP_FEE_NATURE,
+  SETUP_FEE_NATURES,
+  SETUP_FEE_RESERVED_KEYS,
 } from './pricing.constants';
-import { ComputedQuoteLine, PopulationBracket, PricingGridContent, PricingSetupFee } from './pricing.types';
+import { ComputedQuoteLine, PopulationBracket, PricingGridContent, PricingSetupFee, QuoteConfig, SetupFeeNature } from './pricing.types';
+
+/** Les deux familles d'éléments identifiés par un entier, référencées par `Quote.config`. */
+const ITEM_FAMILIES = ['options', 'extras'] as const;
 
 /** Arrondi commercial au centime, HALF_UP (SPEC-04 déc. 3). */
 export function money(value: Prisma.Decimal.Value): Prisma.Decimal {
@@ -91,25 +99,30 @@ export function priceAt(prices: number[], bracketIndex: number): Prisma.Decimal 
  * Ventilation des frais one-shot en formation / mise en place / matériel (SPEC-01 §4.2).
  *
  * La règle vit ici et non dans le moteur, parce que **deux** chemins en ont besoin : le calcul
- * d'un brouillon, et la relecture d'un devis figé dont les lignes sont en base. Le poste de
- * formation se reconnaît à son libellé, celui que la grille lui donne — un projet qui renomme
- * « Formation » garde une ventilation juste.
+ * d'un brouillon, et la relecture d'un devis figé dont les lignes sont en base. Cette seconde
+ * lecture n'a que des libellés — les lignes stockées ne portent pas la nature du poste —, d'où
+ * l'ensemble de libellés en paramètre plutôt que la grille elle-même.
  */
 export function splitOneShot(
   lines: ComputedQuoteLine[],
-  trainingLabel: string | undefined,
+  trainingLabels: ReadonlySet<string>,
 ): { setup: Prisma.Decimal; training: Prisma.Decimal; hardware: Prisma.Decimal; total: Prisma.Decimal } {
   const isSetup = (line: ComputedQuoteLine) => line.nature === QuoteLineNature.SETUP;
-  const training = sumMoney(lines.filter((l) => isSetup(l) && l.label === trainingLabel).map((l) => l.total));
-  const setup = sumMoney(lines.filter((l) => isSetup(l) && l.label !== trainingLabel).map((l) => l.total));
+  const training = sumMoney(lines.filter((l) => isSetup(l) && trainingLabels.has(l.label)).map((l) => l.total));
+  const setup = sumMoney(lines.filter((l) => isSetup(l) && !trainingLabels.has(l.label)).map((l) => l.total));
   const hardware = sumMoney(lines.filter((l) => l.nature === QuoteLineNature.EXTRA).map((l) => l.total));
   return { setup, training, hardware, total: money(setup.plus(training).plus(hardware)) };
 }
 
-/** Libellé du poste de formation dans une grille, clé de la ventilation ci-dessus. */
-export function trainingFeeLabel(grid: PricingGridContent | null): string | undefined {
-  const label = grid?.setupFees?.[TRAINING_FEE_KEY]?.label;
-  return typeof label === 'string' ? label : undefined;
+/**
+ * Les libellés des postes de **formation** d'une grille (SPEC-19 D5). Une grille peut en porter
+ * plusieurs, ou aucun ; c'est leur `nature` qui les désigne, plus le nom de leur clé.
+ */
+export function trainingFeeLabels(grid: PricingGridContent | null): ReadonlySet<string> {
+  const labels = Object.values(grid?.setupFees ?? {})
+    .filter((fee) => fee?.nature === SETUP_FEE_NATURE.TRAINING && typeof fee.label === 'string')
+    .map((fee) => fee.label);
+  return new Set(labels);
 }
 
 /**
@@ -200,6 +213,112 @@ export function assertEffectiveDateValid(
   }
 }
 
+/**
+ * SPEC-19 D4 — **le serveur pose les identifiants d'options et d'extras**, le front n'en invente
+ * plus. `allocated` est le premier numéro libre du projet : un élément sans `id` prend la suite,
+ * un `id` déjà distribué est accepté — c'est ainsi qu'on rend un élément qu'on venait de retirer.
+ *
+ * L'unicité ne suffisait pas : un `id` libéré par une suppression pouvait être réattribué, et
+ * les brouillons qui le portaient basculaient sur la nouvelle ligne — autre libellé, autre prix,
+ * aucune trace. Le compteur ne redescend pas, comme le numéro de version (SPEC-18 D6).
+ */
+export function assignItemIds(content: Record<string, unknown>, allocated: number): Record<string, unknown> {
+  const assigned: Record<string, unknown> = { ...content };
+  let next = allocated;
+  for (const family of ITEM_FAMILIES) {
+    const items = content[family];
+    // Un contenu mal formé n'est pas corrigé ici : `validateGridContent` le dira mieux.
+    if (!Array.isArray(items)) continue;
+    assigned[family] = items.map((item) => {
+      const raw = (item ?? {}) as { id?: unknown };
+      if (raw.id === undefined || raw.id === null) return { ...raw, id: next++ };
+      // Un numéro jamais distribué ne désigne rien : le front l'a inventé.
+      if (!Number.isInteger(raw.id) || (raw.id as number) < 0 || (raw.id as number) >= allocated) {
+        throw apiError.badRequest('PRICING_GRID_UNKNOWN_ITEM_ID', `${family}.id`, String(raw.id));
+      }
+      return raw;
+    });
+  }
+  return assigned;
+}
+
+/**
+ * Le compteur qu'impose un contenu injecté hors API — seed, copie de configuration, reprise.
+ * Sans lui, un projet recevrait une grille dont les identifiants ne lui ont jamais été
+ * distribués, et la première correction les refuserait (SPEC-19 D4).
+ */
+export function nextItemSeq(content: unknown): number {
+  let max = -1;
+  for (const family of ITEM_FAMILIES) {
+    const items = (content as Record<string, unknown> | null)?.[family];
+    if (!Array.isArray(items)) continue;
+    for (const item of items) if (Number.isInteger(item?.id)) max = Math.max(max, item.id);
+  }
+  return max + 1;
+}
+
+/**
+ * Combien d'identifiants ce contenu réclame. Le service réserve d'abord cette quantité sur le
+ * compteur du projet, puis appelle `assignItemIds` avec le premier numéro libre : deux
+ * corrections simultanées ne peuvent pas distribuer le même (pattern `DocumentNumberSequence`).
+ */
+export function countUnidentifiedItems(content: Record<string, unknown>): number {
+  let missing = 0;
+  for (const family of ITEM_FAMILIES) {
+    const items = content[family];
+    if (!Array.isArray(items)) continue;
+    for (const item of items) if (item?.id === undefined || item?.id === null) missing += 1;
+  }
+  return missing;
+}
+
+/**
+ * SPEC-19 D2 — ce qu'un contenu fait disparaître : formules, options et extras qui ne s'y
+ * trouvent plus. Un devis brouillon qui référence l'un d'eux retient la grille.
+ */
+export function removedGridItems(
+  before: PricingGridContent,
+  after: Partial<PricingGridContent>,
+): { plans: string[]; options: number[]; extras: number[] } {
+  const gone = <T>(previous: readonly T[] | undefined, current: readonly T[] | undefined): T[] => {
+    const kept = new Set(current ?? []);
+    return (previous ?? []).filter((value) => !kept.has(value));
+  };
+  const ids = (items: { id: number }[] | undefined) => (items ?? []).map((item) => item.id);
+  return {
+    plans: gone(before.plans, after.plans),
+    options: gone(ids(before.options), ids(after.options)),
+    extras: gone(ids(before.extras), ids(after.extras)),
+  };
+}
+
+/**
+ * Croise ce qu'un contenu fait disparaître avec ce que des brouillons référencent réellement.
+ * Règle pure : le service lui passe les devis, elle ne connaît ni Prisma ni transaction.
+ */
+export function draftsUsingItems(
+  drafts: readonly { number: string; config: unknown }[],
+  removed: { plans: string[]; options: number[]; extras: number[] },
+): { items: string[]; quotes: string[] } {
+  const items = new Set<string>();
+  const quotes = new Set<string>();
+  for (const draft of drafts) {
+    const config = draft.config as Partial<QuoteConfig> | null;
+    if (!config) continue;
+    const hits: string[] = [];
+    if (config.plan && removed.plans.includes(config.plan)) hits.push(`plan ${config.plan}`);
+    for (const family of ['options', 'extras'] as const) {
+      for (const wanted of config[family] ?? []) {
+        if (removed[family].includes(wanted.id)) hits.push(`${family === 'options' ? 'option' : 'extra'} ${wanted.id}`);
+      }
+    }
+    if (!hits.length) continue;
+    hits.forEach((hit) => items.add(hit));
+    quotes.add(draft.number);
+  }
+  return { items: [...items], quotes: [...quotes] };
+}
+
 export function validateGridContent(raw: unknown): string[] {
   const issues: string[] = [];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return ['content: must be an object'];
@@ -220,12 +339,20 @@ export function validateGridContent(raw: unknown): string[] {
         issues.push(`brackets[${index}]: max is below min`);
       }
       const previous = brackets[index - 1] as PopulationBracket | undefined;
-      // Une strate qui recouvre la précédente rendrait la résolution dépendante de l'ordre.
-      if (previous && previous.max !== null && isPositiveNumber(min) && min <= previous.max) {
-        issues.push(`brackets[${index}]: overlaps the previous bracket`);
+      // Une strate qui recouvre la précédente rendrait la résolution dépendante de l'ordre ;
+      // une strate qui laisse un trou rendrait certaines communes impossibles à chiffrer, et le
+      // devis échouerait en accusant la fiche (SPEC-19 D1).
+      if (previous && previous.max !== null && isPositiveNumber(min)) {
+        if (min <= previous.max) issues.push(`brackets[${index}]: overlaps the previous bracket`);
+        else if (min > previous.max + 1) issues.push(`brackets[${index}]: leaves a gap after the previous bracket`);
       }
       if (previous && previous.max === null) issues.push(`brackets[${index - 1}]: open-ended bracket must be the last`);
     });
+    // Les deux bords : sans eux, une commune de 40 ou de 200 000 habitants sort de la grille.
+    const first = brackets[0] as PopulationBracket;
+    if (first?.min !== 0) issues.push('brackets[0].min: the first bracket must start at 0');
+    const last = brackets[brackets.length - 1] as PopulationBracket;
+    if (last?.max !== null) issues.push('brackets: the last bracket must be open-ended');
   }
 
   const bracketCount = Array.isArray(brackets) ? brackets.length : 0;
@@ -237,49 +364,81 @@ export function validateGridContent(raw: unknown): string[] {
   } else {
     if (!plans.every(isFilledString)) issues.push('plans: names are required');
     if (new Set(plans).size !== plans.length) issues.push('plans: duplicate name');
+    // `label` et `nature` décrivent le poste de frais lui-même : une formule ainsi nommée s'y
+    // confondrait, et son tableau de prix serait lu comme un libellé.
+    for (const reserved of SETUP_FEE_RESERVED_KEYS) {
+      if (plans.includes(reserved)) issues.push(`plans: "${reserved}" is a reserved name`);
+    }
     for (const plan of plans.filter(isFilledString)) {
       checkPriceTable(issues, `subscription.${plan}`, content.subscription?.[plan], bracketCount);
     }
   }
 
+  // Une clé de prix qui ne correspond à aucune formule vivante est une donnée morte : la laisser
+  // passer, c'est ressusciter d'anciens prix le jour où la formule revient (SPEC-19 D3).
+  const knownPlans = new Set(Array.isArray(plans) ? plans.filter(isFilledString) : []);
+  for (const key of Object.keys(content.subscription ?? {})) {
+    if (!knownPlans.has(key)) issues.push(`subscription.${key}: no such plan`);
+  }
+
   const options = content.options ?? [];
   if (!Array.isArray(options)) {
     issues.push('options: must be an array');
+  } else if (options.length > GRID_MAX_OPTIONS) {
+    issues.push(`options: at most ${GRID_MAX_OPTIONS} options`);
   } else {
     options.forEach((option, index) => {
-      if (!Number.isInteger(option?.id)) issues.push(`options[${index}].id: integer required`);
+      if (option?.id !== undefined && !Number.isInteger(option.id)) issues.push(`options[${index}].id: integer required`);
       if (!isFilledString(option?.name)) issues.push(`options[${index}].name: required`);
       if (option?.included !== undefined && !isPositiveNumber(option.included)) {
         issues.push(`options[${index}].included: must be a number ≥ 0`);
       }
       checkPriceTable(issues, `options[${index}].unitPrice`, option?.unitPrice, bracketCount);
     });
-    const ids = options.map((o) => o?.id);
+    const ids = options.map((o) => o?.id).filter((id) => id !== undefined);
     if (new Set(ids).size !== ids.length) issues.push('options: duplicate id');
   }
 
   const setupFees = content.setupFees ?? {};
   if (typeof setupFees !== 'object' || Array.isArray(setupFees)) {
     issues.push('setupFees: must be an object');
+  } else if (Object.keys(setupFees).length > GRID_MAX_SETUP_FEES) {
+    issues.push(`setupFees: at most ${GRID_MAX_SETUP_FEES} fees`);
   } else {
     for (const [key, fee] of Object.entries(setupFees)) {
-      if (!isFilledString((fee as PricingSetupFee)?.label)) issues.push(`setupFees.${key}.label: required`);
+      const post = fee as PricingSetupFee | undefined;
+      if (!isFilledString(post?.label)) issues.push(`setupFees.${key}.label: required`);
+      // La nature commande la ventilation one-shot du devis : sans elle, le montant tomberait
+      // en « mise en place » sans que personne ne l'ait décidé (SPEC-19 D5).
+      if (!SETUP_FEE_NATURES.includes(post?.nature as SetupFeeNature)) {
+        issues.push(`setupFees.${key}.nature: ${SETUP_FEE_NATURES.join(' or ')} required`);
+      }
       for (const plan of (Array.isArray(plans) ? plans : []).filter(isFilledString)) {
-        checkPriceTable(issues, `setupFees.${key}.${plan}`, (fee as PricingSetupFee)?.[plan], bracketCount);
+        checkPriceTable(issues, `setupFees.${key}.${plan}`, post?.[plan], bracketCount);
+      }
+      for (const priceKey of Object.keys(post ?? {})) {
+        const reserved = (SETUP_FEE_RESERVED_KEYS as readonly string[]).includes(priceKey);
+        if (!reserved && !knownPlans.has(priceKey)) issues.push(`setupFees.${key}.${priceKey}: no such plan`);
       }
     }
+    // La ventilation d'un devis figé se rejoue sur les libellés des lignes stockées : deux postes
+    // de même libellé y seraient indiscernables.
+    const labels = Object.values(setupFees).map((fee) => (fee as PricingSetupFee)?.label);
+    if (new Set(labels).size !== labels.length) issues.push('setupFees: duplicate label');
   }
 
   const extras = content.extras ?? [];
   if (!Array.isArray(extras)) {
     issues.push('extras: must be an array');
+  } else if (extras.length > GRID_MAX_EXTRAS) {
+    issues.push(`extras: at most ${GRID_MAX_EXTRAS} extras`);
   } else {
     extras.forEach((extra, index) => {
-      if (!Number.isInteger(extra?.id)) issues.push(`extras[${index}].id: integer required`);
+      if (extra?.id !== undefined && !Number.isInteger(extra.id)) issues.push(`extras[${index}].id: integer required`);
       if (!isFilledString(extra?.name)) issues.push(`extras[${index}].name: required`);
       if (!isPositiveNumber(extra?.unitPrice)) issues.push(`extras[${index}].unitPrice: must be a number ≥ 0`);
     });
-    const ids = extras.map((e) => e?.id);
+    const ids = extras.map((e) => e?.id).filter((id) => id !== undefined);
     if (new Set(ids).size !== ids.length) issues.push('extras: duplicate id');
   }
 

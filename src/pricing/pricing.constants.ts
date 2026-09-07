@@ -22,9 +22,6 @@ export const DISCOUNT_MAX = 100;
 export const DEFAULT_PERCENT_DISCOUNT_MONTHS = 12;
 export const DEFAULT_FREE_MONTHS = 2;
 
-/** Poste de frais ventilé en « formation » ; les autres vont en « mise en place ». */
-export const TRAINING_FEE_KEY = 'training';
-
 /** Suffixe des lignes d'option facturées au-delà du quota compris dans l'abonnement. */
 export const EXTRA_QUANTITY_SUFFIX = '(supplémentaire)';
 
@@ -36,7 +33,24 @@ export const PRICING_AUDIT = {
   GRID_ACTIVATE: 'pricingGrid.activate',
 } as const;
 
-/** Garde-fous de forme d'une grille enregistrée (US-02-01). */
+/** Garde-fous de forme d'une grille enregistrée (US-02-01, SPEC-19 R7). */
 export const GRID_MAX_BRACKETS = 20;
 export const GRID_MAX_PLANS = 10;
+export const GRID_MAX_OPTIONS = 30;
+export const GRID_MAX_SETUP_FEES = 20;
+export const GRID_MAX_EXTRAS = 30;
 export const GRID_LABEL_MAX_LENGTH = 100;
+
+/**
+ * SPEC-19 D5 — la ventilation des frais one-shot suit la **nature déclarée** de chaque poste,
+ * plus une clé écrite en dur. Un projet nomme ses postes comme il veut, en a plusieurs de
+ * formation ou aucun.
+ */
+export const SETUP_FEE_NATURE = { TRAINING: 'TRAINING', SETUP: 'SETUP' } as const;
+export const SETUP_FEE_NATURES = Object.values(SETUP_FEE_NATURE);
+
+/**
+ * Les deux attributs d'un poste de frais. Une formule qui porterait l'un de ces noms se
+ * confondrait avec eux dans le même objet : le cas est refusé à l'enregistrement.
+ */
+export const SETUP_FEE_RESERVED_KEYS = ['label', 'nature'] as const;
