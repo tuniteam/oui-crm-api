@@ -17,7 +17,16 @@ import { recomputeDraftQuotes } from '@/quotes/quotes.utils';
 import { PRICING_AUDIT } from './pricing.constants';
 import { PricingService } from './pricing.service';
 import { PricingGridContent } from './pricing.types';
-import { assertBaseUpToDate, assertEffectiveDateValid, isBaseOutdated, validateGridContent } from './pricing.utils';
+import {
+  assertBaseUpToDate,
+  assertEffectiveDateValid,
+  assignItemIds,
+  countUnidentifiedItems,
+  draftsUsingItems,
+  isBaseOutdated,
+  removedGridItems,
+  validateGridContent,
+} from './pricing.utils';
 import {
   ActivatePricingGridDto,
   CreatePricingGridDto,
@@ -111,14 +120,15 @@ export class PricingGridsService {
    */
   async create(projectId: string, dto: CreatePricingGridDto, user: AuthenticatedUser): Promise<PricingGridIdResponseDto> {
     const effectiveDate = parseDayOrThrow(dto.effectiveDate);
-    const content = await this.resolveContent(projectId, dto);
-    const identicalToBase = await this.isIdenticalToBase(projectId, dto, content);
-
-    const issues = validateGridContent(content);
-    if (issues.length) throw withDetails(apiError.badRequest('PRICING_GRID_INVALID', issues.join('; ')), issues);
+    const submitted = await this.resolveContent(projectId, dto);
+    this.assertContentValid(submitted);
 
     const grid = await this.prisma.$transaction(async (tx) => {
       await this.assertEffectiveDate(tx, projectId, effectiveDate);
+      // Les identifiants se réservent dans la transaction : deux préparations simultanées ne
+      // peuvent pas distribuer le même numéro (SPEC-19 D4).
+      const content = await this.withServerItemIds(tx, projectId, submitted);
+      const identicalToBase = await this.isIdenticalToBase(projectId, dto, content);
 
       // Le numéro vient d'un compteur qui ne redescend jamais (SPEC-18 D6) : supprimer une
       // version ne libère pas son numéro, sans quoi le journal désignerait deux objets par
@@ -188,11 +198,7 @@ export class PricingGridsService {
       throw apiError.badRequest('EMPTY_UPDATE_PAYLOAD');
     }
     const existing = await this.getOrThrow(id, projectId);
-
-    if (dto.content) {
-      const issues = validateGridContent(dto.content);
-      if (issues.length) throw withDetails(apiError.badRequest('PRICING_GRID_INVALID', issues.join('; ')), issues);
-    }
+    if (dto.content) this.assertContentValid(dto.content);
 
     const settings = await this.prisma.settings.findUnique({
       where: { projectId },
@@ -202,20 +208,22 @@ export class PricingGridsService {
     await this.prisma.$transaction(async (tx) => {
       // Dans la transaction : un devis émis entre le contrôle et l'écriture passerait au travers.
       await this.assertNoBlockingQuote(tx, projectId, id, false);
+      const content = dto.content ? await this.withServerItemIds(tx, projectId, dto.content) : undefined;
+      if (content) await this.assertNoDraftUsesRemovedItem(tx, projectId, id, existing.content, content);
       const effectiveDate = dto.effectiveDate ? parseDayOrThrow(dto.effectiveDate) : undefined;
       if (effectiveDate) await this.assertEffectiveDate(tx, projectId, effectiveDate);
 
       const updated = await tx.pricingGrid.update({
         where: { id },
         data: {
-          ...(dto.content && { content: dto.content as Prisma.InputJsonValue }),
+          ...(content && { content: content as Prisma.InputJsonValue }),
           ...(effectiveDate && { effectiveDate }),
         },
         select: { content: true },
       });
 
       // Les brouillons de cette grille portaient des montants calculés sur l'ancien contenu.
-      const recomputed = dto.content
+      const recomputed = content
         ? await recomputeDraftQuotes(
             tx,
             this.pricing,
@@ -240,7 +248,7 @@ export class PricingGridsService {
           draftsRecomputed: recomputed,
           // Le numéro ne bouge pas : sur une grille active, le journal est la seule trace de
           // ce que valaient les prix avant (SPEC-18 §2).
-          ...(existing.active && dto.content
+          ...(existing.active && content
             ? { previousContent: existing.content as Prisma.InputJsonValue }
             : {}),
         },
@@ -286,8 +294,7 @@ export class PricingGridsService {
   ): Promise<PricingGridDetailDto> {
     const grid = await this.getOrThrow(id, projectId);
 
-    const issues = validateGridContent(grid.content);
-    if (issues.length) throw withDetails(apiError.badRequest('PRICING_GRID_INVALID', issues.join('; ')), issues);
+    this.assertContentValid(grid.content);
 
     if (grid.active) return this.toDetail(projectId, grid, grid.content);
 
@@ -388,6 +395,62 @@ export class PricingGridsService {
     }
   }
 
+  /** Le contrôle de forme, écrit une fois pour la création, la correction et l'activation. */
+  private assertContentValid(content: unknown): void {
+    const issues = validateGridContent(content);
+    if (issues.length) throw withDetails(apiError.badRequest('PRICING_GRID_INVALID', issues.join('; ')), issues);
+  }
+
+  /**
+   * SPEC-19 D4 — le serveur pose les identifiants d'options et d'extras. Le compteur vit sur le
+   * projet et non dans les grilles : corriger une version **en place** efface l'identifiant
+   * qu'elle portait, et un compteur déduit des contenus redescendrait. Même forme que le numéro
+   * de version (SPEC-18 D6).
+   */
+  private async withServerItemIds(db: Db, projectId: string, content: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const missing = countUnidentifiedItems(content);
+    // Un seul écrit, jamais une boucle : on réserve la quantité voulue et on déroule en mémoire.
+    const project = missing
+      ? await db.project.update({
+          where: { id: projectId },
+          data: { pricingItemSeq: { increment: missing } },
+          select: { pricingItemSeq: true },
+        })
+      : await db.project.findFirstOrThrow({ where: { id: projectId }, select: { pricingItemSeq: true } });
+    return assignItemIds(content, project.pricingItemSeq - missing);
+  }
+
+  /**
+   * SPEC-19 D2 — un élément que des brouillons référencent ne disparaît pas. Corriger une grille
+   * répare ses brouillons ; leur retirer la formule qu'ils portent les rendrait **illisibles**
+   * (`PRICING_PLAN_UNKNOWN` à chaque lecture), et leur retirer une option ferait tomber une ligne
+   * sans un mot. Compté dans la transaction, comme le décompte de devis.
+   */
+  private async assertNoDraftUsesRemovedItem(
+    db: Db,
+    projectId: string,
+    gridId: string,
+    before: Prisma.JsonValue,
+    after: Record<string, unknown>,
+  ): Promise<void> {
+    const removed = removedGridItems(
+      before as unknown as PricingGridContent,
+      after as unknown as Partial<PricingGridContent>,
+    );
+    if (!removed.plans.length && !removed.options.length && !removed.extras.length) return;
+
+    const drafts = await db.quote.findMany({
+      where: { projectId, pricingGridId: gridId, status: QuoteStatus.DRAFT, config: { not: Prisma.DbNull } },
+      select: { number: true, config: true },
+    });
+    const used = draftsUsingItems(drafts, removed);
+    if (!used.items.length) return;
+    throw withMeta(apiError.conflict('PRICING_GRID_ITEM_IN_USE', used.items.join(', ')), {
+      items: used.items,
+      quotes: used.quotes,
+    });
+  }
+
   private async getOrThrow(id: string, projectId: string) {
     const grid = await this.prisma.pricingGrid.findFirst({ where: { id, projectId } });
     if (!grid) throw apiError.notFound('PRICING_GRID_NOT_FOUND', id);
@@ -395,7 +458,7 @@ export class PricingGridsService {
   }
 
   /** `content` fourni, sinon copie de `fromVersion` ; l'un des deux est obligatoire. */
-  private async resolveContent(projectId: string, dto: CreatePricingGridDto): Promise<unknown> {
+  private async resolveContent(projectId: string, dto: CreatePricingGridDto): Promise<Record<string, unknown>> {
     if (dto.content) return dto.content;
     if (dto.fromVersion === undefined) throw apiError.badRequest('PRICING_GRID_CONTENT_REQUIRED');
     const source = await this.prisma.pricingGrid.findFirst({
@@ -403,7 +466,7 @@ export class PricingGridsService {
       select: { content: true },
     });
     if (!source) throw apiError.notFound('PRICING_GRID_VERSION_NOT_FOUND', String(dto.fromVersion));
-    return source.content;
+    return source.content as Record<string, unknown>;
   }
 
   /**

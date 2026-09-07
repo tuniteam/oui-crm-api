@@ -1,7 +1,8 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, QuoteLineNature } from '@prisma/client';
 import { PERISCOLIA_PRICING_GRID_V1 } from './periscolia-grid.constants';
+import { GRID_MAX_EXTRAS, GRID_MAX_OPTIONS, SETUP_FEE_NATURE } from './pricing.constants';
 import { PopulationBracket } from './pricing.types';
-import { applyDiscount, assertBaseUpToDate, assertEffectiveDateValid, clampDiscount, money, priceAt, resolveBracketIndex, resolveBracketLabel, safeQty, setupFeePrices, sumMoney, validateGridContent } from './pricing.utils';
+import { applyDiscount, assertBaseUpToDate, assertEffectiveDateValid, clampDiscount, money, priceAt, resolveBracketIndex, resolveBracketLabel, safeQty, assignItemIds, countUnidentifiedItems, draftsUsingItems, removedGridItems, setupFeePrices, splitOneShot, sumMoney, trainingFeeLabels, validateGridContent } from './pricing.utils';
 
 /** Règles pures du moteur — SPEC-04 §3 règle 1 et §4.7. */
 
@@ -76,8 +77,33 @@ describe('pricing.utils — lecture de la grille', () => {
     expect(priceAt([], 2).toFixed(2)).toBe('0.00');
   });
 
+  it('names the training posts by their nature, whatever their key (SPEC-19 D5)', () => {
+    const grid = JSON.parse(JSON.stringify(PERISCOLIA_PRICING_GRID_V1));
+    grid.setupFees.formation = grid.setupFees.training;
+    delete grid.setupFees.training;
+    expect([...trainingFeeLabels(grid)]).toEqual(['Formation']);
+
+    grid.setupFees.formation.nature = SETUP_FEE_NATURE.SETUP;
+    expect([...trainingFeeLabels(grid)]).toEqual([]);
+  });
+
+  it('ventilates the one-shot fees on those labels', () => {
+    const line = (label: string, nature: QuoteLineNature, total: string) =>
+      ({ nature, label, sublabel: '', qty: money(1), unitPrice: money(total), discount: 0, total: money(total) });
+    const lines = [
+      line('Formation', QuoteLineNature.SETUP, '750'),
+      line('Déploiement', QuoteLineNature.SETUP, '375'),
+      line('Tablette', QuoteLineNature.EXTRA, '500'),
+    ];
+    const split = splitOneShot(lines, new Set(['Formation']));
+    expect(split.training.toFixed(2)).toBe('750.00');
+    expect(split.setup.toFixed(2)).toBe('375.00');
+    expect(split.hardware.toFixed(2)).toBe('500.00');
+    expect(split.total.toFixed(2)).toBe('1625.00');
+  });
+
   it('reads the price table of a fee post by plan, and tolerates an unknown plan', () => {
-    const fee = { label: 'Formation', CONFORT: [750, 750], PREMIUM: [900, 900] };
+    const fee = { label: 'Formation', nature: SETUP_FEE_NATURE.TRAINING, CONFORT: [750, 750], PREMIUM: [900, 900] };
     expect(setupFeePrices(fee, 'CONFORT')).toEqual([750, 750]);
     expect(setupFeePrices(fee, 'GOLD')).toEqual([]);
     expect(setupFeePrices(fee, 'label')).toEqual([]);
@@ -173,6 +199,69 @@ describe('validateGridContent (US-02-01)', () => {
     expect(issues).toContain('options[0].name: required');
   });
 
+  // ------------------------------------------------------------------ SPEC-19
+
+  it('refuses a gap between two brackets — some populations would have no price at all', () => {
+    const grid = valid();
+    grid.brackets[1].min = 600;
+    expect(validateGridContent(grid)).toContain('brackets[1]: leaves a gap after the previous bracket');
+  });
+
+  it('refuses a grid that does not cover both ends', () => {
+    const low = valid();
+    low.brackets[0].min = 1;
+    expect(validateGridContent(low)).toContain('brackets[0].min: the first bracket must start at 0');
+
+    const high = valid();
+    high.brackets[high.brackets.length - 1].max = 50000;
+    expect(validateGridContent(high)).toContain('brackets: the last bracket must be open-ended');
+  });
+
+  it('refuses a price table left behind by a deleted plan', () => {
+    const grid = valid();
+    grid.plans = grid.plans.filter((plan: string) => plan !== 'PREMIUM');
+    const issues = validateGridContent(grid);
+    expect(issues).toContain('subscription.PREMIUM: no such plan');
+    expect(issues).toContain('setupFees.training.PREMIUM: no such plan');
+  });
+
+  it('requires the nature of each fee post — it commands the one-shot split', () => {
+    const grid = valid();
+    delete grid.setupFees.deployment.nature;
+    expect(validateGridContent(grid)).toContain('setupFees.deployment.nature: TRAINING or SETUP required');
+
+    const wrong = valid();
+    wrong.setupFees.training.nature = 'FORMATION';
+    expect(validateGridContent(wrong)).toContain('setupFees.training.nature: TRAINING or SETUP required');
+  });
+
+  it('refuses two fee posts sharing a label — a frozen quote could not tell them apart', () => {
+    const grid = valid();
+    grid.setupFees.configuration.label = grid.setupFees.deployment.label;
+    expect(validateGridContent(grid)).toContain('setupFees: duplicate label');
+  });
+
+  it('refuses a plan named like an attribute of a fee post', () => {
+    const grid = valid();
+    grid.plans = ['nature'];
+    grid.subscription = { nature: [0, 0, 0, 0, 0, 0] };
+    expect(validateGridContent(grid)).toContain('plans: "nature" is a reserved name');
+  });
+
+  it('caps the number of options, fee posts and extras', () => {
+    const grid = valid();
+    grid.options = Array.from({ length: GRID_MAX_OPTIONS + 1 }, (_, id) => ({
+      id,
+      name: `Option ${id}`,
+      unitPrice: [0, 0, 0, 0, 0, 0],
+    }));
+    expect(validateGridContent(grid)).toContain(`options: at most ${GRID_MAX_OPTIONS} options`);
+
+    const extras = valid();
+    extras.extras = Array.from({ length: GRID_MAX_EXTRAS + 1 }, (_, id) => ({ id, name: `Extra ${id}`, unitPrice: 1 }));
+    expect(validateGridContent(extras)).toContain(`extras: at most ${GRID_MAX_EXTRAS} extras`);
+  });
+
   it('accepts a grid without options, fees or extras — a project may sell a flat subscription', () => {
     expect(
       validateGridContent({
@@ -181,6 +270,51 @@ describe('validateGridContent (US-02-01)', () => {
         subscription: { STANDARD: [0] },
       }),
     ).toEqual([]);
+  });
+});
+
+describe('identifiants et éléments retirés (SPEC-19 D2 et D4)', () => {
+  it('pose un identifiant sur chaque élément qui arrive sans, options et extras à la suite', () => {
+    const assigned = assignItemIds({ options: [{ id: 1, name: 'A' }, { name: 'B' }], extras: [{ name: 'C' }] }, 6);
+    expect(assigned.options).toEqual([{ id: 1, name: 'A' }, { id: 6, name: 'B' }]);
+    expect(assigned.extras).toEqual([{ id: 7, name: 'C' }]);
+  });
+
+  it('compte ce qu’il y a à réserver avant de toucher au compteur', () => {
+    expect(countUnidentifiedItems({ options: [{ id: 1 }, {}], extras: [{}] })).toBe(2);
+    expect(countUnidentifiedItems({ options: [{ id: 1 }] })).toBe(0);
+    expect(countUnidentifiedItems({})).toBe(0);
+  });
+
+  it('refuse un identifiant que le projet n’a jamais distribué', () => {
+    expect(() => assignItemIds({ options: [{ id: 99, name: 'A' }] }, 6)).toThrow();
+    expect(() => assignItemIds({ options: [{ id: -1, name: 'A' }] }, 6)).toThrow();
+  });
+
+  it('accepte un identifiant déjà distribué : rendre un élément retiré reste possible', () => {
+    expect(assignItemIds({ options: [{ id: 0, name: 'A' }] }, 6)).toEqual({ options: [{ id: 0, name: 'A' }] });
+  });
+
+  it('laisse un contenu mal formé au validateur', () => {
+    expect(assignItemIds({ options: 'nope' }, 6)).toEqual({ options: 'nope' });
+  });
+
+  it('nomme ce qu’un contenu fait disparaître', () => {
+    const before = { plans: ['A', 'B'], options: [{ id: 0 }, { id: 1 }], extras: [{ id: 0 }] } as never;
+    const after = { plans: ['A'], options: [{ id: 0 }], extras: [{ id: 0 }] } as never;
+    expect(removedGridItems(before, after)).toEqual({ plans: ['B'], options: [1], extras: [] });
+  });
+
+  it('ne retient que les brouillons qui portent réellement l’élément retiré', () => {
+    const drafts = [
+      { number: 'DEV-1', config: { plan: 'B', options: [], extras: [] } },
+      { number: 'DEV-2', config: { plan: 'A', options: [{ id: 1, qty: 1 }], extras: [] } },
+      { number: 'DEV-3', config: { plan: 'A', options: [{ id: 0, qty: 1 }], extras: [] } },
+      { number: 'DEV-4', config: null },
+    ];
+    const used = draftsUsingItems(drafts, { plans: ['B'], options: [1], extras: [] });
+    expect(used.quotes).toEqual(['DEV-1', 'DEV-2']);
+    expect(used.items).toEqual(['plan B', 'option 1']);
   });
 });
 

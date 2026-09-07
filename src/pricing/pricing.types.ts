@@ -1,4 +1,5 @@
 import { BillingMode, Prisma, QuoteLineNature } from '@prisma/client';
+import { SETUP_FEE_NATURES } from './pricing.constants';
 
 /**
  * Contrat du moteur tarifaire — SPEC-04 §2. Aucune dépendance à Prisma en dehors du type
@@ -32,8 +33,20 @@ export interface PricingExtra {
   unitPrice: number;
 }
 
-/** Poste de frais de mise en place : un libellé et un tableau de prix par formule. */
-export type PricingSetupFee = { label: string } & { [plan: string]: string | number[] };
+/**
+ * Nature d'un poste de frais : elle commande la ventilation one-shot du devis (SPEC-19 D5).
+ * Déclarée par le poste, et non déduite de sa clé — un projet nomme ses postes comme il veut.
+ */
+export type SetupFeeNature = (typeof SETUP_FEE_NATURES)[number];
+
+/**
+ * Poste de frais de mise en place : un libellé, une nature, et un tableau de prix par formule.
+ * `label` et `nature` occupent le même objet que les formules, d'où l'interdiction de nommer
+ * une formule ainsi (SETUP_FEE_RESERVED_KEYS).
+ */
+export type PricingSetupFee = { label: string; nature: SetupFeeNature } & {
+  [plan: string]: string | number[];
+};
 
 export interface PricingGridContent {
   brackets: PopulationBracket[];

@@ -24,6 +24,7 @@ import { bootstrapProject } from '../src/projects/project-bootstrap';
 import { INITIAL_PRICING_GRID_VERSION } from '../src/projects/project-config.constants';
 import { buildObjectPath } from '../src/storage/storage.utils';
 import { PERISCOLIA_PRICING_GRID_V1 } from '../src/pricing/periscolia-grid.constants';
+import { nextItemSeq } from '../src/pricing/pricing.utils';
 import {
   PERISCOLIA_CONFIG,
   PERISCOLIA_PROJECT,
@@ -93,6 +94,12 @@ export async function seedDev(prisma: PrismaClient): Promise<void> {
     await tx.pricingGrid.updateMany({
       where: { projectId: project.id, version: INITIAL_PRICING_GRID_VERSION },
       data: { content: PERISCOLIA_PRICING_GRID_V1, active: true },
+    });
+    // Les identifiants d'options et d'extras de cette grille sont deja attribues :
+    // sans ce compteur, la premiere correction les refuserait (SPEC-19 D4).
+    await tx.project.update({
+      where: { id: project.id },
+      data: { pricingItemSeq: nextItemSeq(PERISCOLIA_PRICING_GRID_V1) },
     });
   });
 

@@ -250,6 +250,11 @@ model Project {
   /// supprimer une version ne libère pas son numéro, une référence ne désigne qu'un objet.
   pricingGridSeq Int @default(0) @map("pricing_grid_seq")
 
+  /// Identifiants d'options et d'extras déjà attribués dans les grilles du projet (SPEC-19 D4).
+  /// Même raison : un identifiant libéré ne revient jamais à un autre élément, sans quoi les
+  /// devis brouillons qui le portaient basculeraient sur une ligne différente, sans un mot.
+  pricingItemSeq Int @default(0) @map("pricing_item_seq")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

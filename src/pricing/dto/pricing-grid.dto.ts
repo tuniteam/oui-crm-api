@@ -4,6 +4,7 @@ import { PaginationMetaDto, PaginationQueryDto } from '@/common/dto/pagination.d
 import { DAY_PATTERN } from '@/common/utils/date.utils';
 import { UserRefDto } from '@/organizations/dto';
 import { INITIAL_PRICING_GRID_VERSION } from '@/projects/project-config.constants';
+import { SETUP_FEE_NATURE } from '../pricing.constants';
 import { PricingGridContent } from '../pricing.types';
 
 const CONTENT_EXAMPLE = {
@@ -14,9 +15,18 @@ const CONTENT_EXAMPLE = {
   plans: ['ESSENTIEL', 'PREMIUM'],
   subscription: { ESSENTIEL: [19.9, 39.9], PREMIUM: [29.9, 99] },
   options: [{ id: 0, name: 'Interface comptable', unitPrice: [4, 8] }],
-  setupFees: { deployment: { label: 'Déploiement', ESSENTIEL: [375, 375], PREMIUM: [375, 500] } },
-  extras: [{ id: 0, name: 'Tablette de pointage', unitPrice: 500 }],
+  setupFees: {
+    deployment: { label: 'Déploiement', nature: SETUP_FEE_NATURE.SETUP, ESSENTIEL: [375, 375], PREMIUM: [375, 500] },
+  },
+  extras: [{ name: 'Tablette de pointage', unitPrice: 500 }],
 };
+
+/**
+ * Ce que le serveur exige d'un contenu, dit une fois pour les trois routes qui en reçoivent un.
+ * Le front l'affiche tel quel quand il place les constats de `messages.details`.
+ */
+const CONTENT_RULES =
+  'Brackets must cover [0, +∞[ with no gap and no overlap: the first starts at 0, the last is open-ended, and every price table has one value per bracket. Each fee post declares its nature (TRAINING or SETUP), which drives the one-shot split of a quote. A price key that matches no plan is refused. Options and extras are identified by the server: leave the id out on a new one, and never reuse a freed id — an id sent back must already exist in the project.';
 
 /**
  * Nouvelle version de grille. Le contenu est fourni tel quel, ou copié d'une version existante
@@ -39,7 +49,7 @@ export class CreatePricingGridDto {
   @Min(1)
   fromVersion?: number;
 
-  @ApiPropertyOptional({ type: 'object', additionalProperties: true, example: CONTENT_EXAMPLE })
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true, example: CONTENT_EXAMPLE, description: CONTENT_RULES })
   @IsOptional()
   @IsObject()
   content?: Record<string, unknown>;
@@ -55,7 +65,7 @@ export class CreatePricingGridDto {
  * décrivent d'où vient cette version, ce qui est un fait historique.
  */
 export class UpdatePricingGridDto {
-  @ApiPropertyOptional({ type: 'object', additionalProperties: true, example: CONTENT_EXAMPLE })
+  @ApiPropertyOptional({ type: 'object', additionalProperties: true, example: CONTENT_EXAMPLE, description: CONTENT_RULES })
   @IsOptional()
   @IsObject()
   content?: Record<string, unknown>;
