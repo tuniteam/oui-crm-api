@@ -3,8 +3,7 @@
 // Source of truth: docs/SPEC-06-PERMISSIONS.md §3-4. Runs on every deployment.
 // ============================================
 
-import { OutOfScopeAccess, PrismaClient, ScopeType } from '@prisma/client';
-import { UserRole } from '../src/auth/enums/user-role.enum';
+import { OutOfScopeAccess, PrismaClient, ScopeType, UserRole } from '@prisma/client';
 
 /**
  * Permission catalogue: module → actions (SPEC-06 §3).
