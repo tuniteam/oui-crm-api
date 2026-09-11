@@ -29,8 +29,9 @@ npm-debug.log*
 # Prisma
 prisma/migrations/*_migration.sql
 
-# Test
+# Test — les tests restent locaux, jamais commités (décision du 11/09/2026)
 coverage/
+*.spec.ts
 
 # Swagger exports (optional)
 swagger-output.json
