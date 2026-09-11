@@ -69,7 +69,11 @@ services:
     image: ouicrm-api:${DEPLOY_ENV}
     restart: unless-stopped
     env_file:
-      - .env.${DEPLOY_ENV}
+      - path: .env.${DEPLOY_ENV}
+      # Variables du seed (premier administrateur), dans leur fichier dédié. Facultatif : une fois
+      # le compte créé, le fichier peut être retiré sans que le démarrage échoue.
+      - path: .env.seed.${DEPLOY_ENV}
+        required: false
     environment:
       # Topologie de la pile, identique pour tous les environnements : elle écrase les valeurs
       # du fichier, qui servent au poste de développement.
