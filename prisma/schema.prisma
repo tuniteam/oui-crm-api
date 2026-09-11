@@ -50,6 +50,20 @@ enum RelationshipStatus {
   SUSPENDED
 }
 
+/// System role codes (SPEC-06 §4.1), created by prisma/seedAuth.ts. A Prisma enum like the others,
+/// so the production seed reads it from @prisma/client — the image has no src/. No column uses
+/// it: Role.code stays free, a project may duplicate a system role under its own code.
+enum UserRole {
+  SUPER_ADMIN
+  PROJECT_ADMIN
+  SALES_DIRECTOR
+  SALES_REP
+  DEPLOYMENT_CONSULTANT
+  TRAINER
+  BILLING_ADMIN
+  OBSERVER
+}
+
 enum ScopeType {
   ALL
   PROJECT
