@@ -32,12 +32,14 @@ import { PricingModule } from './pricing/pricing.module';
 import { OpportunitiesModule } from './opportunities/opportunities.module';
 import { QuotesModule } from './quotes/quotes.module';
 import { ContractsModule } from './contracts/contracts.module';
+import { validateEnv } from './env.validation';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env'],
+      validate: validateEnv,
     }),
     PrismaModule,
     AuthModule,

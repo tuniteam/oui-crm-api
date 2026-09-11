@@ -1,87 +1,58 @@
 # ============================================
-# OUI-CRM Backend API - Dockerfile
-# Multi-stage build for optimized production image
+# OUI-CRM Backend API — image de production (SPEC-20)
+# Trois étages : dépendances, build (application + seed compilé), exécution.
+# Aucun fichier .env dans l'image : le compose les injecte à l'exécution (env_file).
 # ============================================
 
-# ===========================================
-# Stage 1: Dependencies
-# ===========================================
+# -------------------------------------------------------------------------------- dépendances
 FROM node:22-alpine AS deps
-
 WORKDIR /app
 
-# Install dependencies needed for native modules (bcrypt)
-RUN apk add --no-cache python3 make g++
+# Prisma charge son moteur musl contre OpenSSL. `bcrypt`, seul module natif de l'arbre, embarque
+# un binaire musl précompilé : aucun outil de compilation n'est nécessaire.
+RUN apk add --no-cache openssl
 
-# Copy package files
 COPY package*.json ./
 COPY prisma ./prisma/
-
-# Install all dependencies (including devDependencies for build)
 RUN npm ci
 
-# Generate Prisma Client
-RUN npx prisma generate
+# -------------------------------------------------------------------------------- build
+FROM deps AS builder
 
-# ===========================================
-# Stage 2: Builder
-# ===========================================
-FROM node:22-alpine AS builder
-
-WORKDIR /app
-
-# Copy dependencies from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/package*.json ./
-
-# Copy source code
 COPY . .
 
-# Build the application
-RUN npm run build
+# L'application, puis le seed compilé avec les seuls fichiers de src/ qu'il utilise (dist/seed) :
+# l'image finale n'embarque ni tsx ni les sources TypeScript.
+RUN npx prisma generate \
+    && npm run build \
+    && npm run build:seed
 
-# ===========================================
-# Stage 3: Production
-# ===========================================
+# Les devDependencies partent ; le client Prisma est régénéré, l'élagage ne le garantit pas.
+RUN npm prune --omit=dev \
+    && npx prisma generate
+
+# -------------------------------------------------------------------------------- exécution
 FROM node:22-alpine AS production
-
+ENV NODE_ENV=production
 WORKDIR /app
 
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs \
-    && adduser --system --uid 1001 nestjs
+RUN apk add --no-cache openssl \
+    && addgroup -S -g 1001 nodejs \
+    && adduser -S -u 1001 -G nodejs nestjs
 
-# Install dependencies needed for bcrypt in production
-RUN apk add --no-cache python3 make g++
+COPY --from=builder --chown=nestjs:nodejs /app/package*.json ./
+COPY --from=builder --chown=nestjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nestjs:nodejs /app/prisma ./prisma
+COPY --from=builder --chown=nestjs:nodejs /app/dist ./dist
 
-# Copy package files
-COPY --from=builder /app/package*.json ./
-
-# Install production dependencies only
-RUN npm ci --only=production
-
-# Copy Prisma schema and generate client
-COPY --from=builder /app/prisma ./prisma
-RUN npx prisma generate
-
-# Remove build dependencies to reduce image size
-RUN apk del python3 make g++
-
-# Copy built application
-COPY --from=builder /app/dist ./dist
-
-# Change ownership to non-root user
-RUN chown -R nestjs:nodejs /app
-
-# Switch to non-root user
 USER nestjs
 
-# Expose port
-EXPOSE 3000
+# DEFAULT_PORT de l'application ; le compose peut en publier un autre côté hôte.
+EXPOSE 3001
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/docs || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD wget -qO- "http://127.0.0.1:${PORT:-3001}/api/v1/health" > /dev/null || exit 1
 
-# Start the application
-CMD ["node", "dist/main.js"]
+# Migrations, puis seed — catalogue de droits et premier administrateur, idempotent, ~1 s —, puis
+# l'API. Un redémarrage rejoue les deux premières étapes sans effet.
+CMD ["sh", "-c", "./node_modules/.bin/prisma migrate deploy && node dist/seed/prisma/seed.js && node dist/main.js"]

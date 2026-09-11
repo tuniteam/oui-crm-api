@@ -4,11 +4,9 @@ node_modules/
 # Build
 dist/
 prisma/local-seed
-# Environment
-.env
-.env.local
-.env.*.local
-.env.uat
+# Environment — un fichier par environnement, jamais versionné ; seul le modèle l'est (SPEC-20)
+.env*
+!.env.example
 
 # IDE
 .idea/

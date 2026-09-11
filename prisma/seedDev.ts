@@ -25,6 +25,7 @@ import { INITIAL_PRICING_GRID_VERSION } from '../src/projects/project-config.con
 import { buildObjectPath } from '../src/storage/storage.utils';
 import { PERISCOLIA_PRICING_GRID_V1 } from '../src/pricing/periscolia-grid.constants';
 import { nextItemSeq } from '../src/pricing/pricing.utils';
+import { ensurePlatformSuperAdmin } from './seedAdmin';
 import {
   PERISCOLIA_CONFIG,
   PERISCOLIA_PROJECT,
@@ -53,33 +54,8 @@ export async function seedDev(prisma: PrismaClient): Promise<void> {
 
   // ---------- Platform super admin (backoffice relation, no project) ----------
   await renameDemoAccount(prisma, null, PLATFORM_SUPER_ADMIN.initials, PLATFORM_SUPER_ADMIN.email);
-  const superAdmin = await prisma.user.upsert({
-    where: { email: PLATFORM_SUPER_ADMIN.email },
-    // Demo accounts follow SEED_PASSWORD deterministically: re-seeding resets their password
-    update: { password: passwordHash },
-    create: {
-      email: PLATFORM_SUPER_ADMIN.email,
-      password: passwordHash,
-      firstName: PLATFORM_SUPER_ADMIN.firstName,
-      lastName: PLATFORM_SUPER_ADMIN.lastName,
-      status: UserStatus.ACTIVE,
-    },
-  });
-  const backofficeRelation = await prisma.userRoleProject.findFirst({
-    where: { userId: superAdmin.id, projectId: null },
-  });
-  if (!backofficeRelation) {
-    await prisma.userRoleProject.create({
-      data: {
-        userId: superAdmin.id,
-        projectId: null,
-        roleId: roleId(UserRole.SUPER_ADMIN),
-        initials: PLATFORM_SUPER_ADMIN.initials,
-        status: RelationshipStatus.ACTIVE,
-        displayOrder: 1,
-      },
-    });
-  }
+  // Demo accounts follow SEED_PASSWORD deterministically: re-seeding resets their password
+  const superAdmin = await ensurePlatformSuperAdmin(prisma, { ...PLATFORM_SUPER_ADMIN, passwordHash }, { resetPassword: true });
 
   // ---------- Périscolia project + configuration ----------
   const project = await prisma.project.upsert({

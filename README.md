@@ -37,13 +37,42 @@ Le script tue les process OUI-CRM (par port — jamais ceux de soft-m), relance 
 
 **L'app est up ?** → `curl http://localhost:3001/api/v1/health` → `{"status":"ok"}`.
 
-`docker-compose.dev.yml` (db + minio + mailpit) reste disponible pour UAT/CI.
+`docker-compose.dev.yml` (db + minio + mailpit) reste disponible pour l'infrastructure locale.
 
 ## Comptes de démo (seed — mot de passe : `SEED_PASSWORD` du `.env`)
 
 Alias Gmail d'une boîte réelle, pour recevoir les e-mails hors Mailpit :
 `email.ouicrm+superadmin@gmail.com` (backoffice) · `+admin`, `+bassem` (admins Périscolia) ·
 `+wiem`, `+fred` (commerciaux, périmètres restreints) · `+camille`, `+sofia` (externes, expirent).
+
+## Déploiement Docker (UAT / production)
+
+Un fichier par environnement, **jamais versionné** : `.env.uat`, `.env.prod`, copiés depuis
+`.env.example` — chaque secret remplacé, section « Déploiement Docker » complétée. Toute commande
+passe ce fichier :
+
+```bash
+docker compose --env-file .env.prod up -d --build   # construit l'image et démarre la pile
+docker compose --env-file .env.prod logs -f api
+docker compose --env-file .env.prod ps
+```
+
+Au démarrage, l'API applique les migrations, synchronise le catalogue de droits, crée le premier
+administrateur (`ADMIN_*`) s'il n'existe pas, puis démarre. Un redémarrage rejoue ces étapes
+sans effet. Elle refuse de démarrer si une clé obligatoire manque, en la nommant.
+
+**Premier déploiement avec le dump de production** — l'ordre compte : le dump porte le catalogue
+de droits, qu'un démarrage de l'API créerait avant lui.
+
+```bash
+docker compose --env-file .env.prod up -d db minio minio-init        # 1. l'infrastructure
+docker compose --env-file .env.prod run --rm --build --no-deps api   ./node_modules/.bin/prisma migrate deploy                          # 2. le schéma
+docker compose --env-file .env.prod exec -T db   sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < ouicrm_prod_AAAA-MM-JJ.sql  # 3. les données
+docker compose --env-file .env.prod up -d --build                    # 4. l'API
+```
+
+Le dump se produit avec `bash scripts/dump-prod.sh`, et **se régénère après chaque migration de
+reprise de données** : un dump antérieur réinjecte des lignes à l'ancien format.
 
 ## Tester
 

@@ -23,10 +23,9 @@ coverage
 .git
 .gitignore
 
-# Environment files (use docker-compose env instead)
-.env
-.env.local
-.env.*.local
+# Environment files — sans exception : COPY . . les graverait dans une couche d'image.
+# Le compose les injecte à l'exécution (env_file), l'image n'en contient aucun (SPEC-20).
+.env*
 
 # Documentation (not needed in container)
 docs
