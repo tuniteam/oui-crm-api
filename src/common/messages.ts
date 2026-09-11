@@ -77,6 +77,8 @@ const errorDefinitions = {
   PROJECT_NAME_MISMATCH: 'Project name does not match. Operation aborted.',
   PROJECT_NOT_ACTIVE: 'Project is not active',
   PROJECT_ARCHIVED: 'Project is archived',
+  PROJECT_NOT_EMPTY:
+    'Project holds organizations, contacts, activities, campaigns, opportunities, quotes or contracts and cannot be deleted',
 
   // Scopes, settings, references
   SCOPE_NOT_FOUND: (id: string) => `Scope ${id} not found`,
@@ -669,6 +671,11 @@ export const ApiMessages = {
           'Transitions: DRAFT → ACTIVE (opens the project to its users), ACTIVE → ARCHIVED (the project name must be re-typed as confirmation; its users lose access), ARCHIVED → ACTIVE (restore). Any other transition is refused (409).',
       },
       features: { summary: 'Update project features', description: 'Enables or disables features for a project' },
+      delete: {
+        summary: 'Delete project',
+        description:
+          'Physical delete, whatever the status, of a project without business data: organizations, contacts, activities, campaigns, opportunities, quotes or contracts hold it back (409 PROJECT_NOT_EMPTY, non-zero counts in messages.meta). The project name must be re-typed as confirmation. Configuration and project files go with it; members attached to no other project (and not backoffice) lose their account and avatar, the others only their access. The audit trail is kept.',
+      },
       configExport: {
         summary: 'Export project configuration',
         description:

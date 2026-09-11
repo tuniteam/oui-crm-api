@@ -31,7 +31,7 @@ export const PERMISSION_CATALOGUE = {
   scopes: ['read', 'update'],
   auditLog: ['read', 'export'],
   data: ['export', 'restore', 'purge'],
-  projects: ['read', 'create', 'update'],
+  projects: ['read', 'create', 'update', 'delete'],
 } as const satisfies Record<string, readonly string[]>;
 
 type Module = keyof typeof PERMISSION_CATALOGUE;

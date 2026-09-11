@@ -2,6 +2,7 @@ import { MIME } from '@/common/constants/mime.constants';
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -27,6 +28,7 @@ import { ApiMessages } from '@/common/messages';
 import { ParseCuidPipe } from '@/common/pipes';
 import { ChangeProjectStatusDto } from './dto/change-project-status.dto';
 import { CreateProjectDto, CreateProjectResponseDto } from './dto/create-project.dto';
+import { DeleteProjectDto } from './dto/delete-project.dto';
 import { ProjectListQueryDto } from './dto/query-project-list.dto';
 import {
   ProjectFeaturesResponseDto,
@@ -122,6 +124,21 @@ export class ProjectsController {
     @CurrentUser() user: AuthenticatedUser,
   ): Promise<void> {
     return this.projectsService.changeStatus(id, dto, user.id);
+  }
+
+  @Delete(':id')
+  @Permissions({ code: 'projects:delete' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation(swagger.projects.delete)
+  @ApiCuidParam('id', swagger.params.projectId)
+  @ApiBody({ type: DeleteProjectDto })
+  @ApiActionResponses()
+  remove(
+    @Param('id', ParseCuidPipe) id: string,
+    @Body() dto: DeleteProjectDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ): Promise<void> {
+    return this.projectsService.remove(id, dto, user.id);
   }
 
   @Get(':id/config-export')

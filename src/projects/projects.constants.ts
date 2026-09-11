@@ -9,6 +9,7 @@ export const PROJECT_AUDIT = {
   ACTIVATE: 'project.activate',
   ARCHIVE: 'project.archive',
   RESTORE: 'project.restore',
+  DELETE: 'project.delete',
   CONFIG_EXPORT: 'project.config.export',
 } as const;
 

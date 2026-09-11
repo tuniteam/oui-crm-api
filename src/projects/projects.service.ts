@@ -1,13 +1,16 @@
 import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { Injectable, Logger } from '@nestjs/common';
-import { FeatureCode, Prisma, ProjectStatus } from '@prisma/client';
+import { FeatureCode, FileOwnerType, Prisma, ProjectStatus } from '@prisma/client';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
-import { apiError } from '@/common/api-error';
+import { apiError, withMeta } from '@/common/api-error';
 import { PRISMA_ERROR } from '@/common/constants/app.constants';
 import { PrismaService } from '@/prisma/prisma.service';
+import { StorageService } from '@/storage/storage.service';
+import { isMinioNotFoundError } from '@/storage/storage.utils';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { CreateProjectDto, CreateProjectResponseDto } from './dto/create-project.dto';
+import { DeleteProjectDto } from './dto/delete-project.dto';
 import { ProjectListQueryDto } from './dto/query-project-list.dto';
 import {
   ProjectFeaturesResponseDto,
@@ -20,9 +23,11 @@ import { upsertProjectFeatures } from './project-bootstrap';
 import { ProjectBootstrapService } from './project-bootstrap.service';
 import { PROJECT_AUDIT, PROJECT_TRANSITIONS } from './projects.constants';
 import {
+  accountsToDelete,
   assertNameMatches,
   assertNotArchived,
   buildProjectWhere,
+  countProjectData,
   getProjectOrThrow,
   mapToFeatures,
   mapToProjectListItem,
@@ -39,6 +44,7 @@ export class ProjectsService {
     private readonly prisma: PrismaService,
     private readonly bootstrap: ProjectBootstrapService,
     private readonly audit: AuditLogService,
+    private readonly storage: StorageService,
   ) {}
 
   async findAll(query: ProjectListQueryDto): Promise<ProjectListResponseDto> {
@@ -182,5 +188,67 @@ export class ProjectsService {
         metadata: { from: project.status, to: dto.status },
       });
     });
+  }
+
+  /**
+   * Physical delete of a project without business data, whatever its status. Configuration and
+   * project files go through the schema cascades; members attached to nothing else lose their
+   * account and avatar. MinIO objects are removed once the transaction is committed.
+   */
+  async remove(id: string, dto: DeleteProjectDto, userId: string): Promise<void> {
+    const project = await getProjectOrThrow(this.prisma, id);
+    assertNameMatches(project, dto.name);
+
+    const files = await this.prisma.$transaction(async (tx) => {
+      // Inside the transaction: a record created between the check and the delete would
+      // otherwise be carried away by the cascades unnoticed.
+      const data = await countProjectData(tx, id);
+      if (Object.keys(data).length > 0) throw withMeta(apiError.conflict('PROJECT_NOT_EMPTY'), data);
+
+      const members = await tx.userRoleProject.findMany({ where: { projectId: id }, select: { userId: true } });
+      const memberIds = members.map((m) => m.userId);
+      const [otherRelations, uploads] = await Promise.all([
+        tx.userRoleProject.findMany({
+          where: { userId: { in: memberIds }, OR: [{ projectId: null }, { projectId: { not: id } }] },
+          select: { userId: true },
+        }),
+        tx.file.findMany({
+          where: { uploadedBy: { in: memberIds } },
+          select: { uploadedBy: true, projectId: true, ownerType: true, ownerId: true },
+        }),
+      ]);
+      const accountIds = accountsToDelete(id, memberIds, otherRelations, uploads);
+      const accountFiles = { projectId: null, ownerType: FileOwnerType.USER, ownerId: { in: accountIds } };
+      const removed = await tx.file.findMany({
+        where: { OR: [{ projectId: id }, accountFiles] },
+        select: { projectId: true, ownerId: true, filePath: true },
+      });
+
+      await this.audit.log(tx, {
+        projectId: id,
+        userId,
+        action: PROJECT_AUDIT.DELETE,
+        objectType: AUDIT_OBJECTS.PROJECT,
+        objectId: id,
+        metadata: { slug: project.slug, name: project.name, deletedAccounts: accountIds.length, files: removed.length },
+      });
+      // Assignments first: UserRoleProject → Role is RESTRICT, the project's roles go with the project
+      await tx.userRoleProject.deleteMany({ where: { projectId: id } });
+      // No foreign key to the project on import batches
+      await tx.importBatch.deleteMany({ where: { projectId: id } });
+      await tx.file.deleteMany({ where: accountFiles });
+      await tx.project.delete({ where: { id } });
+      await tx.user.deleteMany({ where: { id: { in: accountIds } } });
+      return removed;
+    });
+
+    // Best effort: the rows are gone, an object left behind is only logged
+    await Promise.all(
+      files.map((file) =>
+        this.storage.deleteObject(file.projectId, file.ownerId, file.filePath).catch((err) => {
+          if (!isMinioNotFoundError(err)) this.logger.warn(`Orphaned object after project delete: ${file.filePath}`);
+        }),
+      ),
+    );
   }
 }
