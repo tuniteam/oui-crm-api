@@ -82,7 +82,7 @@ export const DEFAULT_PROJECT_CONFIG: ProjectConfig = {
     STATS: true,
   },
   referenceItems: {
-    STRUCTURE_TYPE: [{ key: 'ORGANIZATION', label: 'Organisation', metadata: { territorial: false } }],
+    STRUCTURE_TYPE: [{ key: 'COMMUNE', label: 'Commune', metadata: { prefix: 'Commune de ', territorial: true } }],
     TAG: [{ key: 'HOT', label: 'Chaud' }],
     LEAD_SOURCE: [
       { key: 'OUTBOUND', label: 'Prospection sortante' },
