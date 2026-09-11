@@ -1,4 +1,4 @@
-import { FeatureCode, Prisma, ProjectStatus } from '@prisma/client';
+import { FeatureCode, FileOwnerType, Prisma, ProjectStatus } from '@prisma/client';
 import { apiError } from '@/common/api-error';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
@@ -47,6 +47,44 @@ export function assertNotArchived(project: { status: ProjectStatus }): void {
 
 export function assertNameMatches(project: { name: string }, typedName: string): void {
   if (project.name !== typedName) throw apiError.badRequest('PROJECT_NAME_MISMATCH');
+}
+
+/** Business rows that hold a project back from deletion — only the non-zero counts. */
+export async function countProjectData(
+  db: Prisma.TransactionClient,
+  projectId: string,
+): Promise<Record<string, number>> {
+  const where = { projectId };
+  const [organizations, contacts, activities, campaigns, opportunities, quotes, contracts] = await Promise.all([
+    db.organization.count({ where }),
+    db.contact.count({ where }),
+    db.activity.count({ where }),
+    db.campaign.count({ where }),
+    db.opportunity.count({ where }),
+    db.quote.count({ where }),
+    db.contract.count({ where }),
+  ]);
+  const counts = { organizations, contacts, activities, campaigns, opportunities, quotes, contracts };
+  return Object.fromEntries(Object.entries(counts).filter(([, count]) => count > 0));
+}
+
+/**
+ * Members whose account goes with the project: attached to no other project nor to the
+ * backoffice, and who uploaded no file that outlives it — `File.uploader` would hold the
+ * account back. What dies with the project: its own files and the member's account files.
+ */
+export function accountsToDelete(
+  projectId: string,
+  memberIds: string[],
+  otherRelations: { userId: string }[],
+  uploads: { uploadedBy: string; projectId: string | null; ownerType: FileOwnerType; ownerId: string }[],
+): string[] {
+  const kept = new Set(otherRelations.map((r) => r.userId));
+  for (const file of uploads) {
+    const ownAccountFile = file.projectId === null && file.ownerType === FileOwnerType.USER && file.ownerId === file.uploadedBy;
+    if (file.projectId !== projectId && !ownAccountFile) kept.add(file.uploadedBy);
+  }
+  return memberIds.filter((id) => !kept.has(id));
 }
 
 /** Every FeatureCode, in enum order, with its enabled flag (missing row = disabled). */
