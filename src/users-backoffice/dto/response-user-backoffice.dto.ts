@@ -6,7 +6,7 @@ export class BackofficeRoleDto {
   @ApiProperty({ example: 'SUPER_ADMIN' })
   code: string;
 
-  @ApiProperty({ example: 'Platform administrator' })
+  @ApiProperty({ example: 'Administrateur de la plateforme' })
   label: string;
 }
 
@@ -34,7 +34,7 @@ export class BackofficeUserResponseDto {
   @ApiProperty({ example: 'SUPER_ADMIN' })
   roleCode: string;
 
-  @ApiProperty({ example: 'Platform administrator' })
+  @ApiProperty({ example: 'Administrateur de la plateforme' })
   roleLabel: string;
 
   @ApiPropertyOptional({ example: null, nullable: true })
