@@ -4,11 +4,13 @@ import { ActivationService } from '@/auth/activation.service';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
-import { apiError } from '@/common/api-error';
+import { apiError, withMeta } from '@/common/api-error';
 import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { normalizeEmail } from '@/common/utils/email.utils';
 import { PrismaService } from '@/prisma/prisma.service';
+import { StorageService } from '@/storage/storage.service';
+import { countUserReferences, deleteAvatarObjects, removeAssignmentAndMaybeAccount } from '@/users/users.utils';
 import { CreateBackofficeUserDto, CreateBackofficeUserResponseDto } from './dto/create-user-backoffice.dto';
 import { BackofficeUserListQueryDto } from './dto/query-user-backoffice-list.dto';
 import { BackofficeRolesResponseDto, BackofficeUserListResponseDto, BackofficeUserResponseDto } from './dto/response-user-backoffice.dto';
@@ -31,6 +33,7 @@ export class UsersBackofficeService {
     private readonly prisma: PrismaService,
     private readonly activationService: ActivationService,
     private readonly audit: AuditLogService,
+    private readonly storage: StorageService,
   ) {}
 
   async roles(): Promise<BackofficeRolesResponseDto> {
@@ -155,6 +158,40 @@ export class UsersBackofficeService {
       objectId: userId,
     });
     return result;
+  }
+
+  /**
+   * US-00-11 — a backoffice account created by mistake. Same rule as a project account: what
+   * carries its name anywhere holds it back (409), the assignment is removed, and the account
+   * goes with it when it was the last one.
+   */
+  async removeAccount(userId: string, actor: AuthenticatedUser): Promise<void> {
+    if (userId === actor.id) throw apiError.badRequest('CANNOT_DELETE_SELF');
+    const relation = await getBackofficeRelationOrThrow(this.prisma, userId);
+
+    const { accountDeleted, objectKeys } = await this.prisma.$transaction(async (tx) => {
+      const references = await countUserReferences(tx, userId, null);
+      if (Object.keys(references).length > 0) {
+        throw withMeta(apiError.conflict('USER_HAS_REFERENCES'), references);
+      }
+
+      const removal = await removeAssignmentAndMaybeAccount(tx, userId, relation.id);
+      await this.audit.log(tx, {
+        projectId: null,
+        userId: actor.id,
+        action: USERS_BACKOFFICE_AUDIT.ACCOUNT_DELETE,
+        objectType: AUDIT_OBJECTS.USER,
+        objectId: userId,
+        metadata: {
+          email: relation.user.email,
+          name: `${relation.user.firstName} ${relation.user.lastName}`,
+          accountDeleted: removal.accountDeleted,
+        },
+      });
+      return removal;
+    });
+
+    if (accountDeleted) await deleteAvatarObjects(this.storage, userId, objectKeys);
   }
 
   /**

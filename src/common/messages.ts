@@ -66,6 +66,8 @@ const errorDefinitions = {
   USER_IS_LAST_ADMIN: 'Cannot remove the last project administrator',
   USER_ALREADY_ACTIVE: 'User is already active',
   USER_INACTIVE: 'User is inactive',
+  USER_HAS_REFERENCES:
+    'Account carries organizations, opportunities, quotes, contracts, campaigns, activities, files or pricing grids and cannot be deleted',
   USER_AVATAR_NOT_SET: 'User has no avatar',
   EXPIRATION_REQUIRED_FOR_EXTERNAL: 'External accounts require an expiration date',
   INITIALS_ALREADY_USED: 'These initials are already used in this project',
@@ -699,6 +701,11 @@ export const ApiMessages = {
       },
       resendActivation: { summary: 'Resend activation e-mail', description: 'Sends a new activation e-mail to a PENDING user' },
       delete: { summary: 'Remove user from project', description: 'Suspends the assignment and revokes sessions' },
+      deleteAccount: {
+        summary: 'Delete user account',
+        description:
+          'Account created by mistake: removes the assignment (never suspends it) and deletes the account when it was the last one, avatar included. Organizations, opportunities, quotes, contracts, campaigns, activities, files or pricing grids carrying the user in this project hold it back (409 USER_HAS_REFERENCES, non-zero counts in messages.meta). The audit trail is kept.',
+      },
     },
 
     usersBackoffice: {
@@ -713,6 +720,11 @@ export const ApiMessages = {
       update: { summary: 'Update backoffice user', description: 'Updates identity fields or the backoffice role' },
       resendActivation: { summary: 'Resend activation e-mail', description: 'Sends a new activation e-mail to a PENDING backoffice user' },
       delete: { summary: 'Remove backoffice user', description: 'Suspends the backoffice access and revokes sessions' },
+      deleteAccount: {
+        summary: 'Delete backoffice account',
+        description:
+          'Same rule as a project account, across every project: removes the backoffice assignment and deletes the account when it was the last one (409 USER_HAS_REFERENCES otherwise)',
+      },
     },
 
     roles: {

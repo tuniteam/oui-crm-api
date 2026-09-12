@@ -134,4 +134,18 @@ export class UsersController {
   ): Promise<void> {
     return this.usersService.suspend(projectId, id, actor);
   }
+
+  @Delete(':id/account')
+  @Permissions({ code: 'users:delete' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation(swagger.users.deleteAccount)
+  @ApiCuidParam('id', swagger.params.userId)
+  @ApiActionResponses()
+  removeAccount(
+    @CurrentProjectId() projectId: string,
+    @Param('id', ParseCuidPipe) id: string,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<void> {
+    return this.usersService.removeAccount(projectId, id, actor);
+  }
 }

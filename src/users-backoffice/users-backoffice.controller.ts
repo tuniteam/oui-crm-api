@@ -92,4 +92,14 @@ export class UsersBackofficeController {
   remove(@Param('id', ParseCuidPipe) id: string, @CurrentUser() actor: AuthenticatedUser): Promise<void> {
     return this.usersBackofficeService.suspend(id, actor);
   }
+
+  @Delete('users/:id/account')
+  @Permissions({ code: 'userBackoffice:delete' })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation(swagger.usersBackoffice.deleteAccount)
+  @ApiCuidParam('id', swagger.params.userId)
+  @ApiActionResponses()
+  removeAccount(@Param('id', ParseCuidPipe) id: string, @CurrentUser() actor: AuthenticatedUser): Promise<void> {
+    return this.usersBackofficeService.removeAccount(id, actor);
+  }
 }

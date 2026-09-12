@@ -5,6 +5,7 @@ export const USERS_BACKOFFICE_AUDIT = {
   SUSPEND: 'user.backoffice.suspend',
   REACTIVATE: 'user.backoffice.reactivate',
   ACTIVATION_RESEND: 'user.backoffice.activation.resend',
+  ACCOUNT_DELETE: 'user.backoffice.account.delete',
 } as const;
 
 /** Backoffice relations carry no project; initials are unused there (quote numbering is per project). */

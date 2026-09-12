@@ -7,6 +7,7 @@ export const USERS_AUDIT = {
   SUSPEND: 'user.suspend',
   REACTIVATE: 'user.reactivate',
   ACTIVATION_RESEND: 'user.activation.resend',
+  ACCOUNT_DELETE: 'user.account.delete',
 } as const;
 
 /** Initials feed the quote numbering: 2-3 uppercase letters or digits, unique per project. */
