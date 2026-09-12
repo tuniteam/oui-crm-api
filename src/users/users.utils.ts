@@ -1,4 +1,4 @@
-import { Prisma, RelationshipStatus, Role, UserStatus } from '@prisma/client';
+import { FileOwnerType, Prisma, RelationshipStatus, Role, UserStatus } from '@prisma/client';
 import { effectivePermissions } from '@/auth/utils/permissions.util';
 import { roleVisibleFromProjectWhere } from '@/auth/utils/roles.util';
 import { apiError } from '@/common/api-error';
@@ -56,6 +56,75 @@ export async function getRelationOrThrow(
   });
   if (!relation) throw apiError.notFound('USER_NOT_FOUND');
   return relation;
+}
+
+/** The user's own avatar: it goes with the account, so it never holds a deletion back. */
+function ownAccountFile(userId: string): Prisma.FileWhereInput {
+  return { projectId: null, ownerType: FileOwnerType.USER, ownerId: userId };
+}
+
+/**
+ * What would lose its author if the account went away — only the non-zero counts.
+ * `projectId` null (backoffice account) looks at every project at once.
+ */
+export async function countUserReferences(
+  db: Prisma.TransactionClient,
+  userId: string,
+  projectId: string | null,
+): Promise<Record<string, number>> {
+  const scope = projectId ? { projectId } : {};
+  const [organizations, opportunities, quotes, contracts, campaigns, activities, files, pricingGrids] =
+    await Promise.all([
+      db.organization.count({
+        where: { ...scope, OR: [{ salesRepId: userId }, { consultantId: userId }, { trainerId: userId }] },
+      }),
+      db.opportunity.count({ where: { ...scope, ownerId: userId } }),
+      db.quote.count({ where: { ...scope, OR: [{ ownerId: userId }, { validatedById: userId }] } }),
+      db.contract.count({ where: { ...scope, ownerId: userId } }),
+      db.campaign.count({ where: { ...scope, ownerId: userId } }),
+      db.activity.count({ where: { ...scope, userId } }),
+      db.file.count({ where: { ...scope, uploadedBy: userId, NOT: ownAccountFile(userId) } }),
+      db.pricingGrid.count({ where: { ...scope, createdById: userId } }),
+    ]);
+  const counts = { organizations, opportunities, quotes, contracts, campaigns, activities, files, pricingGrids };
+  return Object.fromEntries(Object.entries(counts).filter(([, count]) => count > 0));
+}
+
+/**
+ * Removes the assignment, and the account itself when it was the last one — the pattern of
+ * soft-m `removeMembership`. An account still referenced somewhere else (a project the user
+ * left earlier) is kept: deleting it would erase the author of records nobody asked about.
+ * Returns the storage objects to delete once the transaction is committed.
+ */
+export async function removeAssignmentAndMaybeAccount(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  relationId: string,
+): Promise<{ accountDeleted: boolean; objectKeys: string[] }> {
+  await tx.userRoleProject.delete({ where: { id: relationId } });
+  const remaining = await tx.userRoleProject.count({ where: { userId } });
+  if (remaining > 0) return { accountDeleted: false, objectKeys: [] };
+
+  const elsewhere = await countUserReferences(tx, userId, null);
+  if (Object.keys(elsewhere).length > 0) return { accountDeleted: false, objectKeys: [] };
+
+  const avatars = await tx.file.findMany({ where: ownAccountFile(userId), select: { filePath: true } });
+  await tx.file.deleteMany({ where: ownAccountFile(userId) });
+  // Sessions and tokens follow through the schema cascades
+  await tx.user.delete({ where: { id: userId } });
+  return { accountDeleted: true, objectKeys: avatars.map((file) => file.filePath) };
+}
+
+/**
+ * Best effort, once the transaction is committed: the rows are already gone, an object left
+ * behind in MinIO is not worth failing a deletion the caller saw succeed.
+ */
+export async function deleteAvatarObjects(
+  storage: { deleteObject(projectId: string | null, userId: string, objectKey: string): Promise<void> },
+  userId: string,
+  objectKeys: string[],
+): Promise<void> {
+  await Promise.all(objectKeys.map((key) => storage.deleteObject(null, userId, key).catch(() => undefined)));
 }
 
 /** Role assignable on this project: a non-backoffice system role, or a role of the project. */

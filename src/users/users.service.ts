@@ -4,13 +4,14 @@ import { ActivationService } from '@/auth/activation.service';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
-import { apiError } from '@/common/api-error';
+import { apiError, withMeta } from '@/common/api-error';
 import { isUniqueViolation } from '@/common/utils/prisma.utils';
 import { PRISMA_ERROR } from '@/common/constants/app.constants';
 import { buildPaginationMeta, paginationSkip } from '@/common/dto/pagination.dto';
 import { parseDayOrThrow, todayUtc } from '@/common/utils/date.utils';
 import { normalizeEmail } from '@/common/utils/email.utils';
 import { PrismaService } from '@/prisma/prisma.service';
+import { StorageService } from '@/storage/storage.service';
 import { CreateUserDto, CreateUserResponseDto } from './dto/create-user.dto';
 import { UserListQueryDto } from './dto/query-user-list.dto';
 import { UserDetailResponseDto, UserListResponseDto } from './dto/response-user.dto';
@@ -20,10 +21,13 @@ import { ADMIN_PERMISSION_CODE, USERS_AUDIT } from './users.constants';
 import {
   assertScopeInProject,
   buildUserWhere,
+  countUserReferences,
+  deleteAvatarObjects,
   getRelationOrThrow,
   mapToUserDetail,
   mapToUserListItem,
   relationWithAccess,
+  removeAssignmentAndMaybeAccount,
   resolveRoleOrThrow,
 } from './users.utils';
 
@@ -36,6 +40,7 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly activationService: ActivationService,
     private readonly audit: AuditLogService,
+    private readonly storage: StorageService,
   ) {}
 
   async findAll(projectId: string, query: UserListQueryDto): Promise<UserListResponseDto> {
@@ -316,6 +321,45 @@ export class UsersService {
    * An admin = an active, non-expired assignment of an ACTIVE account whose role grants
    * users:update and whose overrides do not remove it (review du 01/09/2026).
    */
+  /**
+   * US-00-05 — an account created by mistake. The assignment is removed, not suspended, and the
+   * account goes with it when it was the last one. What carries the user's name in this project
+   * holds it back (409): suspending is the reversible gesture, this one is not.
+   */
+  async removeAccount(projectId: string, userId: string, actor: AuthenticatedUser): Promise<void> {
+    if (userId === actor.id) throw apiError.badRequest('CANNOT_DELETE_SELF');
+    const relation = await getRelationOrThrow(this.prisma, projectId, userId);
+
+    const { accountDeleted, objectKeys } = await this.prisma.$transaction(async (tx) => {
+      // Same serialization as the suspension: two "last admins" must not both pass
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${projectId}))`;
+      await this.assertNotLastAdmin(tx, projectId, relation.id);
+
+      const references = await countUserReferences(tx, userId, projectId);
+      if (Object.keys(references).length > 0) {
+        throw withMeta(apiError.conflict('USER_HAS_REFERENCES'), references);
+      }
+
+      const removal = await removeAssignmentAndMaybeAccount(tx, userId, relation.id);
+      await this.audit.log(tx, {
+        projectId,
+        userId: actor.id,
+        action: USERS_AUDIT.ACCOUNT_DELETE,
+        objectType: AUDIT_OBJECTS.USER,
+        objectId: userId,
+        // The row outlives the account: it carries who it was
+        metadata: {
+          email: relation.user.email,
+          name: `${relation.user.firstName} ${relation.user.lastName}`,
+          accountDeleted: removal.accountDeleted,
+        },
+      });
+      return removal;
+    });
+
+    if (accountDeleted) await deleteAvatarObjects(this.storage, userId, objectKeys);
+  }
+
   private async assertNotLastAdmin(tx: Prisma.TransactionClient, projectId: string, excludedRelationId: string): Promise<void> {
     const admins = await tx.userRoleProject.count({
       where: {
