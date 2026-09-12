@@ -32,7 +32,7 @@ export class MeRoleRelationshipDto {
   @ApiProperty({ example: 'SALES_REP' })
   roleCode: string;
 
-  @ApiProperty({ example: 'Sales representative', description: 'Display label of the role' })
+  @ApiProperty({ example: 'Commercial', description: 'Display label of the role' })
   roleLabel: string;
 
   @ApiPropertyOptional({ example: 'cmthas5lv009z5qp4tyv8k87s', nullable: true, description: 'null = backoffice relation' })

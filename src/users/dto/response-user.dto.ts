@@ -41,7 +41,7 @@ export class UserListItemResponseDto {
   @ApiProperty({ example: 'SALES_REP' })
   roleCode: string;
 
-  @ApiProperty({ example: 'Sales representative' })
+  @ApiProperty({ example: 'Commercial' })
   roleLabel: string;
 
   @ApiPropertyOptional({ type: UserScopeRefDto, nullable: true })

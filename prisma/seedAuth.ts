@@ -67,14 +67,14 @@ export const permissionsData: { code: string; label: string }[] = Object.entries
  * System roles (SPEC-06 §4.1).
  */
 export const rolesData = [
-  { code: UserRole.SUPER_ADMIN, label: 'Platform administrator', isBackoffice: true, outOfScopeAccess: OutOfScopeAccess.FULL },
-  { code: UserRole.PROJECT_ADMIN, label: 'Project administrator', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.FULL },
-  { code: UserRole.SALES_DIRECTOR, label: 'Sales director', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.FULL },
-  { code: UserRole.SALES_REP, label: 'Sales representative', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.RESTRICTED },
-  { code: UserRole.DEPLOYMENT_CONSULTANT, label: 'Deployment consultant', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.NONE },
-  { code: UserRole.TRAINER, label: 'Trainer', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.NONE },
-  { code: UserRole.BILLING_ADMIN, label: 'Billing administrator', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.RESTRICTED },
-  { code: UserRole.OBSERVER, label: 'Observer', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.NONE },
+  { code: UserRole.SUPER_ADMIN, label: 'Administrateur de la plateforme', isBackoffice: true, outOfScopeAccess: OutOfScopeAccess.FULL },
+  { code: UserRole.PROJECT_ADMIN, label: 'Administrateur du projet', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.FULL },
+  { code: UserRole.SALES_DIRECTOR, label: 'Directeur commercial', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.FULL },
+  { code: UserRole.SALES_REP, label: 'Commercial', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.RESTRICTED },
+  { code: UserRole.DEPLOYMENT_CONSULTANT, label: 'Consultant déploiement', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.NONE },
+  { code: UserRole.TRAINER, label: 'Formateur', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.NONE },
+  { code: UserRole.BILLING_ADMIN, label: 'Responsable facturation', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.RESTRICTED },
+  { code: UserRole.OBSERVER, label: 'Observateur', isBackoffice: false, outOfScopeAccess: OutOfScopeAccess.NONE },
 ];
 
 type Grant = { role: UserRole; permission: string; scope: ScopeType };

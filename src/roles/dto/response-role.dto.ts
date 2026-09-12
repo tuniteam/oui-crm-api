@@ -16,7 +16,7 @@ export class RoleResponseDto {
   @ApiProperty({ example: 'SALES_REP' })
   code: string;
 
-  @ApiProperty({ example: 'Sales representative' })
+  @ApiProperty({ example: 'Commercial' })
   label: string;
 
   @ApiProperty({ example: true, description: 'System roles are read-only; duplicate them to adapt' })
