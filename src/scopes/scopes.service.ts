@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { RelationshipStatus } from '@prisma/client';
+import { OutOfScopeAccess, RelationshipStatus } from '@prisma/client';
 import { AUDIT_OBJECTS } from '@/audit-log/audit-log.constants';
 import { AuditLogService } from '@/audit-log/audit-log.service';
 import { AuthenticatedUser } from '@/auth/interfaces/authenticated-user.interface';
@@ -9,9 +9,9 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { CreateScopeDto, ScopeIdResponseDto } from './dto/create-scope.dto';
 import { GeoRegionsResponseDto, ScopeResponseDto, ScopesListResponseDto } from './dto/response-scope.dto';
 import { UpdateScopeDto } from './dto/update-scope.dto';
-import { REGIONS } from './geo.constants';
+import { regionsWithin, resolveDepartments } from './geo.constants';
 import { SCOPES_AUDIT } from './scopes.constants';
-import { assertCampaignsInProject, assertRegionsKnown, getScopeOrThrow, mapToScopeResponse } from './scopes.utils';
+import { assertCampaignsInProject, assertRegionsKnown, getScopeOrThrow, loadScopeContext, mapToScopeResponse } from './scopes.utils';
 
 /** US-00-07 — geographic scopes of a project. */
 @Injectable()
@@ -34,8 +34,16 @@ export class ScopesService {
     return { data: scopes.map((s) => mapToScopeResponse(s, countByScope.get(s.id) ?? 0)) };
   }
 
-  regions(): GeoRegionsResponseDto {
-    return { data: REGIONS.map((r) => ({ name: r.name, departments: [...r.departments] })) };
+  /**
+   * The static table, cut to the caller: a role that hides what lies outside its scope (NONE)
+   * only gets the regions it covers, so the filter never proposes a territory it cannot read.
+   * RESTRICTED and FULL keep the whole table — they do see records outside their scope.
+   */
+  async regions(user: AuthenticatedUser, projectId: string): Promise<GeoRegionsResponseDto> {
+    const ctx = await loadScopeContext(this.prisma, user, projectId);
+    const restricted = ctx.outOfScopeAccess === OutOfScopeAccess.NONE && ctx.scope !== null;
+    const departments = restricted ? resolveDepartments(ctx.scope!.regions, ctx.scope!.departments) : [];
+    return { data: regionsWithin(departments) };
   }
 
   async create(projectId: string, dto: CreateScopeDto, actor: AuthenticatedUser): Promise<ScopeIdResponseDto> {

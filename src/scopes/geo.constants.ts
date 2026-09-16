@@ -40,6 +40,19 @@ export function regionOfDepartment(department: string | null): string | null {
   return department ? (byDepartment.get(department) ?? null) : null;
 }
 
+/**
+ * The regions a caller may filter on. An empty `departments` means no restriction: the whole
+ * table. Otherwise each region is cut down to the departments the caller covers, and a region
+ * left without any disappears — filtering on the rest would return nothing anyway.
+ */
+export function regionsWithin(departments: readonly string[]): GeoRegion[] {
+  if (!departments.length) return REGIONS.map((r) => ({ name: r.name, departments: [...r.departments] }));
+  const allowed = new Set(departments);
+  return REGIONS.map((r) => ({ name: r.name, departments: r.departments.filter((d) => allowed.has(d)) })).filter(
+    (r) => r.departments.length > 0,
+  );
+}
+
 /** Regions + explicit departments → deduplicated, sorted department codes. */
 export function resolveDepartments(regions: readonly string[], departments: readonly string[]): string[] {
   const set = new Set<string>(departments);

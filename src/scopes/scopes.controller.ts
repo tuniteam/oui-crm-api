@@ -40,11 +40,14 @@ export class ScopesController {
   }
 
   @Get('geo/regions')
-  @Permissions({ code: 'scopes:read' })
+  @Permissions({ code: 'references:read' })
   @ApiOperation(swagger.scopes.regions)
   @ApiListResponse(GeoRegionsResponseDto)
-  regions(): GeoRegionsResponseDto {
-    return this.scopesService.regions();
+  regions(
+    @CurrentUser() user: AuthenticatedUser,
+    @CurrentProjectId() projectId: string,
+  ): Promise<GeoRegionsResponseDto> {
+    return this.scopesService.regions(user, projectId);
   }
 
   @Post('scopes')
