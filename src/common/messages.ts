@@ -742,7 +742,11 @@ export const ApiMessages = {
       create: { summary: 'Create scope', description: 'Creates a geographic scope' },
       update: { summary: 'Update scope', description: 'Updates a geographic scope' },
       delete: { summary: 'Delete scope', description: 'Deletes a scope not assigned to any user' },
-      regions: { summary: 'List regions', description: 'Static list of regions with their departments' },
+      regions: {
+        summary: 'List regions',
+        description:
+          'Static list of regions with their departments, cut to the caller: a role whose outOfScopeAccess is NONE only gets the regions its scope covers, and withinScope=true cuts it that way for any role. Readable by every project member (references:read)',
+      },
     },
 
     settings: {

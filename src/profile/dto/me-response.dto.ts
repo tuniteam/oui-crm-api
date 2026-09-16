@@ -26,6 +26,13 @@ export class MeScopeDto {
 
   @ApiProperty({ example: false, description: 'true = only the records the user is assigned to' })
   portfolioOnly: boolean;
+
+  @ApiProperty({
+    type: [String],
+    example: ['14', '27', '50', '61', '76'],
+    description: 'Regions resolved to departments + explicit departments; empty = whole territory',
+  })
+  resolvedDepartments: string[];
 }
 
 export class MeRoleRelationshipDto {

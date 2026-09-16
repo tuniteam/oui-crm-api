@@ -3,6 +3,7 @@ import { effectivePermissions, isRelationActive } from '@/auth/utils/permissions
 import { ContactType } from '@/common/enums/contact.enum';
 import { LegalDocumentDto } from '@/common/legal/legal.dto';
 import { computeOutdatedLegalDocuments, listLegalDocuments } from '@/common/legal/legal.utils';
+import { resolveDepartments } from '@/scopes/geo.constants';
 import { MeResponseDto, MeRoleRelationshipDto } from './dto/me-response.dto';
 
 /** Everything GET /profile/me needs, in one query (same access rules as JwtStrategy). */
@@ -39,6 +40,7 @@ function mapRelation(urp: RelationLoaded, overrides: UserWithAccess['overrides']
           regions: urp.scope.regions,
           departments: urp.scope.departments,
           portfolioOnly: urp.scope.portfolioOnly,
+          resolvedDepartments: resolveDepartments(urp.scope.regions, urp.scope.departments),
         }
       : null,
     expiresAt: urp.expiresAt,
