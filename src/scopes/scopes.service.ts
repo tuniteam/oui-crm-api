@@ -39,9 +39,10 @@ export class ScopesService {
    * only gets the regions it covers, so the filter never proposes a territory it cannot read.
    * RESTRICTED and FULL keep the whole table — they do see records outside their scope.
    */
-  async regions(user: AuthenticatedUser, projectId: string): Promise<GeoRegionsResponseDto> {
+  async regions(user: AuthenticatedUser, projectId: string, withinScope = false): Promise<GeoRegionsResponseDto> {
     const ctx = await loadScopeContext(this.prisma, user, projectId);
-    const restricted = ctx.outOfScopeAccess === OutOfScopeAccess.NONE && ctx.scope !== null;
+    const hidesOutside = ctx.outOfScopeAccess === OutOfScopeAccess.NONE;
+    const restricted = (withinScope || hidesOutside) && ctx.scope !== null;
     const departments = restricted ? resolveDepartments(ctx.scope!.regions, ctx.scope!.departments) : [];
     return { data: regionsWithin(departments) };
   }

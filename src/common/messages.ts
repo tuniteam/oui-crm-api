@@ -745,7 +745,7 @@ export const ApiMessages = {
       regions: {
         summary: 'List regions',
         description:
-          'Static list of regions with their departments, cut to the caller: a role whose outOfScopeAccess is NONE only gets the regions its scope covers. Readable by every project member (references:read)',
+          'Static list of regions with their departments, cut to the caller: a role whose outOfScopeAccess is NONE only gets the regions its scope covers, and withinScope=true cuts it that way for any role. Readable by every project member (references:read)',
       },
     },
 

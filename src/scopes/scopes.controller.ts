@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PROJECT_ID_HEADER } from '@/auth/auth.constants';
 import { CurrentProjectId } from '@/auth/decorators/current-project.decorator';
@@ -14,6 +14,7 @@ import { ApiCuidParam, ApiDeleteResponse, ApiListResponse, ApiPatchResponse, Api
 import { ApiMessages } from '@/common/messages';
 import { ParseCuidPipe } from '@/common/pipes';
 import { CreateScopeDto, ScopeIdResponseDto } from './dto/create-scope.dto';
+import { GeoRegionsQueryDto } from './dto/query-geo-regions.dto';
 import { GeoRegionsResponseDto, ScopeResponseDto, ScopesListResponseDto } from './dto/response-scope.dto';
 import { UpdateScopeDto } from './dto/update-scope.dto';
 import { ScopesService } from './scopes.service';
@@ -46,8 +47,9 @@ export class ScopesController {
   regions(
     @CurrentUser() user: AuthenticatedUser,
     @CurrentProjectId() projectId: string,
+    @Query() query: GeoRegionsQueryDto,
   ): Promise<GeoRegionsResponseDto> {
-    return this.scopesService.regions(user, projectId);
+    return this.scopesService.regions(user, projectId, query.withinScope === true);
   }
 
   @Post('scopes')
