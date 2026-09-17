@@ -39,28 +39,8 @@ import {
   OrganizationListResponseDto,
   UpdateOrganizationDto,
 } from './dto';
-import {
-  BOARD_COLUMNS,
-  BULK_AUDIT_ACTION,
-  BULK_PAYLOAD_FIELD,
-  ORGANIZATION_AUDIT,
-} from './organizations.constants';
-import {
-  applySalesStatus,
-  assertAssigneesAreMembers,
-  assertFullOrganizationAccess,
-  assertIdentifiersAvailable,
-  assertReferencesKnown,
-  buildOrganizationOrderBy,
-  bracketPopulationFilter,
-  buildOrganizationWhere,
-  computeCompleteness,
-  countEngagements,
-  findPossibleDuplicates,
-  getOrganizationOrThrow,
-  loadActiveBrackets,
-  recomputeCompleteness,
-} from './organizations.utils';
+import { BOARD_COLUMNS, BULK_AUDIT_ACTION, BULK_PAYLOAD_FIELD, BULK_SELECT_ALL_MAX, BULK_TIMEOUT_MS, ORGANIZATION_AUDIT } from './organizations.constants';
+import { applySalesStatus, applySalesStatusMany, assertAssigneesAreMembers, assertFullOrganizationAccess, assertIdentifiersAvailable, assertReferencesKnown, bracketPopulationFilter, buildOrganizationOrderBy, buildOrganizationWhere, computeCompleteness, countEngagements, findPossibleDuplicates, getOrganizationOrThrow, loadActiveBrackets, recomputeCompleteness } from './organizations.utils';
 import { resolveBracketLabel } from '@/pricing/pricing.utils';
 import {
   mapToDetail,
@@ -186,6 +166,14 @@ export class OrganizationsService {
           dto.filters?.bracket ? await loadActiveBrackets(this.prisma, projectId) : [],
         )
       : { projectId, id: { in: dto.ids } };
+    // selectAll n'est borne par aucun client : compter d'abord et refuser tot, plutot que
+    // charger des dizaines de milliers de fiches dans une transaction qui expirerait.
+    if (dto.selectAll) {
+      const total = await this.prisma.organization.count({ where });
+      if (total > BULK_SELECT_ALL_MAX) {
+        throw withMeta(apiError.payloadTooLarge('BULK_TOO_LARGE', BULK_SELECT_ALL_MAX), { total });
+      }
+    }
     const candidates = await this.prisma.organization.findMany({
       where,
       // Only what access classification, the actions and their audits read — never the wide row
@@ -244,7 +232,7 @@ export class OrganizationsService {
         },
       });
       return count;
-    });
+    }, { timeout: BULK_TIMEOUT_MS });
     return { processed, skipped };
   }
 
@@ -275,24 +263,24 @@ export class OrganizationsService {
       }
       case 'SET_SALES_STATUS': {
         // Through the single writer, so every real transition lands in the journal
-        for (const org of eligible) {
-          const change = await applySalesStatus(
-            tx,
+        const changes = await applySalesStatusMany(
+          tx,
+          projectId,
+          eligible,
+          dto.payload.salesStatus as SalesStatus,
+        );
+        const nameById = new Map(eligible.map((org) => [org.id, org.name]));
+        await this.audit.logMany(
+          tx,
+          changes.map(({ id, from, to }) => ({
             projectId,
-            org,
-            dto.payload.salesStatus as SalesStatus,
-          );
-          if (change) {
-            await this.audit.log(tx, {
-              projectId,
-              userId: user.id,
-              action: ORGANIZATION_AUDIT.SALES_STATUS,
-              objectType: AUDIT_OBJECTS.ORGANIZATION,
-              objectId: org.id,
-              metadata: { ...change, trigger: 'bulk', name: org.name },
-            });
-          }
-        }
+            userId: user.id,
+            action: ORGANIZATION_AUDIT.SALES_STATUS,
+            objectType: AUDIT_OBJECTS.ORGANIZATION,
+            objectId: id,
+            metadata: { from, to, trigger: 'bulk', name: nameById.get(id) },
+          })),
+        );
         return ids.length;
       }
       case 'ADD_TO_CAMPAIGN': {
@@ -305,24 +293,26 @@ export class OrganizationsService {
           skipDuplicates: true,
         });
         // Same automatism as the direct targeting (US-01-11)
-        for (const org of eligible.filter((o) => o.salesStatus === SalesStatus.NOT_CONTACTED)) {
-          const change = await applySalesStatus(tx, projectId, org, SalesStatus.TO_CONTACT);
-          if (change) {
-            await this.audit.log(tx, {
-              projectId,
-              userId: user.id,
-              action: ORGANIZATION_AUDIT.SALES_STATUS,
-              objectType: AUDIT_OBJECTS.ORGANIZATION,
-              objectId: org.id,
-              metadata: {
-                ...change,
-                trigger: 'campaign.targeted',
-                campaignId: dto.payload.campaignId,
-                name: org.name,
-              },
-            });
-          }
-        }
+        const targeted = eligible.filter((o) => o.salesStatus === SalesStatus.NOT_CONTACTED);
+        const changes = await applySalesStatusMany(tx, projectId, targeted, SalesStatus.TO_CONTACT);
+        const nameById = new Map(targeted.map((org) => [org.id, org.name]));
+        await this.audit.logMany(
+          tx,
+          changes.map(({ id, from, to }) => ({
+            projectId,
+            userId: user.id,
+            action: ORGANIZATION_AUDIT.SALES_STATUS,
+            objectType: AUDIT_OBJECTS.ORGANIZATION,
+            objectId: id,
+            metadata: {
+              from,
+              to,
+              trigger: 'campaign.targeted',
+              campaignId: dto.payload.campaignId,
+              name: nameById.get(id),
+            },
+          })),
+        );
         return ids.length;
       }
       case 'DELETE': {
@@ -334,16 +324,17 @@ export class OrganizationsService {
           if (engagements.has(org.id)) skipped.push({ id: org.id, reason: 'HAS_ENGAGEMENTS' });
         }
         await tx.organization.deleteMany({ where: { projectId, id: { in: deletable.map((o) => o.id) } } });
-        for (const org of deletable) {
-          await this.audit.log(tx, {
+        await this.audit.logMany(
+          tx,
+          deletable.map((org) => ({
             projectId,
             userId: user.id,
             action: ORGANIZATION_AUDIT.DELETE,
             objectType: AUDIT_OBJECTS.ORGANIZATION,
             objectId: org.id,
             metadata: { name: org.name, bulk: true },
-          });
-        }
+          })),
+        );
         return deletable.length;
       }
     }

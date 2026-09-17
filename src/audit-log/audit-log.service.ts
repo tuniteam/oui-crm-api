@@ -41,6 +41,24 @@ export class AuditLogService {
     });
   }
 
+  /**
+   * Same entries, one write. A mass action journals one line per record: written one by one,
+   * that alone blew the transaction timeout on a 353-record batch (18/09/2026).
+   */
+  async logMany(db: Prisma.TransactionClient | PrismaService, entries: AuditEntry[]): Promise<void> {
+    if (!entries.length) return;
+    await db.auditLog.createMany({
+      data: entries.map((entry) => ({
+        projectId: entry.projectId,
+        userId: entry.userId,
+        action: entry.action,
+        objectType: entry.objectType ?? null,
+        objectId: entry.objectId ?? null,
+        metadata: entry.metadata,
+      })),
+    });
+  }
+
   /** Convenience for operations without a surrounding transaction. */
   logNow(entry: AuditEntry): Promise<void> {
     return this.log(this.prisma, entry);

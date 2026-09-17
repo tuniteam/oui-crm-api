@@ -465,6 +465,29 @@ export async function applySalesStatus(
 }
 
 /**
+ * Mass version of the same writer: one `updateMany` per starting status - a handful at most -
+ * instead of one per record. Une fiche deja au statut vise est ignoree, et une fiche disparue
+ * entre la lecture et l'ecriture aussi : une action groupee n'echoue jamais en bloc
+ * (SPEC-15 section 5.2). Renvoie les transitions reelles, pour le journal.
+ */
+export async function applySalesStatusMany(
+  tx: Prisma.TransactionClient,
+  projectId: string,
+  organizations: Pick<Organization, 'id' | 'salesStatus'>[],
+  to: SalesStatus,
+): Promise<{ id: string; from: SalesStatus; to: SalesStatus }[]> {
+  const changing = organizations.filter((org) => org.salesStatus !== to);
+  const byFrom = new Map<SalesStatus, string[]>();
+  for (const org of changing) {
+    byFrom.set(org.salesStatus, [...(byFrom.get(org.salesStatus) ?? []), org.id]);
+  }
+  for (const [, ids] of byFrom) {
+    await tx.organization.updateMany({ where: { projectId, id: { in: ids } }, data: { salesStatus: to } });
+  }
+  return changing.map((org) => ({ id: org.id, from: org.salesStatus, to }));
+}
+
+/**
  * The single writer of Organization.customerStatus. Nothing wrote it before the L2: the update
  * DTO excludes it on purpose — the customer status follows the contract, never a manual edit.
  * Signing a quote is its first writer (SPEC-14 D14); the L3 lifecycle will join here.
