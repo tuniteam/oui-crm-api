@@ -106,6 +106,11 @@ export type BulkAction = (typeof BULK_ACTIONS)[number];
 export const BULK_SKIP_REASONS = ['NOT_FOUND', 'OUT_OF_SCOPE', 'HAS_ENGAGEMENTS'] as const;
 export type BulkSkipReason = (typeof BULK_SKIP_REASONS)[number];
 export const BULK_BATCH_MAX = 500;
+/** `selectAll` n'est borne par aucun client : au-dela, l'action est refusee (413) plutot que
+ *  jouee dans une transaction qui expirerait. Le traitement de fond est un lot a part. */
+export const BULK_SELECT_ALL_MAX = 5_000;
+/** Marge de la transaction d'une action groupee : elle ecrit par ensembles, jamais par fiche. */
+export const BULK_TIMEOUT_MS = 30_000;
 /** The payload field each action requires — anything else in the payload is a mistake. */
 export const BULK_PAYLOAD_FIELD: Record<BulkAction, 'salesRepId' | 'salesStatus' | 'priority' | 'campaignId' | null> = {
   ASSIGN_SALES_REP: 'salesRepId',

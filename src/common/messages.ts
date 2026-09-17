@@ -121,6 +121,8 @@ const errorDefinitions = {
     'An organization with a similar name already exists at this postal code',
   ORGANIZATION_HAS_ENGAGEMENTS:
     'Organization carries quotes, contracts, opportunities or documents and cannot be deleted',
+  BULK_TOO_LARGE: (max: number) =>
+    `Bulk action targets more records than the ${max} allowed at once; narrow the filters`,
   ORGANIZATION_INVALID_TRANSITION: (from: string) =>
     `Invalid sales status transition from ${from}`,
   INVALID_REFERENCE_VALUE: (category: string, key: string) =>
@@ -517,7 +519,7 @@ export const ApiMessages = {
       bulk: {
         summary: 'Bulk action on organizations',
         description:
-          'ASSIGN_SALES_REP, SET_SALES_STATUS, SET_PRIORITY, ADD_TO_CAMPAIGN, DELETE on an explicit selection or selectAll with the list filters; out-of-scope records are skipped (OUT_OF_SCOPE), and on DELETE a record carrying engagements is skipped too (HAS_ENGAGEMENTS) — never a global failure',
+          'ASSIGN_SALES_REP, SET_SALES_STATUS, SET_PRIORITY, ADD_TO_CAMPAIGN, DELETE on an explicit selection (500 max) or selectAll with the list filters, capped at 5000 records (413 BULK_TOO_LARGE beyond it, with the count in messages.meta - narrow the filters); out-of-scope records are skipped (OUT_OF_SCOPE), and on DELETE a record carrying engagements is skipped too (HAS_ENGAGEMENTS) - never a global failure',
       },
       board: {
         summary: 'Prospection board',
