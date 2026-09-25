@@ -31,6 +31,7 @@ prisma/migrations/*_migration.sql
 
 # Test — les tests restent locaux, jamais commités (décision du 11/09/2026)
 coverage/
+# Les tests unitaires vivent dans oui-crm-test/api/unit (25/09/2026)
 *.spec.ts
 
 # Swagger exports (optional)
