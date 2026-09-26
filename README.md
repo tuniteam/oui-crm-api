@@ -47,35 +47,34 @@ Alias Gmail d'une boîte réelle, pour recevoir les e-mails hors Mailpit :
 
 ## Tester
 
+Les tests vivent dans le dépôt voisin **`oui-crm-test`**, cloné à côté de celui-ci
+(`../oui-crm-test`) : les `*.spec.ts` sous `api/unit/`, les recettes curl et les `.feature`
+sous `api/docs/`. Sans ce dépôt, `npm test` échoue faute de trouver ses suites.
+
 ```bash
-npm test                            # tests unitaires (règles pures : permissions, guards, verrouillage…)
-bash docs/tests/test-auth.sh        # BDD curl US-00-01/02 (rapport docs/tests/test-report-auth.txt)
-bash docs/tests/test-profile.sh     # BDD curl US-00-03
-bash docs/tests/test-projects.sh    # BDD curl US-00-04
-bash docs/tests/test-users.sh       # BDD curl US-00-05
-bash docs/tests/test-roles.sh       # BDD curl US-00-06
-bash docs/tests/test-scopes.sh      # BDD curl US-00-07
-bash docs/tests/test-settings.sh    # BDD curl US-00-08
-bash docs/tests/test-reference-items.sh  # BDD curl US-00-09
-bash docs/tests/test-audit-log.sh   # BDD curl US-00-10
-bash docs/tests/test-users-backoffice.sh  # BDD curl US-00-11
-bash docs/tests/run-all.sh           # toutes les suites, rapport consolidé
-npm run swagger:check               # contrat exposé
+npm test                              # 28 suites, 380 tests — joués d'ici, lus dans ../oui-crm-test/api/unit
+npm run swagger:check                 # contrat exposé
+
+cd ../oui-crm-test/api
+bash docs/tests/test-auth.sh          # une recette curl (rapport dans docs/tests/test-report-auth.txt)
+bash docs/tests/run-all.sh            # les 27 suites, rapport consolidé
 ```
 
-Les scénarios sont décrits en Gherkin (anglais) dans `docs/features/*.feature` — c'est la
-recette front/QA. Helpers partagés : `docs/tests/lib.sh` (lit `.env`).
+Prérequis des recettes curl : API, PostgreSQL, MinIO et Mailpit démarrés (`npm run dev:local`).
+Les scénarios sont décrits en Gherkin (anglais) dans `../oui-crm-test/api/docs/features/` — c'est
+la recette front et QA. Helpers partagés : `../oui-crm-test/api/docs/tests/lib.sh`, qui retrouve ce dépôt-ci par
+`API_ROOT` pour lire son `.env` et son `node_modules`.
 
 ## Documentation
 
-- **Specs** (locales, non versionnées — source de vérité de l'équipe) : `docs/SPEC-01` fonctionnelle · `02` technique ·
+- **Specs** (locales, non versionnées — source de vérité de l'équipe) : `../oui-crm-test/api/docs/SPEC-01` fonctionnelle · `02` technique ·
   `03` héritage soft-m · `04` moteur tarifaire · `05` import de reprise · `06` permissions et
   contrat `/profile/me` · `07` **user stories + handoff front** · `08` plan du lot L0 ·
   `09` manifeste de réutilisation · `10` configuration projet · `11` **handoff front détaillé par route**.
 - **Skills** (`.claude/skills/`) : `spec-first` (aucun dev sans spec validée), `backend-dev`
   (conventions + workflow de fin de story : revue, tests curl, `.feature`, handoff, commit),
   `backend-module` (pattern de module + templates).
-- Maquette de référence : `docs/Periscolia_OUICRM_V8.html` (démo — corrigée point par point).
+- Maquette de référence : `../oui-crm-test/api/docs/Periscolia_OUICRM_V8.html` (démo — corrigée point par point).
 
 ## Règles clés
 
@@ -95,6 +94,6 @@ changement d'e-mail) · **US-00-03** profil + légal · **US-00-04** administrat
 gabarits HTML + cachet, référentiels · **US-00-10** journal d'activité (lecture paginée, filtres,
 libellés résolus ; export CSV au L5) · **US-00-11** comptes backoffice (`/backoffice/users`, pattern soft-m).
 **Lot L0 terminé le 02/09/2026** : revue totale appliquée (2 vagues), 556 contrôles BDD verts
-(`docs/tests/run-all.sh`), 86 tests unitaires, Swagger 45 routes — bilan : `docs/RAPPORT-L0.md`.
+(`../oui-crm-test/api/docs/tests/run-all.sh`), 86 tests unitaires, Swagger 45 routes — bilan : `../oui-crm-test/api/docs/RAPPORT-L0.md`.
 Prochain lot : L1 (base commerciale — organismes, contacts, actions, kanban).
-Détail : `docs/SPEC-08-PLAN-L0.md` ; contrat front par route : `docs/SPEC-11-HANDOFF-FRONT.md`.
+Détail : `../oui-crm-test/api/docs/SPEC-08-PLAN-L0.md` ; contrat front par route : `../oui-crm-test/api/docs/SPEC-11-HANDOFF-FRONT.md`.
